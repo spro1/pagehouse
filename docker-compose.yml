@@ -35,6 +35,8 @@ services:
       OIDC_LABEL: ${OIDC_LABEL:-}
       OIDC_AUTO_CREATE: ${OIDC_AUTO_CREATE:-1}
       PASSWORD_LOGIN: ${PASSWORD_LOGIN:-1}
+      SMTP_URL: ${SMTP_URL:-}
+      SMTP_FROM: ${SMTP_FROM:-}
       BACKUP_DIR: /backups
     volumes:
       - files:/data

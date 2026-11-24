@@ -102,6 +102,7 @@ docker compose up -d --build
 | `OIDC_LABEL` | `SSO` | 로그인 버튼 문구 |
 | `OIDC_AUTO_CREATE` | `1` | `0`이면 같은 이메일 계정이 이미 있는 사람만 로그인 |
 | `PASSWORD_LOGIN` | `1` | SSO를 켠 상태에서 `0`이면 관리자만 비밀번호 로그인 가능 |
+| `SMTP_URL`, `SMTP_FROM` | 비어 있음 | 읽지 않은 알림을 메일로 보냄. 예: `smtp://user:pass@mail.example.com:587`. 메일 속 링크는 `PUBLIC_URL`이 있어야 함 |
 | `PAGEHOUSE_VERSION` | 설치 스크립트가 지정 | 이미지 버전. 업그레이드가 바꿉니다 |
 | `BACKUP_INTERVAL_HOURS` / `BACKUP_KEEP` | `24` / `14` | 자동 백업 주기와 보관 개수 |
 

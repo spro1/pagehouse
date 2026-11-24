@@ -39,7 +39,7 @@ function clearDraft(id: number) {
 type Page = {
   id: number; title: string; doc: any; version: number; updatedAt: string; updatedBy: string
   createdAt: string; createdBy: string; space: { id: number; name: string }; ancestors: { id: number; title: string }[]
-  access: 'edit' | 'view'; restricted: boolean
+  access: 'edit' | 'view'; restricted: boolean; watching: boolean
 }
 
 export function PageView({ id, me, onTitle, onDeleted }: { id: number; me: User; onTitle: (t: string) => void; onDeleted: () => void }) {
@@ -92,6 +92,7 @@ function LoadedPage({ page, live, me, onTitle, onDeleted }: { page: Page; live: 
     return () => removeEventListener('mousedown', close)
   }, [menu])
   const [restricted, setRestricted] = useState(page.restricted)
+  const [watching, setWatching] = useState(page.watching)
   const canEdit = page.access === 'edit'
   const fileInput = useRef<HTMLInputElement>(null)
   const s = useRef({ version: page.version, title: page.title, dirty: false, saving: false, conflict: false, checkpoint: false, timer: 0 })
@@ -295,6 +296,11 @@ function LoadedPage({ page, live, me, onTitle, onDeleted }: { page: Page; live: 
         >
           <Icon name="link" />
           <span className="label">{t('page.copyLink')}</span>
+        </button>
+        <button className={`ghost ${watching ? 'on' : ''}`} aria-pressed={watching} title={watching ? t('page.watching.tip') : t('page.watch.tip')}
+          onClick={() => api(`/api/pages/${page.id}/watch`, { method: 'PUT', json: { watching: !watching } }).then((r) => (setWatching(r.watching), toast(r.watching ? t('page.watch.on') : t('page.watch.off'))), (e) => toast(e.message))}>
+          <Icon name="eye" />
+          <span className="label">{watching ? t('page.watching') : t('page.watch')}</span>
         </button>
         <button className={`ghost ${panel === 'history' ? 'on' : ''}`} title={t('page.history')} onClick={() => setPanel(panel ? null : 'history')}>
           <Icon name="history" />

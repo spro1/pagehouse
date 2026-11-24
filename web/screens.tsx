@@ -391,6 +391,27 @@ export function LangSelect({ account }: { account?: boolean }) {
   )
 }
 
+/** Email preference; shown only when the server can send mail. */
+function MailSetting() {
+  const [m, setM] = useState<{ mail: boolean; emailNotify: boolean }>()
+  useEffect(() => void api('/api/me').then(setM), [])
+  if (!m?.mail) return null
+  return (
+    <section className="box">
+      <h3>{t('settings.mail')}</h3>
+      <label className="check">
+        <input type="checkbox" checked={m.emailNotify} onChange={async (e) => {
+          const on = e.target.checked
+          setM({ ...m, emailNotify: on })
+          await api('/api/me', { method: 'PATCH', json: { emailNotify: on } }).catch((err) => (toast(err.message), setM({ ...m })))
+        }} />
+        {t('settings.mail.label')}
+      </label>
+      <p className="muted small">{t('settings.mail.note')}</p>
+    </section>
+  )
+}
+
 export function Settings({ me }: { me: User }) {
   const [msg, setMsg] = useState<{ text: string; error?: boolean }>()
   return (
@@ -413,6 +434,7 @@ export function Settings({ me }: { me: User }) {
         <p className="muted small">{t('settings.language.note')}</p>
         <LangSelect account />
       </section>
+      <MailSetting />
       <section className="box">
         <h3>{t('settings.password')}</h3>
         <form

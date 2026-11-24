@@ -12,6 +12,7 @@ import { registerAdmin, uploadAllowed } from './admin.ts'
 import { registerExport } from './export.ts'
 import { oidcConfig, registerSso } from './sso.ts'
 import { createCollab } from './collab.ts'
+import { mailEnabled } from './mail.ts'
 import { createNodeWebSocket } from '@hono/node-ws'
 import { mentionedInDoc, mentionedInText, notify, registerPeople } from './people.ts'
 
@@ -310,15 +311,18 @@ export function createApp(db: Db, dataDir: string) {
     return next()
   })
 
-  app.get('/api/me', (c) => c.json(c.get('user')))
+  app.get('/api/me', async (c) =>
+    c.json({ ...c.get('user'), mail: mailEnabled(), emailNotify: (await one('SELECT email_notify FROM users WHERE id = $1', [c.get('user').id]))?.email_notify }))
 
   app.patch('/api/me', async (c) => {
     const b = await c.req.json().catch(() => ({}))
     const locale = b.locale === undefined ? undefined : LOCALES.includes(b.locale) ? b.locale : null
     const theme = b.theme === undefined ? undefined : ['system', 'light', 'dark'].includes(b.theme) ? b.theme : null
-    if (locale === null || theme === null || (locale === undefined && theme === undefined)) return fail(c, 400, 'bad_request')
-    await db.query('UPDATE users SET locale = coalesce($1, locale), theme = coalesce($2, theme) WHERE id = $3', [locale ?? null, theme ?? null, c.get('user').id])
-    return c.json({ ...c.get('user'), ...(locale && { locale }), ...(theme && { theme }) })
+    const emailNotify = typeof b.emailNotify === 'boolean' ? b.emailNotify : null
+    if (locale === null || theme === null || (locale === undefined && theme === undefined && emailNotify === null)) return fail(c, 400, 'bad_request')
+    await db.query('UPDATE users SET locale = coalesce($1, locale), theme = coalesce($2, theme), email_notify = coalesce($3, email_notify) WHERE id = $4',
+      [locale ?? null, theme ?? null, emailNotify, c.get('user').id])
+    return c.json({ ...c.get('user'), ...(locale && { locale }), ...(theme && { theme }), ...(emailNotify !== null && { emailNotify }) })
   })
 
   app.post('/api/me/password', async (c) => {
@@ -454,6 +458,7 @@ export function createApp(db: Db, dataDir: string) {
       [spaceId, parentId, kind, title, doc, docText(doc), user.id],
     )
     await db.query('INSERT INTO page_versions (page_id, version, title, doc, author_id) VALUES ($1, 1, $2, $3, $4)', [row.id, title, doc, user.id])
+    await db.query('INSERT INTO page_watches (user_id, page_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [user.id, row.id])
     return c.json({ id: row.id, parentId, kind, title })
   })
 
@@ -483,6 +488,7 @@ export function createApp(db: Db, dataDir: string) {
       createdAt: p.created_at, createdBy: p.created_by_name,
       space: { id: p.space_id, name: p.space_name, key: p.space_key }, ancestors,
       access: a,
+      watching: !!(await one('SELECT 1 FROM page_watches WHERE page_id = $1 AND user_id = $2', [p.id, c.get('user').id])),
       restricted: !!(await one(
         `WITH RECURSIVE path(id, parent_id) AS (SELECT id, parent_id FROM pages WHERE id = $1
            UNION ALL SELECT x.id, x.parent_id FROM pages x JOIN path ON x.id = path.parent_id)
@@ -490,6 +496,15 @@ export function createApp(db: Db, dataDir: string) {
         [p.id],
       )),
     })
+  })
+
+  app.put('/api/pages/:id/watch', async (c) => {
+    const denied = await guard(c, id(c), 'view')
+    if (denied) return denied
+    const b = await c.req.json().catch(() => ({}))
+    if (b.watching) await db.query('INSERT INTO page_watches (user_id, page_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [c.get('user').id, id(c)])
+    else await db.query('DELETE FROM page_watches WHERE user_id = $1 AND page_id = $2', [c.get('user').id, id(c)])
+    return c.json({ watching: !!b.watching })
   })
 
   app.post('/api/pages/:id/move', async (c) => {
@@ -663,7 +678,15 @@ export function createApp(db: Db, dataDir: string) {
           [pageId, version, title, doc, userId])
       return { version: version as number, updatedAt: updated_at as Date }
     })
-    if (r) await notify(db, userId, pageId, null, newlyMentioned.map((u) => [u, 'mention']))
+    if (r) {
+      await notify(db, userId, pageId, null, newlyMentioned.map((u) => [u, 'mention']))
+      // Watchers hear about edits once until they look: no new notice while an unread one for this page waits.
+      const watchers = (await db.query(
+        `SELECT w.user_id FROM page_watches w WHERE w.page_id = $1 AND w.user_id <> $2 AND NOT EXISTS (
+           SELECT 1 FROM notifications n WHERE n.user_id = w.user_id AND n.page_id = $1 AND n.kind = 'update' AND n.read_at IS NULL)`,
+        [pageId, userId])).rows
+      await notify(db, userId, pageId, null, watchers.map((w) => [w.user_id, 'update']))
+    }
     return r
   }
 

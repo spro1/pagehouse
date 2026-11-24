@@ -3,12 +3,15 @@ import { serveStatic } from '@hono/node-server/serve-static'
 import { compress } from 'hono/compress'
 import { createApp } from './app.ts'
 import { openDb } from './db.ts'
+import { startMailer } from './mail.ts'
 
 if (!process.env.DATABASE_URL) {
   console.error('DATABASE_URL is required, e.g. postgres://user:pass@localhost:5432/pagehouse')
   process.exit(1)
 }
-const app = createApp(await openDb(process.env.DATABASE_URL), process.env.DATA_DIR ?? './data')
+const db = await openDb(process.env.DATABASE_URL)
+const app = createApp(db, process.env.DATA_DIR ?? './data')
+startMailer(db)
 
 app.use('/assets/*', compress())
 // Build output under /assets has content hashes in its names: cache it for a year.
