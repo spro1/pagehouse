@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { tx, type Db } from './db.ts'
 import { registerAdmin, uploadAllowed } from './admin.ts'
 import { registerExport } from './export.ts'
+import { oidcConfig, registerSso } from './sso.ts'
 import { mentionedInDoc, mentionedInText, notify, registerPeople } from './people.ts'
 
 type User = { id: number; email: string; name: string; role: string; locale: string | null; theme: string | null }
@@ -56,6 +57,7 @@ const ERRORS = {
   file_too_large: 'Files can be up to 50 MB.',
   too_many_attempts: 'Too many attempts. Try again in a few minutes.',
   bad_origin: 'Request from another site was refused.',
+  use_sso: 'Sign in with single sign-on.',
 } as const
 type ErrorCode = keyof typeof ERRORS
 const fail = (c: Context, status: 400 | 401 | 403 | 404 | 409 | 413 | 429, code: string) =>
@@ -68,6 +70,7 @@ function hashPassword(password: string, salt = randomBytes(16).toString('hex')) 
 }
 function checkPassword(password: string, stored: string) {
   const [salt, hash] = stored.split(':')
+  if (!hash) return false // SSO-only account
   return timingSafeEqual(scryptSync(password, salt, 64), Buffer.from(hash, 'hex'))
 }
 
@@ -188,6 +191,9 @@ export function createApp(db: Db, dataDir: string) {
     })
   }
 
+  const sso = oidcConfig()
+  if (sso) registerSso(app, db, sso, startSession)
+
   const liveInvite = (token: unknown) =>
     typeof token === 'string' && token
       ? one('SELECT purpose FROM invites WHERE token_hash = $1 AND used_by IS NULL AND expires_at > now()', [sha256(token)])
@@ -197,6 +203,8 @@ export function createApp(db: Db, dataDir: string) {
     c.json({
       needsSetup: !(await one('SELECT 1 FROM users LIMIT 1')),
       signupOpen: process.env.ALLOW_SIGNUP === '1',
+      sso: sso?.label ?? null,
+      passwordLogin: !sso || process.env.PASSWORD_LOGIN !== '0',
       link: (await liveInvite(c.req.query('token')))?.purpose ?? null,
     }),
   )
@@ -237,12 +245,14 @@ export function createApp(db: Db, dataDir: string) {
     const b = await c.req.json().catch(() => ({}))
     const email = String(b.email ?? '').toLowerCase()
     if (throttled(c, email)) return tooMany(c)
+    // With SSO and PASSWORD_LOGIN=0 only admins may still use a password (a way back in if the provider is down).
     const row = await one('SELECT * FROM users WHERE email = $1', [email])
     if (!row || typeof b.password !== 'string' || !checkPassword(b.password, row.password_hash)) {
       failed(c, email)
       return fail(c, 401, 'bad_credentials')
     }
     if (row.disabled_at) return fail(c, 403, 'account_disabled')
+    if (sso && process.env.PASSWORD_LOGIN === '0' && row.role !== 'admin') return fail(c, 403, 'use_sso')
     await startSession(c, row.id)
     return c.json({ id: row.id, email: row.email, name: row.name, role: row.role, locale: row.locale, theme: row.theme })
   })

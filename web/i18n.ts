@@ -15,6 +15,10 @@ const en = {
   'auth.submit.login': 'Sign in', 'auth.submit.register': 'Create account', 'auth.submit.reset': 'Set password',
   'auth.toRegister': 'Create an account', 'auth.toLogin': 'Back to sign in',
   'auth.forgot': 'Forgot your password? Ask an administrator for a reset link.',
+  'auth.sso.button': 'Sign in with {name}', 'auth.sso.or': 'or with email',
+  'auth.sso.failed': 'Single sign-on failed. Try again.', 'auth.sso.unavailable': 'The sign-on provider is not reachable.',
+  'auth.sso.no_email': 'The sign-on provider did not share a verified email.', 'auth.sso.no_account': 'There is no account for you yet. Ask an administrator for an invite.',
+  'auth.sso.account_disabled': 'This account is disabled.', 'err.use_sso': 'Sign in with single sign-on.',
   'auth.linkInvalid': 'This link has expired or was already used. Ask an administrator for a new one.',
 
   'nav.label': 'Navigation', 'nav.menu': 'Menu', 'nav.closeMenu': 'Close menu',
@@ -231,6 +235,10 @@ const ko: Dict = {
   'auth.submit.login': '로그인', 'auth.submit.register': '계정 만들기', 'auth.submit.reset': '비밀번호 설정',
   'auth.toRegister': '계정 만들기', 'auth.toLogin': '로그인으로',
   'auth.forgot': '비밀번호를 잊었다면 관리자에게 재설정 링크를 요청하세요.',
+  'auth.sso.button': '{name}(으)로 로그인', 'auth.sso.or': '또는 이메일로',
+  'auth.sso.failed': 'SSO 로그인에 실패했습니다. 다시 시도하세요.', 'auth.sso.unavailable': 'SSO 서버에 연결할 수 없습니다.',
+  'auth.sso.no_email': 'SSO 서버가 확인된 이메일을 주지 않았습니다.', 'auth.sso.no_account': '아직 계정이 없습니다. 관리자에게 초대를 요청하세요.',
+  'auth.sso.account_disabled': '비활성화된 계정입니다.', 'err.use_sso': 'SSO로 로그인하세요.',
   'auth.linkInvalid': '링크가 만료되었거나 이미 사용되었습니다. 관리자에게 새 링크를 요청하세요.',
 
   'nav.label': '탐색', 'nav.menu': '메뉴', 'nav.closeMenu': '메뉴 닫기',

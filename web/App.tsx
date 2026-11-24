@@ -74,7 +74,7 @@ export function App() {
 
 function Auth({ route, onDone }: { route: Route; onDone: (u: User) => void }) {
   const token = route.name === 'invite' || route.name === 'reset' ? route.token : undefined
-  const [status, setStatus] = useState<{ needsSetup: boolean; signupOpen: boolean; link: string | null }>()
+  const [status, setStatus] = useState<{ needsSetup: boolean; signupOpen: boolean; link: string | null; sso: string | null; passwordLogin: boolean }>()
   const [mode, setMode] = useState<'login' | 'register' | 'reset'>('login')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -83,6 +83,8 @@ function Auth({ route, onDone }: { route: Route; onDone: (u: User) => void }) {
       setStatus(s)
       setMode(s.link === 'reset' ? 'reset' : s.needsSetup || s.link === 'invite' ? 'register' : 'login')
       if (token && !s.link) setError(t('auth.linkInvalid'))
+      const ssoError = new URLSearchParams(location.search).get('sso_error')
+      if (ssoError) setError(t(`auth.sso.${ssoError}` as any)), history.replaceState(null, '', location.pathname)
     })
   }, [token])
   if (!status) return null
@@ -112,6 +114,12 @@ function Auth({ route, onDone }: { route: Route; onDone: (u: User) => void }) {
         </div>
         <h1>{t(`auth.${which}.title`)}</h1>
         <p className="muted">{t(`auth.${which}.sub`)}</p>
+        {status.sso && mode === 'login' && !status.needsSetup && (
+          <>
+            <a className="btn primary big sso" href="/api/auth/oidc/start">{t('auth.sso.button', { name: status.sso })}</a>
+            {status.passwordLogin && <div className="divider muted small">{t('auth.sso.or')}</div>}
+          </>
+        )}
         {mode === 'register' && <label>{t('auth.name')}<input name="name" required autoComplete="name" autoFocus /></label>}
         {mode !== 'reset' && <label>{t('auth.email')}<input name="email" type="email" required autoComplete="email" autoFocus={mode === 'login'} /></label>}
         <label>

@@ -97,6 +97,11 @@ docker compose up -d --build
 | `PORT` | `3000` | 서버에서 열 포트 |
 | `BIND_ADDRESS` | `0.0.0.0` | 같은 서버의 리버스 프록시로만 받으려면 `127.0.0.1` |
 | `ALLOW_SIGNUP` | `0` | `1`이면 접속 가능한 누구나 가입 |
+| `PUBLIC_URL` | (요청에서 추정) | 사용자가 접속하는 주소. 예: `https://wiki.example.com`. SSO 리디렉션과 메일 링크에 쓰임 |
+| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | 비어 있음 | OpenID Connect SSO(Keycloak, Entra ID, Google Workspace, Okta 등). 리디렉션 URI: `<PUBLIC_URL>/api/auth/oidc/callback` |
+| `OIDC_LABEL` | `SSO` | 로그인 버튼 문구 |
+| `OIDC_AUTO_CREATE` | `1` | `0`이면 같은 이메일 계정이 이미 있는 사람만 로그인 |
+| `PASSWORD_LOGIN` | `1` | SSO를 켠 상태에서 `0`이면 관리자만 비밀번호 로그인 가능 |
 | `PAGEHOUSE_VERSION` | 설치 스크립트가 지정 | 이미지 버전. 업그레이드가 바꿉니다 |
 | `BACKUP_INTERVAL_HOURS` / `BACKUP_KEEP` | `24` / `14` | 자동 백업 주기와 보관 개수 |
 

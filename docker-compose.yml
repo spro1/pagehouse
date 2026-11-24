@@ -28,6 +28,13 @@ services:
     environment:
       DATABASE_URL: postgres://pagehouse:${POSTGRES_PASSWORD}@db:5432/pagehouse
       ALLOW_SIGNUP: ${ALLOW_SIGNUP:-0}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_LABEL: ${OIDC_LABEL:-}
+      OIDC_AUTO_CREATE: ${OIDC_AUTO_CREATE:-1}
+      PASSWORD_LOGIN: ${PASSWORD_LOGIN:-1}
       BACKUP_DIR: /backups
     volumes:
       - files:/data

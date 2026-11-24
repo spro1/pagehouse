@@ -477,3 +477,48 @@ test('mentions and replies notify people who can see the page; home lists viewed
   assert.ok(home.forYou.some((i: any) => i.kind === 'mention'))
   assert.ok(!(await outsider.json('GET', '/api/home')).created.some((p: any) => p.id === secret.id), 'private pages not in others’ home')
 })
+
+test('OIDC single sign-on creates and signs in an account by email', async () => {
+  const { createServer } = await import('node:http')
+  let verifier = ''
+  const idp = createServer(async (req, res) => {
+    const u = new URL(req.url!, 'http://x')
+    const base = `http://127.0.0.1:${(idp.address() as any).port}`
+    let body = ''
+    for await (const ch of req) body += ch
+    res.setHeader('content-type', 'application/json')
+    if (u.pathname === '/.well-known/openid-configuration')
+      return res.end(JSON.stringify({ authorization_endpoint: `${base}/auth`, token_endpoint: `${base}/token`, userinfo_endpoint: `${base}/me` }))
+    if (u.pathname === '/token') {
+      verifier = new URLSearchParams(body).get('code_verifier') ?? ''
+      return res.end(JSON.stringify(new URLSearchParams(body).get('code') === 'good' ? { access_token: 'at' } : {}))
+    }
+    if (u.pathname === '/me') return res.end(JSON.stringify({ email: 'SSO@Corp.co', email_verified: true, name: 'Sso User' }))
+    res.statusCode = 404
+    res.end()
+  })
+  await new Promise<void>((r) => idp.listen(0, '127.0.0.1', r))
+  process.env.OIDC_ISSUER = `http://127.0.0.1:${(idp.address() as any).port}`
+  process.env.OIDC_CLIENT_ID = 'wiki'
+  const sapp = createApp(db, mkdtempSync(join(tmpdir(), 'pagehouse-')))
+  delete process.env.OIDC_ISSUER
+  try {
+    assert.equal((await (await sapp.request('/api/auth/status')).json()).sso, 'SSO')
+    const start = await sapp.request('/api/auth/oidc/start')
+    const loc = new URL(start.headers.get('location')!)
+    const state = loc.searchParams.get('state')!
+    const cookie = start.headers.get('set-cookie')!.split(';')[0]
+    // A forged state is refused.
+    assert.match((await sapp.request(`/api/auth/oidc/callback?code=good&state=bad`, { headers: { cookie } })).headers.get('location')!, /sso_error=failed/)
+    const cb = await sapp.request(`/api/auth/oidc/callback?code=good&state=${state}`, { headers: { cookie } })
+    assert.equal(cb.headers.get('location'), '/')
+    assert.ok(verifier.length > 40)
+    const sid = cb.headers.getSetCookie().find((h) => h.startsWith('sid='))!.split(';')[0]
+    const me = await (await sapp.request('/api/me', { headers: { cookie: sid } })).json()
+    assert.equal(me.email, 'sso@corp.co')
+    // The SSO account has no password, so password sign-in can't be used to get in.
+    assert.equal((await sapp.request('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'sso@corp.co', password: '' }) })).status, 401)
+  } finally {
+    idp.close()
+  }
+})

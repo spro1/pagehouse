@@ -706,3 +706,9 @@ h3.sub { margin-top: 22px !important; }
 .choice small { display: block; margin-top: 1px; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
 .form .access-search { flex-direction: row; align-items: center; gap: 8px; font-weight: 400; color: var(--muted); }
 .for-you a > :last-child { text-align: left; }
+
+/* SSO sign-in */
+a.btn.sso { display: flex; align-items: center; justify-content: center; height: 40px; font-weight: 600; width: 100%; background: var(--accent); border-color: var(--accent); color: #fff; text-decoration: none; }
+a.btn.sso:hover { background: var(--accent-hover); }
+.auth .divider { display: flex; align-items: center; gap: 10px; }
+.auth .divider::before, .auth .divider::after { content: ''; flex: 1; border-top: 1px solid var(--border); }
