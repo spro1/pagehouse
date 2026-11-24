@@ -1,0 +1,12 @@
+# Build the app image from this source tree instead of pulling it.
+# Use with: COMPOSE_FILE=docker-compose.yml:docker-compose.build.yml (in .env), then `docker compose up -d --build`.
+services:
+  db:
+    build: docker/postgres
+    image: localhost/pagehouse-postgres:17
+  app:
+    build:
+      context: .
+      args:
+        VERSION: ${PAGEHOUSE_VERSION:-dev}
+    image: localhost/pagehouse:${PAGEHOUSE_VERSION:-latest}

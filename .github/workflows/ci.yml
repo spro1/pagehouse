@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: pagehouse
+          POSTGRES_PASSWORD: pagehouse
+          POSTGRES_DB: pagehouse_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pagehouse -d pagehouse_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgres://pagehouse:pagehouse@localhost:5432/pagehouse_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Shell scripts parse
+        run: for f in scripts/*.sh; do sh -n "$f"; done
+      - uses: azure/setup-helm@v4
+      - name: Helm chart
+        run: |
+          helm lint charts/pagehouse
+          helm template t charts/pagehouse > /dev/null
+          helm template t charts/pagehouse --set postgresql.enabled=false --set externalDatabase.url=postgres://u:p@db/pagehouse \
+            --set ingress.enabled=true --set ingress.host=wiki.example.com > /dev/null
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm audit --audit-level=low
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: pagehouse:ci
+          build-args: VERSION=ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - uses: docker/build-push-action@v6
+        with:
+          context: docker/postgres
+          load: true
+          tags: pagehouse-postgres:ci
+      - name: Scan images (fail on any fixable vulnerability)
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          scan-type: image
+          image-ref: pagehouse:ci
+          ignore-unfixed: true
+          exit-code: "1"
+      - uses: aquasecurity/trivy-action@0.33.1
+        with:
+          scan-type: image
+          image-ref: pagehouse-postgres:ci
+          ignore-unfixed: true
+          exit-code: "1"

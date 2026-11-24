@@ -1,0 +1,81 @@
+# Pagehouse: app + PostgreSQL + automatic backups. Works with `docker compose` and `podman compose`.
+# Settings live in .env (see .env.example). To build from source instead of pulling the image,
+# add `COMPOSE_FILE=docker-compose.yml:docker-compose.build.yml` to .env.
+services:
+  db:
+    # Official postgres:17-alpine, patched and without gosu (see docker/postgres/Dockerfile). Runs as the postgres user.
+    image: ${PAGEHOUSE_POSTGRES_IMAGE:-localhost/pagehouse-postgres}:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pagehouse
+      POSTGRES_DB: pagehouse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pagehouse -d pagehouse"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    stop_grace_period: 30s
+
+  app:
+    image: ${PAGEHOUSE_IMAGE:-localhost/pagehouse}:${PAGEHOUSE_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://pagehouse:${POSTGRES_PASSWORD}@db:5432/pagehouse
+      ALLOW_SIGNUP: ${ALLOW_SIGNUP:-0}
+      BACKUP_DIR: /backups
+    volumes:
+      - files:/data
+      - ./backups:/backups:ro
+    ports:
+      - "${BIND_ADDRESS:-0.0.0.0}:${PORT:-3000}:3000"
+    stop_grace_period: 15s
+
+  # Automatic backups: one at start, then every BACKUP_INTERVAL_HOURS, into ./backups on the host.
+  # The host folder survives `down -v`; copy it off the server too. Same format as scripts/backup.sh.
+  backup:
+    image: ${PAGEHOUSE_POSTGRES_IMAGE:-localhost/pagehouse-postgres}:17
+    # root only to write into ./backups, which belongs to the host user
+    user: root
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGUSER: pagehouse
+      PGDATABASE: pagehouse
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+      BACKUP_KEEP: ${BACKUP_KEEP:-14}
+    volumes:
+      - files:/data:ro
+      - ./backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          name="pagehouse-auto-$$(date +%Y%m%d-%H%M%S)"
+          work="/tmp/$$name"; mkdir -p "$$work"
+          if pg_dump -Fc -f "$$work/db.dump" && tar -C /data -cf "$$work/files.tar" files \
+             && tar -C "$$work" -czf "/backups/$$name.tar.gz.part" db.dump files.tar; then
+            mv "/backups/$$name.tar.gz.part" "/backups/$$name.tar.gz"
+            echo "backup written: $$name.tar.gz"
+            # Keep the newest BACKUP_KEEP automatic backups; manual ones are never touched.
+            ls -1t /backups/pagehouse-auto-*.tar.gz | tail -n +$$((BACKUP_KEEP + 1)) | xargs -r rm -f
+          else
+            echo "BACKUP FAILED" >&2
+            rm -f "/backups/$$name.tar.gz.part"
+          fi
+          rm -rf "$$work"
+          sleep $$((BACKUP_INTERVAL_HOURS * 3600))
+        done
+
+volumes:
+  db:
+  files:

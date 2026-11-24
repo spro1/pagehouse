@@ -1,0 +1,19 @@
+Pagehouse {{ .Chart.AppVersion }} is installed.
+
+{{- if .Values.ingress.enabled }}
+Open: http{{ if .Values.ingress.tls }}s{{ end }}://{{ .Values.ingress.host }}
+{{- else }}
+Try it locally:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "pagehouse.fullname" . }} 3000:{{ .Values.service.port }}
+  then open http://localhost:3000
+{{- end }}
+
+The first account you create becomes the administrator.
+
+Data safety:
+  - The database volume, the attachments volume{{ if .Values.backup.enabled }}, the backup volume{{ end }} and the database Secret
+    are kept by `helm uninstall`. Delete them yourself only when you really mean to erase everything.
+{{- if .Values.backup.enabled }}
+  - Backups run on "{{ .Values.backup.schedule }}" into the PVC {{ include "pagehouse.fullname" . }}-backups (newest {{ .Values.backup.keep }} kept).
+    Copy them off the cluster as well.
+{{- end }}

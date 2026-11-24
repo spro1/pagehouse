@@ -1,0 +1,479 @@
+import { after, test } from 'node:test'
+import assert from 'node:assert/strict'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { createApp } from './app.ts'
+import { openDb } from './db.ts'
+
+const url = process.env.TEST_DATABASE_URL ?? 'postgres://pagehouse:pagehouse@localhost:55432/pagehouse_test'
+
+// The test wipes the database, so refuse anything not named *_test.
+assert.match(new URL(url).pathname, /_test$/)
+const reset = await openDb(url)
+await reset.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public')
+await reset.end()
+const db = await openDb(url)
+after(() => db.end())
+const app = createApp(db, mkdtempSync(join(tmpdir(), 'pagehouse-')))
+
+// A tiny client that keeps its own session cookie.
+function client() {
+  const c = { cookie: '', async call(method: string, path: string, body?: unknown) {
+    const res = await app.request(path, {
+      method,
+      headers: { cookie: c.cookie, ...(body ? { 'content-type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    })
+    const set = res.headers.get('set-cookie')
+    if (set) c.cookie = set.split(';')[0]
+    return res
+  }, async json(method: string, path: string, body?: unknown) { return (await c.call(method, path, body)).json() } }
+  return c
+}
+
+test('register, edit with conflict detection, search, attachments', async () => {
+  const a = client()
+  const call = a.call
+  assert.equal((await call('GET', '/api/spaces')).status, 401)
+  assert.equal((await call('POST', '/api/auth/register', { email: 'a@b.co', name: 'A', password: 'short' })).status, 400)
+  assert.equal((await call('POST', '/api/auth/register', { email: 'a@b.co', name: 'A', password: 'password1' })).status, 200)
+
+  const [space] = await (await call('GET', '/api/spaces')).json()
+  const page = await (await call('POST', '/api/pages', { spaceId: space.id, title: '주간보고' })).json()
+  const child = await (await call('POST', '/api/pages', { spaceId: space.id, parentId: page.id, title: '하위' })).json()
+
+  const doc = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '클러스터 배포 완료' }] }] }
+  const saved = await call('PUT', `/api/pages/${page.id}`, { title: '주간보고', doc, version: 1 })
+  assert.equal((await saved.json()).version, 2)
+  // A second writer still holding version 1 must be rejected, not silently overwrite.
+  assert.equal((await call('PUT', `/api/pages/${page.id}`, { title: 'x', doc, version: 1 })).status, 409)
+  assert.equal((await (await call('GET', `/api/pages/${page.id}/versions`)).json()).length, 1)
+
+  // Two-character Korean query, and LIKE wildcards are treated literally.
+  assert.equal((await (await call('GET', `/api/search?q=${encodeURIComponent('배포')}`)).json()).results[0].id, page.id)
+  assert.equal((await (await call('GET', '/api/search?q=%25')).json()).total, 0)
+
+  const form = new FormData()
+  form.append('file', new File(['<script>alert(1)</script>'], 'x.html', { type: 'text/html' }))
+  const up = await (await app.request(`/api/pages/${page.id}/attachments`, { method: 'POST', headers: { cookie: a.cookie }, body: form })).json()
+  const file = await call('GET', up.url)
+  assert.equal(file.headers.get('content-type'), 'application/octet-stream')
+  assert.match(file.headers.get('content-disposition')!, /^attachment/)
+
+  // Deleting a parent removes its subtree.
+  assert.equal((await call('DELETE', `/api/pages/${page.id}`)).status, 200)
+  assert.equal((await call('GET', `/api/pages/${child.id}`)).status, 404)
+
+  // A second concurrent writer at the same version: exactly one wins.
+  const v = (await (await call('POST', '/api/pages', { spaceId: space.id, title: 'race' })).json()).id
+  const codes = (await Promise.all([1, 2].map(() => call('PUT', `/api/pages/${v}`, { title: 'r', doc, version: 1 })))).map((r) => r.status).sort()
+  assert.deepEqual(codes, [200, 409])
+
+  assert.equal((await app.request('/healthz')).status, 200)
+
+  // Signup closes after the first account.
+  assert.equal((await client().call('POST', '/api/auth/register', { email: 'c@d.co', name: 'C', password: 'password1' })).status, 403)
+})
+
+test('invites, disabling, password reset', async () => {
+  const admin = client()
+  await admin.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  const { token } = await admin.json('POST', '/api/admin/invites', { role: 'member' })
+  assert.equal((await client().json('GET', `/api/auth/status?token=${token}`)).link, 'invite')
+
+  const bob = client()
+  const me = await bob.json('POST', '/api/auth/register', { email: 'bob@b.co', name: 'Bob', password: 'password1', invite: token })
+  assert.equal(me.role, 'member')
+  assert.equal((await client().json('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })).role, 'admin')
+  assert.equal((await bob.call('GET', '/api/admin/users')).status, 403)
+  // The invite is single use.
+  assert.equal((await client().call('POST', '/api/auth/register', { email: 'eve@b.co', name: 'E', password: 'password1', invite: token })).status, 403)
+
+  assert.equal((await admin.call('PATCH', `/api/admin/users/${me.id}`, { disabled: true })).status, 200)
+  assert.equal((await bob.call('GET', '/api/me')).status, 401)
+  assert.equal((await client().call('POST', '/api/auth/login', { email: 'bob@b.co', password: 'password1' })).status, 403)
+  await admin.call('PATCH', `/api/admin/users/${me.id}`, { disabled: false })
+
+  const reset = await admin.json('POST', `/api/admin/users/${me.id}/reset-link`)
+  assert.equal((await client().call('POST', '/api/auth/reset', { token: reset.token, password: 'newpassword' })).status, 200)
+  assert.equal((await client().call('POST', '/api/auth/reset', { token: reset.token, password: 'again12345' })).status, 403)
+  assert.equal((await client().call('POST', '/api/auth/login', { email: 'bob@b.co', password: 'newpassword' })).status, 200)
+})
+
+test('move, trash and restore, comments', async () => {
+  const a = client()
+  await a.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  const [space] = await a.json('GET', '/api/spaces')
+  const mk = (title: string, parentId: number | null = null) => a.json('POST', '/api/pages', { spaceId: space.id, parentId, title })
+  const p1 = await mk('p1'), p2 = await mk('p2'), c1 = await mk('c1', p1.id)
+
+  // Cannot move a page under its own child.
+  assert.equal((await a.call('POST', `/api/pages/${p1.id}/move`, { parentId: c1.id })).status, 400)
+  await a.call('POST', `/api/pages/${p2.id}/move`, { parentId: p1.id, index: 0 })
+  const kids = (await a.json('GET', `/api/spaces/${space.id}/pages`)).filter((p: any) => p.parentId === p1.id)
+  assert.deepEqual(kids.map((p: any) => p.title), ['p2', 'c1'])
+  const page = await a.json('GET', `/api/pages/${c1.id}`)
+  assert.deepEqual(page.ancestors.map((x: any) => x.title), ['p1'])
+
+  await a.call('DELETE', `/api/pages/${p1.id}`)
+  const trash = await a.json('GET', `/api/spaces/${space.id}/trash`)
+  assert.deepEqual(trash.filter((t: any) => ['p1', 'p2', 'c1'].includes(t.title)).map((t: any) => t.title), ['p1'])
+  await a.call('POST', `/api/pages/${p1.id}/restore`)
+  assert.equal((await a.call('GET', `/api/pages/${c1.id}`)).status, 200)
+
+  const top = await a.json('POST', `/api/pages/${p1.id}/comments`, { body: '확인 부탁드립니다' })
+  await a.json('POST', `/api/pages/${p1.id}/comments`, { body: '확인했습니다', parentId: top.id })
+  await a.call('PATCH', `/api/comments/${top.id}`, { resolved: true })
+  const list = await a.json('GET', `/api/pages/${p1.id}/comments`)
+  assert.equal(list.length, 2)
+  assert.ok(list[0].resolvedAt)
+
+  const bob = client()
+  await bob.call('POST', '/api/auth/login', { email: 'bob@b.co', password: 'newpassword' })
+  assert.equal((await bob.call('DELETE', `/api/comments/${top.id}`)).status, 403)
+})
+
+test('page restrictions hide pages everywhere and inherit to children', async () => {
+  const admin = client()
+  await admin.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  const join = async (email: string) => {
+    const { token } = await admin.json('POST', '/api/admin/invites', { role: 'member' })
+    const u = client()
+    const me = await u.json('POST', '/api/auth/register', { email, name: email, password: 'password1', invite: token })
+    return Object.assign(u, { id: me.id as number })
+  }
+  const bob = Object.assign(client(), { id: 0 })
+  bob.id = (await bob.json('POST', '/api/auth/login', { email: 'bob@b.co', password: 'newpassword' })).id
+  const carol = await join('carol@b.co')
+  const dave = await join('dave@b.co')
+  const [space] = await bob.json('GET', '/api/spaces')
+  const doc = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '인사평가 기밀' }] }] }
+
+  const secret = await bob.json('POST', '/api/pages', { spaceId: space.id, title: '기밀 문서', doc })
+  const child = await bob.json('POST', '/api/pages', { spaceId: space.id, parentId: secret.id, title: '기밀 하위', doc })
+  const form = new FormData()
+  form.append('file', new File(['secret-bytes'], 's.png', { type: 'image/png' }))
+  const file = await (await app.request(`/api/pages/${secret.id}/attachments`, { method: 'POST', headers: { cookie: bob.cookie }, body: form })).json()
+
+  // Bob restricts to Carol (view). Bob keeps edit automatically.
+  assert.equal((await bob.call('PUT', `/api/pages/${secret.id}/restrictions`, { entries: [{ userId: carol.id, level: 'view' }] })).status, 200)
+  const r = await bob.json('GET', `/api/pages/${secret.id}/restrictions`)
+  assert.deepEqual(r.entries.map((e: any) => [e.userId, e.level]).sort(), [[bob.id, 'edit'], [carol.id, 'view']].sort())
+
+  // Dave: not listed. Every route behaves as if the pages don't exist.
+  const status = async (u: any, m: string, path: string, body?: unknown) => (await u.call(m, path, body)).status
+  for (const pid of [secret.id, child.id]) {
+    assert.equal(await status(dave, 'GET', `/api/pages/${pid}`), 404)
+    assert.equal(await status(dave, 'GET', `/api/pages/${pid}/comments`), 404)
+    assert.equal(await status(dave, 'GET', `/api/pages/${pid}/versions`), 404)
+    assert.equal(await status(dave, 'GET', `/api/pages/${pid}/restrictions`), 404)
+    assert.equal(await status(dave, 'PUT', `/api/pages/${pid}`, { title: 'x', doc, version: 1 }), 404)
+    assert.equal(await status(dave, 'DELETE', `/api/pages/${pid}`), 404)
+    assert.equal(await status(dave, 'POST', `/api/pages/${pid}/comments`, { body: 'hi' }), 404)
+    assert.equal(await status(dave, 'POST', '/api/pages', { spaceId: space.id, parentId: pid, title: 'x' }), 404)
+  }
+  assert.equal(await status(dave, 'GET', file.url), 404)
+  const ids = (list: any[]) => list.map((p) => p.id)
+  assert.ok(!ids(await dave.json('GET', `/api/spaces/${space.id}/pages`)).includes(secret.id))
+  assert.ok(!ids(await dave.json('GET', `/api/spaces/${space.id}/pages`)).includes(child.id))
+  assert.equal((await dave.json('GET', `/api/search?q=${encodeURIComponent('인사평가')}`)).total, 0)
+  assert.ok(!ids(await dave.json('GET', '/api/recent')).includes(secret.id))
+
+  // Carol: view only, inherited to the child.
+  assert.equal((await carol.json('GET', `/api/pages/${child.id}`)).access, 'view')
+  assert.equal(await status(carol, 'PUT', `/api/pages/${secret.id}`, { title: 'x', doc, version: 1 }), 403)
+  assert.equal(await status(carol, 'POST', `/api/pages/${secret.id}/comments`, { body: '봤습니다' }), 200)
+  assert.equal(await status(carol, 'GET', file.url), 200)
+  assert.equal((await carol.json('GET', `/api/search?q=${encodeURIComponent('인사평가')}`)).total, 2)
+  const tree = await carol.json('GET', `/api/spaces/${space.id}/pages`)
+  assert.equal(tree.find((p: any) => p.id === secret.id).locked, true)
+
+  // Admin can always reach it, to fix a lockout.
+  assert.equal((await admin.json('GET', `/api/pages/${secret.id}`)).access, 'edit')
+
+  // Dave can't trash a parent that holds a page hidden from him.
+  const box = await dave.json('POST', '/api/pages', { spaceId: space.id, title: 'dave box' })
+  assert.equal(await status(bob, 'POST', `/api/pages/${secret.id}/move`, { parentId: box.id }), 200)
+  assert.equal(await status(dave, 'DELETE', `/api/pages/${box.id}`), 403)
+  assert.equal(await status(dave, 'GET', `/api/pages/${secret.id}`), 404)
+
+  // Clearing restrictions opens it again.
+  await bob.call('PUT', `/api/pages/${secret.id}/restrictions`, { entries: [] })
+  assert.equal((await dave.json('GET', `/api/pages/${child.id}`)).access, 'edit')
+  assert.equal(await status(carol, 'PUT', `/api/pages/${secret.id}/restrictions`, { entries: [{ userId: 999999, level: 'edit' }] }), 400)
+})
+
+test('search snippets start and end on word boundaries', async () => {
+  const { snippet } = await import('./app.ts')
+  const text = 'alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega'
+  const s = snippet(text, 'omicron')
+  assert.match(s, /^…\S/)
+  assert.ok(s.includes('omicron'))
+  // The excerpt begins with a whole word, not the tail of one.
+  assert.ok(text.split(' ').includes(s.slice(1).split(' ')[0]))
+  assert.equal(snippet('short text', 'short'), 'short text')
+})
+
+test('nothing written is lost: wipes, restores and deleted comments stay recoverable', async () => {
+  const a = client()
+  await a.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  const [space] = await a.json('GET', '/api/spaces')
+  const para = (text: string) => ({ type: 'doc', content: [{ type: 'paragraph', content: text ? [{ type: 'text', text }] : [] }] })
+  const long = '중요한 회의 결정 사항입니다. '.repeat(30)
+  const pg = await a.json('POST', '/api/pages', { spaceId: space.id, title: 'safety', doc: para('template') })
+
+  // The template content itself is in history from the start.
+  let versions = await a.json('GET', `/api/pages/${pg.id}/versions`)
+  assert.equal(versions.length, 1)
+
+  // Typing in one session merges into one entry...
+  let v = (await a.json('PUT', `/api/pages/${pg.id}`, { title: 'safety', doc: para(long), version: 1 })).version
+  v = (await a.json('PUT', `/api/pages/${pg.id}`, { title: 'safety', doc: para(long + ' 추가'), version: v })).version
+  versions = await a.json('GET', `/api/pages/${pg.id}/versions`)
+  assert.equal(versions.length, 1)
+
+  // ...but an accidental select-all delete never overwrites it.
+  v = (await a.json('PUT', `/api/pages/${pg.id}`, { title: 'safety', doc: para(''), version: v })).version
+  versions = await a.json('GET', `/api/pages/${pg.id}/versions`)
+  assert.equal(versions.length, 2)
+  const before = await a.json('GET', `/api/versions/${versions[1].id}`)
+  assert.ok(JSON.stringify(before.doc).includes('추가'), 'the content from before the wipe is still in history')
+
+  // A checkpoint save (history restore, draft recovery) always keeps the previous state.
+  v = (await a.json('PUT', `/api/pages/${pg.id}`, { title: 'safety', doc: para('x'), version: v, checkpoint: true })).version
+  assert.equal((await a.json('GET', `/api/pages/${pg.id}/versions`)).length, 3)
+
+  // Deleting a comment hides it with its replies; restoring brings both back.
+  const top = await a.json('POST', `/api/pages/${pg.id}/comments`, { body: 'top' })
+  await a.json('POST', `/api/pages/${pg.id}/comments`, { body: 'reply', parentId: top.id })
+  await a.call('DELETE', `/api/comments/${top.id}`)
+  assert.equal((await a.json('GET', `/api/pages/${pg.id}/comments`)).length, 0)
+  assert.equal((await a.call('POST', `/api/comments/${top.id}/restore`)).status, 200)
+  assert.equal((await a.json('GET', `/api/pages/${pg.id}/comments`)).length, 2)
+})
+
+test('search: all words must match, filters, title-first ranking, paths; locale is per account', async () => {
+  const a = client()
+  const me = await a.json('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  const space = await a.json('POST', '/api/spaces', { name: 'Search', key: 'SRCH' })
+  const para = (t: string) => ({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: t }] }] })
+  const parent = await a.json('POST', '/api/pages', { spaceId: space.id, title: '인프라', doc: para('상위') })
+  const inBody = await a.json('POST', '/api/pages', { spaceId: space.id, parentId: parent.id, title: '회의록', doc: para('쿠버네티스 업그레이드 일정 논의') })
+  const inTitle = await a.json('POST', '/api/pages', { spaceId: space.id, title: '쿠버네티스 업그레이드 계획', doc: para('일정') })
+  await a.json('POST', '/api/pages', { spaceId: space.id, title: '쿠버네티스 모니터링', doc: para('대시보드') })
+
+  const s = (q: string) => a.json('GET', `/api/search?space=${space.id}&${q}`)
+  const both = await s(`q=${encodeURIComponent('쿠버네티스 업그레이드')}`)
+  assert.equal(both.total, 2, 'only pages containing every word')
+  assert.equal(both.results[0].id, inTitle.id, 'title matches rank first')
+  assert.deepEqual(both.results.find((r: any) => r.id === inBody.id).path, ['인프라'])
+  assert.equal((await s(`q=${encodeURIComponent('업그레이드')}&scope=title`)).total, 1)
+  assert.equal((await s(`q=${encodeURIComponent('쿠버네티스')}&limit=1&offset=1`)).results.length, 1)
+  assert.equal((await s(`q=${encodeURIComponent('쿠버네티스')}&author=999999`)).total, 0)
+  assert.equal((await s(`q=${encodeURIComponent('쿠버네티스')}&days=1`)).total, 3)
+
+  assert.equal(me.locale, null)
+  assert.equal((await a.call('PATCH', '/api/me', { locale: 'fr' })).status, 400)
+  await a.call('PATCH', '/api/me', { locale: 'ko' })
+  assert.equal((await a.json('GET', '/api/me')).locale, 'ko')
+  assert.equal((await client().json('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })).locale, 'ko')
+})
+
+test('markdown: every block the editor makes, with URL rewriting', async () => {
+  const { toMarkdown } = await import('./markdown.ts')
+  const t = (text: string, marks?: any[]) => ({ type: 'text', text, marks })
+  const p = (...c: any[]) => ({ type: 'paragraph', content: c })
+  const doc = { type: 'doc', content: [
+    { type: 'heading', attrs: { level: 2 }, content: [t('Plan')] },
+    p(t('bold', [{ type: 'bold' }]), t(' and '), t('docs', [{ type: 'link', attrs: { href: '/api/files/7' } }])),
+    { type: 'bulletList', content: [{ type: 'listItem', content: [p(t('one')), { type: 'bulletList', content: [{ type: 'listItem', content: [p(t('nested'))] }] }] }] },
+    { type: 'taskList', content: [{ type: 'taskItem', attrs: { checked: true }, content: [p(t('done'))] }] },
+    { type: 'callout', attrs: { variant: 'warning' }, content: [p(t('careful'))] },
+    { type: 'codeBlock', attrs: { language: 'yaml' }, content: [t('a: 1')] },
+    { type: 'table', content: [{ type: 'tableRow', content: [{ type: 'tableHeader', content: [p(t('k'))] }, { type: 'tableHeader', content: [p(t('v|x'))] }] }] },
+    { type: 'image', attrs: { src: '/api/files/8', alt: 'pic' } },
+  ] }
+  const md = toMarkdown('Title', doc, (u) => u.replace('/api/files/', 'files/'))
+  for (const want of ['# Title', '## Plan', '**bold**', '[docs](files/7)', '- one\n  - nested', '- [x] done', '> [!WARNING]\n> careful', '```yaml\na: 1\n```', '| k | v\\|x |', '![pic](files/8)'])
+    assert.ok(md.includes(want), `missing ${JSON.stringify(want)} in\n${md}`)
+})
+
+test('admin stats, storage limit blocks uploads but never text, ZIP export respects access', async () => {
+  const { unzipSync, strFromU8 } = await import('fflate')
+  const admin = client()
+  await admin.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  const stats = await admin.json('GET', '/api/admin/stats')
+  assert.ok(stats.storage.dbBytes > 0 && stats.counts.pages > 0 && stats.activity.length === 14)
+  const bob = client()
+  await bob.call('POST', '/api/auth/login', { email: 'bob@b.co', password: 'newpassword' })
+  assert.equal((await bob.call('GET', '/api/admin/stats')).status, 403)
+
+  const space = await admin.json('POST', '/api/spaces', { name: 'Export Test', key: 'EXP' })
+  const para = (text: string) => ({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] })
+  const root = await admin.json('POST', '/api/pages', { spaceId: space.id, title: 'Handbook', doc: para('root') })
+  const child = await admin.json('POST', '/api/pages', { spaceId: space.id, parentId: root.id, title: 'On/boarding', doc: para('child') })
+  const secret = await admin.json('POST', '/api/pages', { spaceId: space.id, parentId: root.id, title: 'Secret', doc: para('hidden') })
+  await admin.call('PUT', `/api/pages/${secret.id}/restrictions`, { entries: [{ userId: 1, level: 'edit' }] })
+  const upload = (cookie: string, pageId: number, bytes: number) => {
+    const form = new FormData()
+    form.append('file', new File([new Uint8Array(bytes).fill(65)], 'a.txt', { type: 'text/plain' }))
+    return app.request(`/api/pages/${pageId}/attachments`, { method: 'POST', headers: { cookie }, body: form })
+  }
+  const att = await (await upload(admin.cookie, child.id, 10)).json()
+  const pg = await admin.json('GET', `/api/pages/${child.id}`)
+  await admin.json('PUT', `/api/pages/${child.id}`, { title: 'On/boarding', version: pg.version, doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'see', marks: [{ type: 'link', attrs: { href: att.url } }] }] }] } })
+
+  // Limit just above current use: uploads are refused, saving text still works.
+  const used = stats.storage.usedBytes
+  await admin.json('PUT', '/api/admin/settings', { storageLimitGb: (used + 1000) / 1024 ** 3 })
+  const refused = await upload(admin.cookie, child.id, 1_000_000)
+  assert.equal(refused.status, 413)
+  assert.equal((await refused.json()).code, 'storage_full')
+  const now = await admin.json('GET', `/api/pages/${child.id}`)
+  assert.equal((await admin.call('PUT', `/api/pages/${child.id}`, { title: 'On/boarding', version: now.version, doc: para('text still saves') })).status, 200)
+  await admin.json('PUT', '/api/admin/settings', { storageLimitGb: null })
+  assert.equal((await upload(admin.cookie, child.id, 1000)).status, 200)
+
+  const files = (buf: ArrayBuffer) => unzipSync(new Uint8Array(buf))
+  const asAdmin = files(await (await admin.call('GET', `/api/spaces/${space.id}/export`)).arrayBuffer())
+  const names = Object.keys(asAdmin)
+  assert.ok(names.includes('Export Test/Handbook.md'))
+  assert.ok(names.includes('Export Test/Handbook/On_boarding.md'), names.join(', '))
+  assert.ok(names.includes('Export Test/Handbook/Secret.md'))
+  assert.ok(names.some((n) => n.startsWith('Export Test/_attachments/')))
+  const manifest = JSON.parse(strFromU8(asAdmin['Export Test/pagehouse.json']))
+  assert.equal(manifest.format, 'pagehouse-export')
+  assert.equal(manifest.pages.length, 3)
+
+  // Bob can't see the restricted page, so it is not in his export.
+  const asBob = files(await (await bob.call('GET', `/api/pages/${root.id}/export`)).arrayBuffer())
+  // Same layout as a space export: <archive folder>/<page>.md, subpages in <archive folder>/<page>/.
+  assert.ok(Object.keys(asBob).includes('Handbook/Handbook/On_boarding.md'), Object.keys(asBob).join(', '))
+  assert.ok(!Object.keys(asBob).some((n) => n.includes('Secret')))
+  assert.equal((await bob.call('GET', `/api/pages/${secret.id}/export`)).status, 404)
+})
+
+test('security: sign-in throttling, cross-site writes refused, inert attachments', async () => {
+  // Wrong passwords: the 11th attempt in a row is refused even with the right password.
+  const ip = { 'x-forwarded-for': '203.0.113.9', 'content-type': 'application/json' }
+  const login = (password: string) => app.request('/api/auth/login', { method: 'POST', headers: ip, body: JSON.stringify({ email: 'bob@b.co', password }) })
+  for (let i = 0; i < 10; i++) assert.equal((await login('wrong-password')).status, 401)
+  const blocked = await login('newpassword')
+  assert.equal(blocked.status, 429)
+  assert.equal((await blocked.json()).code, 'too_many_attempts')
+  // Another address is not affected.
+  const other = await app.request('/api/auth/login', { method: 'POST', headers: { ...ip, 'x-forwarded-for': '198.51.100.7' }, body: JSON.stringify({ email: 'bob@b.co', password: 'newpassword' }) })
+  assert.equal(other.status, 200)
+
+  const a = client()
+  await a.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  const [space] = await a.json('GET', '/api/spaces')
+  const evil = await app.request('/api/pages', {
+    method: 'POST',
+    headers: { cookie: a.cookie, 'content-type': 'application/json', origin: 'https://evil.example', host: 'wiki.local' },
+    body: JSON.stringify({ spaceId: space.id, title: 'x' }),
+  })
+  assert.equal(evil.status, 403)
+  const same = await app.request('http://wiki.local/api/pages', {
+    method: 'POST',
+    headers: { cookie: a.cookie, 'content-type': 'application/json', origin: 'http://wiki.local', host: 'wiki.local' },
+    body: JSON.stringify({ spaceId: space.id, title: 'ok' }),
+  })
+  assert.equal(same.status, 200)
+
+  const form = new FormData()
+  form.append('file', new File(['<svg onload=alert(1)>'], 'x.svg', { type: 'image/svg+xml' }))
+  const up = await (await app.request(`/api/pages/${(await same.json()).id}/attachments`, { method: 'POST', headers: { cookie: a.cookie }, body: form })).json()
+  const file = await a.call('GET', up.url)
+  assert.match(file.headers.get('content-security-policy')!, /sandbox/)
+  assert.equal(file.headers.get('content-type'), 'application/octet-stream')
+})
+
+test('spaces: private and view-only spaces, members, and the limits they put on pages', async () => {
+  const admin = client()
+  await admin.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  const join = async (email: string) => {
+    const { token } = await admin.json('POST', '/api/admin/invites', { role: 'member' })
+    const u = client()
+    const me = await u.json('POST', '/api/auth/register', { email, name: email.split('@')[0], password: 'password1', invite: token })
+    return Object.assign(u, { id: me.id as number })
+  }
+  const owner = await join('owner@sp.co')
+  const insider = await join('insider@sp.co')
+  const outsider = await join('outsider@sp.co')
+
+  // A member creates a private space; they manage it automatically.
+  const priv = await owner.json('POST', '/api/spaces', { name: 'HR', key: 'HR', defaultAccess: 'none' })
+  assert.equal(priv.role, 'admin')
+  const doc = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '연봉 테이블' }] }] }
+  const pg = await owner.json('POST', '/api/pages', { spaceId: priv.id, title: 'Salaries', doc })
+  const ids = (l: any[]) => l.map((x) => x.id)
+  assert.ok(!ids(await outsider.json('GET', '/api/spaces')).includes(priv.id), 'private space not listed')
+  assert.equal((await outsider.call('GET', `/api/pages/${pg.id}`)).status, 404)
+  assert.equal((await outsider.json('GET', `/api/search?q=${encodeURIComponent('연봉')}`)).total, 0)
+  assert.equal((await outsider.call('POST', '/api/pages', { spaceId: priv.id, title: 'x' })).status, 404)
+  assert.equal((await outsider.call('GET', `/api/spaces/${priv.id}/settings`)).status, 404)
+  assert.equal((await outsider.call('PUT', `/api/spaces/${priv.id}/settings`, { name: 'x', defaultAccess: 'edit', members: [] })).status, 403)
+
+  // Add the insider as a viewer: they see it, but can't edit or create.
+  assert.equal((await owner.call('PUT', `/api/spaces/${priv.id}/settings`, { name: 'HR', defaultAccess: 'none', members: [{ userId: insider.id, role: 'view' }] })).status, 200)
+  const settings = await owner.json('GET', `/api/spaces/${priv.id}/settings`)
+  assert.deepEqual(settings.members.map((m: any) => m.role).sort(), ['admin', 'view'], 'owner kept as admin')
+  assert.equal((await insider.json('GET', `/api/pages/${pg.id}`)).access, 'view')
+  assert.equal((await insider.call('PUT', `/api/pages/${pg.id}`, { title: 'x', doc, version: 1 })).status, 403)
+  assert.equal((await insider.call('POST', '/api/pages', { spaceId: priv.id, title: 'x' })).status, 403)
+
+  // An open space everyone can read but only members edit.
+  const docs = await owner.json('POST', '/api/spaces', { name: 'Policies', key: 'POL', defaultAccess: 'view' })
+  const policy = await owner.json('POST', '/api/pages', { spaceId: docs.id, title: 'Leave policy' })
+  assert.equal((await outsider.json('GET', `/api/pages/${policy.id}`)).access, 'view')
+  assert.equal((await outsider.call('POST', '/api/pages', { spaceId: docs.id, title: 'x' })).status, 403)
+  // Site admins can always reach and manage every space.
+  assert.equal((await admin.json('GET', `/api/pages/${pg.id}`)).access, 'edit')
+  assert.equal((await admin.json('GET', `/api/spaces/${priv.id}/settings`)).canManage, true)
+})
+
+test('mentions and replies notify people who can see the page; home lists viewed, created and for-you', async () => {
+  const admin = client()
+  await admin.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  const insider = client(); const me = await insider.json('POST', '/api/auth/login', { email: 'insider@sp.co', password: 'password1' })
+  const outsider = client(); const out = await outsider.json('POST', '/api/auth/login', { email: 'outsider@sp.co', password: 'password1' })
+  const owner = client(); await owner.call('POST', '/api/auth/login', { email: 'owner@sp.co', password: 'password1' })
+  const [general] = await admin.json('GET', '/api/spaces')
+  const mention = (id: number, label: string) => ({ type: 'mention', attrs: { id: String(id), label } })
+  const pg = await admin.json('POST', '/api/pages', { spaceId: general.id, title: 'Kickoff' })
+  await admin.json('PUT', `/api/pages/${pg.id}`, { title: 'Kickoff', version: 1, doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'cc ' }, mention(me.id, 'insider')] }] } })
+
+  let n = await insider.json('GET', '/api/notifications')
+  assert.equal(n.unread, 1)
+  assert.equal(n.items[0].kind, 'mention')
+  assert.equal(n.items[0].page, 'Kickoff')
+  // Saving again doesn't notify twice for the same mention.
+  const cur = await admin.json('GET', `/api/pages/${pg.id}`)
+  await admin.json('PUT', `/api/pages/${pg.id}`, { title: 'Kickoff!', version: cur.version, doc: cur.doc })
+  assert.equal((await insider.json('GET', '/api/notifications')).unread, 1)
+
+  // Comment mention + reply notifications; the page creator hears about comments.
+  const top = await insider.json('POST', `/api/pages/${pg.id}/comments`, { body: `Looks good <@${out.id}>` })
+  assert.equal((await outsider.json('GET', '/api/notifications')).items[0].kind, 'comment_mention')
+  assert.equal((await admin.json('GET', '/api/notifications')).items[0].kind, 'comment')
+  await admin.json('POST', `/api/pages/${pg.id}/comments`, { body: 'thanks', parentId: top.id })
+  assert.equal((await insider.json('GET', '/api/notifications')).items[0].kind, 'reply')
+
+  // Mentioning someone on a page they can't open sends nothing.
+  const hr = (await owner.json('GET', '/api/spaces')).find((s: any) => s.key === 'HR')
+  const secret = await owner.json('POST', '/api/pages', { spaceId: hr.id, title: 'Secret' })
+  await owner.json('PUT', `/api/pages/${secret.id}`, { title: 'Secret', version: 1, doc: { type: 'doc', content: [{ type: 'paragraph', content: [mention(out.id, 'outsider')] }] } })
+  assert.ok(!(await outsider.json('GET', '/api/notifications')).items.some((i: any) => i.pageId === secret.id))
+
+  await insider.call('POST', '/api/notifications/read', {})
+  assert.equal((await insider.json('GET', '/api/notifications/count')).unread, 0)
+
+  await insider.call('GET', `/api/pages/${pg.id}`)
+  const home = await insider.json('GET', '/api/home')
+  assert.equal(home.viewed[0].id, pg.id)
+  assert.ok(home.created.some((p: any) => p.id === pg.id))
+  assert.ok(home.forYou.some((i: any) => i.kind === 'mention'))
+  assert.ok(!(await outsider.json('GET', '/api/home')).created.some((p: any) => p.id === secret.id), 'private pages not in others’ home')
+})

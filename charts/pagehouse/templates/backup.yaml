@@ -1,0 +1,84 @@
+{{- if .Values.backup.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "pagehouse.fullname" . }}-backups
+  labels: {{- include "pagehouse.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.backup.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.backup.size }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "pagehouse.fullname" . }}-backup
+  labels: {{- include "pagehouse.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            {{- include "pagehouse.selector" . | nindent 12 }}
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsUser: 70
+            runAsGroup: 70
+            fsGroup: 70
+          # Reads the attachment volume, so it must land on the same node as the app (ReadWriteOnce).
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels:
+                      {{- include "pagehouse.selector" . | nindent 22 }}
+                      app.kubernetes.io/component: app
+          containers:
+            - name: backup
+              image: {{ .Values.postgresql.image }}
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.externalDatabase.existingSecret | default (include "pagehouse.secret" .) }}
+                      key: url
+                - { name: KEEP, value: {{ .Values.backup.keep | quote }} }
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -e
+                  name="pagehouse-auto-$(date +%Y%m%d-%H%M%S)"
+                  work="/tmp/$name"; mkdir -p "$work"
+                  pg_dump -Fc -f "$work/db.dump" "$DATABASE_URL"
+                  tar -C /data -cf "$work/files.tar" files 2>/dev/null || tar -cf "$work/files.tar" -T /dev/null
+                  tar -C "$work" -czf "/backups/$name.tar.gz.part" db.dump files.tar
+                  mv "/backups/$name.tar.gz.part" "/backups/$name.tar.gz"
+                  ls -1t /backups/pagehouse-auto-*.tar.gz | tail -n +$((KEEP + 1)) | xargs -r rm -f
+                  echo "backup written: $name.tar.gz"
+              volumeMounts:
+                - { name: files, mountPath: /data, readOnly: true }
+                - { name: backups, mountPath: /backups }
+          volumes:
+            - name: files
+              persistentVolumeClaim:
+                claimName: {{ include "pagehouse.fullname" . }}-files
+                readOnly: true
+            - name: backups
+              persistentVolumeClaim:
+                claimName: {{ include "pagehouse.fullname" . }}-backups
+{{- end }}

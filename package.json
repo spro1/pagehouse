@@ -1,0 +1,53 @@
+{
+  "name": "pagehouse",
+  "version": "0.1.0-beta.1",
+  "description": "Self-hosted team wiki for small teams",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "tsx watch server/index.ts & vite",
+    "build": "vite build",
+    "start": "node server/index.ts",
+    "test": "tsx --test server/*.test.ts web/*.test.ts",
+    "typecheck": "tsc",
+    "release": "sh scripts/make-release.sh"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.11",
+    "fflate": "^0.8.3",
+    "hono": "^4.13.21",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@tiptap/extension-code-block-lowlight": "^3.35.0",
+    "@tiptap/extension-highlight": "^3.35.0",
+    "@tiptap/extension-image": "^3.35.0",
+    "@tiptap/extension-list": "^3.35.0",
+    "@tiptap/extension-mention": "^3.35.0",
+    "@tiptap/extension-table": "^3.35.0",
+    "@tiptap/extension-text-align": "^3.35.0",
+    "@tiptap/extension-typography": "^3.35.0",
+    "@tiptap/extensions": "^3.35.0",
+    "@tiptap/markdown": "^3.35.0",
+    "@tiptap/pm": "^3.35.0",
+    "@tiptap/react": "^3.35.0",
+    "@tiptap/starter-kit": "^3.35.0",
+    "@tiptap/suggestion": "^3.35.0",
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "highlight.js": "^11.12.0",
+    "lowlight": "^3.3.0",
+    "playwright-core": "^1.65.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
+  }
+}

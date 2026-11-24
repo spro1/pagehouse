@@ -1,0 +1,67 @@
+image:
+  # Release packages set this to the published image. Override for a private registry mirror.
+  repository: ghcr.io/spro1/pagehouse
+  tag: ""            # defaults to the chart's appVersion
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# 1 lets anyone who can reach the site create an account. Keep false and use invite links.
+allowSignup: false
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  host: wiki.example.com
+  annotations: {}
+    # Uploads are up to 50 MB:
+    # nginx.ingress.kubernetes.io/proxy-body-size: 50m
+  tls: []
+    # - secretName: wiki-tls
+    #   hosts: [wiki.example.com]
+
+resources:
+  requests: { cpu: 100m, memory: 192Mi }
+  limits: { memory: 512Mi }
+
+# Attachments. The app runs as a single replica because this volume is ReadWriteOnce.
+persistence:
+  size: 10Gi
+  storageClass: ""
+  accessMode: ReadWriteOnce
+
+# Bundled PostgreSQL. Set enabled=false and fill externalDatabase to use your own.
+postgresql:
+  enabled: true
+  # Patched official postgres:17-alpine without gosu; runs as uid 70 (see docker/postgres/Dockerfile).
+  image: ghcr.io/spro1/pagehouse-postgres:17
+  size: 10Gi
+  storageClass: ""
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+
+externalDatabase:
+  # postgres://user:password@host:5432/pagehouse  (the user needs CREATE EXTENSION for pg_trgm, or create it beforehand)
+  url: ""
+  # Or reference a Secret holding the URL under the key `url`.
+  existingSecret: ""
+
+# Scheduled backups of the database and attachments to their own volume (same format as scripts/backup.sh).
+backup:
+  enabled: true
+  schedule: "0 3 * * *"
+  keep: 14
+  size: 20Gi
+  storageClass: ""
+
+podSecurityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+nodeSelector: {}
+tolerations: []
+affinity: {}

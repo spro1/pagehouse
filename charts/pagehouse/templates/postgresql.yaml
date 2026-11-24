@@ -1,0 +1,73 @@
+{{- if .Values.postgresql.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "pagehouse.dbHost" . }}
+  labels: {{- include "pagehouse.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  ports:
+    - name: postgres
+      port: 5432
+  selector:
+    {{- include "pagehouse.selector" . | nindent 4 }}
+    app.kubernetes.io/component: postgresql
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "pagehouse.dbHost" . }}
+  labels: {{- include "pagehouse.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "pagehouse.dbHost" . }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "pagehouse.selector" . | nindent 6 }}
+      app.kubernetes.io/component: postgresql
+  template:
+    metadata:
+      labels:
+        {{- include "pagehouse.selector" . | nindent 8 }}
+        app.kubernetes.io/component: postgresql
+    spec:
+      securityContext:
+        runAsUser: 70
+        runAsGroup: 70
+        runAsNonRoot: true
+        fsGroup: 70
+      containers:
+        - name: postgres
+          image: {{ .Values.postgresql.image }}
+          env:
+            - { name: POSTGRES_USER, value: pagehouse }
+            - { name: POSTGRES_DB, value: pagehouse }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ include "pagehouse.secret" . }}, key: password } }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          ports:
+            - { name: postgres, containerPort: 5432 }
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "pagehouse", "-d", "pagehouse"] }
+            periodSeconds: 5
+          livenessProbe:
+            exec: { command: ["pg_isready", "-U", "pagehouse", "-d", "pagehouse"] }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources: {{- toYaml .Values.postgresql.resources | nindent 12 }}
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+      terminationGracePeriodSeconds: 60
+  # StatefulSet volumes are kept by `helm uninstall`; delete the PVC yourself to really erase the data.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with .Values.postgresql.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.postgresql.size }}
+{{- end }}
