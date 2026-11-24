@@ -9,8 +9,8 @@ const str = { type: 'string' } as const
 const int = { type: 'integer' } as const
 const TOOLS = [
   { name: 'list_spaces', description: 'List the spaces you can open.', inputSchema: { type: 'object', properties: {} } },
-  { name: 'search', description: 'Full-text search over page titles, bodies, comments and attachment names. Every word must match.',
-    inputSchema: { type: 'object', properties: { query: str, spaceId: int, limit: { ...int, description: '1-50, default 10' } }, required: ['query'] } },
+  { name: 'search', description: 'Full-text search over page titles, bodies, comments and attachment names. Every word must match. With only a label, lists the pages that have it.',
+    inputSchema: { type: 'object', properties: { query: str, label: str, spaceId: int, limit: { ...int, description: '1-50, default 10' } } } },
   { name: 'list_pages', description: 'The page tree of a space, one "id: title" per line, indented by depth.',
     inputSchema: { type: 'object', properties: { spaceId: int }, required: ['spaceId'] } },
   { name: 'get_page', description: 'A page as Markdown, with its id, space, breadcrumb and last update.',
@@ -87,6 +87,7 @@ async function runTool(app: Hono<any>, c: Context, name: string, a: Record<strin
     case 'search': {
       const q = new URLSearchParams({ q: String(a.query ?? ''), limit: String(Math.min(Math.max(Number(a.limit) || 10, 1), 50)) })
       if (Number.isInteger(a.spaceId)) q.set('space', String(a.spaceId))
+      if (typeof a.label === 'string') q.set('label', a.label)
       const r = await call('GET', `/api/search?${q}`)
       if (!r.results.length) return 'No pages found.'
       return `${r.total} result(s):\n` + r.results.map((x: any) => `- ${x.id}: ${[x.space, ...x.path, x.title].join(' / ')}\n  ${x.snippet}`).join('\n')
@@ -107,7 +108,7 @@ async function runTool(app: Hono<any>, c: Context, name: string, a: Record<strin
       const head = [
         `id: ${p.id}`, `space: ${p.space.name} (id ${p.space.id})`,
         `path: ${[...p.ancestors.map((x: any) => x.title), p.title].join(' / ')}`,
-        `updated: ${p.updatedAt} by ${p.updatedBy}`, `access: ${p.access}`, ...(base ? [`url: ${base}/#/p/${p.id}`] : []),
+        `updated: ${p.updatedAt} by ${p.updatedBy}`, `access: ${p.access}`, ...(p.labels.length ? [`labels: ${p.labels.join(', ')}`] : []), ...(base ? [`url: ${base}/#/p/${p.id}`] : []),
       ]
       return `${head.join('\n')}\n\n${toMarkdown(p.title, p.doc)}`
     }

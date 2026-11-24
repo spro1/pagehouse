@@ -1,3 +1,4 @@
+import { Labels } from './Labels.tsx'
 import { useEffect, useRef, useState } from 'react'
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react'
 import { BubbleMenu } from '@tiptap/react/menus'
@@ -39,7 +40,7 @@ function clearDraft(id: number) {
 type Page = {
   id: number; title: string; doc: any; version: number; updatedAt: string; updatedBy: string
   createdAt: string; createdBy: string; space: { id: number; name: string }; ancestors: { id: number; title: string }[]
-  access: 'edit' | 'view'; restricted: boolean; watching: boolean
+  access: 'edit' | 'view'; restricted: boolean; watching: boolean; labels: string[]
 }
 
 export function PageView({ id, me, onTitle, onDeleted }: { id: number; me: User; onTitle: (t: string) => void; onDeleted: () => void }) {
@@ -402,6 +403,7 @@ function LoadedPage({ page, live, me, onTitle, onDeleted }: { page: Page; live: 
             <span className="dot" />
             <span title={fullDate(meta.updatedAt)}>{t('page.updated', { name: meta.updatedBy, when: ago(meta.updatedAt) })}</span>
           </div>
+          <Labels pageId={page.id} initial={page.labels} canEdit={canEdit} />
           {draft && (
             <div className="draft-banner" role="status">
               <Icon name="history" />

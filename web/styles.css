@@ -757,3 +757,11 @@ pre.diff { margin: 0; max-height: 60vh; overflow: auto; font-size: 13px; line-he
 .link-card img { width: 160px; max-width: 35%; object-fit: cover; flex: none; }
 .lc-unwrap { position: absolute; top: 6px; right: 6px; opacity: 0; }
 .link-card:hover .lc-unwrap { opacity: 1; }
+
+/* Page labels */
+.labels { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0 0; }
+.label-chip { display: inline-flex; align-items: center; height: 24px; padding: 0 4px 0 8px; border-radius: 12px; background: var(--accent-soft); font-size: 12.5px; }
+.label-chip a { color: var(--accent); text-decoration: none; padding-right: 4px; }
+.label-chip button { width: 18px; height: 18px; min-height: 0; padding: 0; color: var(--muted); }
+.label-new { height: 24px; min-height: 0; padding: 0 8px; font-size: 12.5px; color: var(--muted); }
+.label-add input { height: 24px; width: 140px; padding: 0 8px; font-size: 12.5px; border-radius: 12px; }

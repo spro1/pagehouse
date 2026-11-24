@@ -6,8 +6,8 @@ import { Icon } from './icons.tsx'
 export type Hit = {
   id: number; title: string; snippet: string; updatedAt: string; updatedBy: string; space: string; spaceId: number; path: string[]
 }
-type Filters = { q: string; space: string; author: string; days: string; scope: string; sort: string }
-const KEYS: (keyof Filters)[] = ['q', 'space', 'author', 'days', 'scope', 'sort']
+type Filters = { q: string; space: string; author: string; days: string; scope: string; sort: string; label: string }
+const KEYS: (keyof Filters)[] = ['q', 'space', 'author', 'days', 'scope', 'sort', 'label']
 const PAGE = 20
 
 export function searchUrl(q: string) {
@@ -31,11 +31,13 @@ export function SearchPage({ initial }: { initial: URLSearchParams }) {
   const [busy, setBusy] = useState(false)
   const [spaces, setSpaces] = useState<Space[]>([])
   const [users, setUsers] = useState<{ id: number; name: string }[]>([])
+  const [labels, setLabels] = useState<{ label: string; pages: number }[]>([])
   const box = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     api('/api/spaces').then(setSpaces)
     api('/api/users').then(setUsers)
+    api('/api/labels').then(setLabels)
     box.current?.focus()
   }, [])
 
@@ -51,7 +53,7 @@ export function SearchPage({ initial }: { initial: URLSearchParams }) {
     const qs = new URLSearchParams()
     for (const k of KEYS) if (f[k]) qs.set(k, f[k])
     history.replaceState(null, '', `#/search?${qs}`)
-    if (!f.q.trim()) return setData(null)
+    if (!f.q.trim() && !f.label) return setData(null)
     let live = true
     setBusy(true)
     api(`/api/search?${query({ limit: PAGE })}`)
@@ -78,7 +80,7 @@ export function SearchPage({ initial }: { initial: URLSearchParams }) {
       setBusy(false)
     }
   }
-  const filtered = !!(f.space || f.author || f.days || f.scope)
+  const filtered = !!(f.space || f.author || f.days || f.scope || f.label)
 
   return (
     <div className="screen search-screen">
@@ -108,6 +110,13 @@ export function SearchPage({ initial }: { initial: URLSearchParams }) {
           <option value="">{t('search.scopeAll')}</option>
           <option value="title">{t('search.titleOnly')}</option>
         </select>
+        {(labels.length > 0 || f.label) && (
+          <select value={f.label} onChange={set('label')} aria-label={t('label.filter')}>
+            <option value="">{t('label.any')}</option>
+            {f.label && !labels.some((l) => l.label === f.label) && <option value={f.label}>#{f.label}</option>}
+            {labels.map((l) => <option key={l.label} value={l.label}>#{l.label} ({l.pages})</option>)}
+          </select>
+        )}
         <span className="grow" />
         <select value={f.sort} onChange={set('sort')} aria-label={t('search.sort')}>
           <option value="">{t('search.sortRelevance')}</option>
@@ -115,14 +124,14 @@ export function SearchPage({ initial }: { initial: URLSearchParams }) {
         </select>
       </div>
 
-      {!f.q.trim() ? (
+      {!f.q.trim() && !f.label ? (
         <div className="empty-box"><Icon name="search" size={28} /><p>{t('search.hint')}</p></div>
       ) : data && (
         <>
           <div className="search-count">
             {t('search.count', { n: data.total })}
             {filtered && (
-              <button className="link small" onClick={() => setF((x) => ({ ...x, space: '', author: '', days: '', scope: '' }))}>{t('search.clear')}</button>
+              <button className="link small" onClick={() => setF((x) => ({ ...x, space: '', author: '', days: '', scope: '', label: '' }))}>{t('search.clear')}</button>
             )}
           </div>
           {data.results.length === 0 ? (

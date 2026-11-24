@@ -783,6 +783,30 @@ test('audit log: sign-ins (failed too), permission changes and deletions, admins
   assert.equal((await bob.call('GET', '/api/admin/audit')).status, 403)
 })
 
+test('labels: normalized, searchable on their own, hidden pages stay hidden, copied with the page', async () => {
+  const x = client()
+  await x.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  const [space] = await x.json('GET', '/api/spaces')
+  const page = await x.json('POST', '/api/pages', { spaceId: space.id, title: 'Weekly sync' })
+  const r = await x.json('PUT', `/api/pages/${page.id}/labels`, { labels: ['Meeting Notes', '#meeting-notes', '회의록', '  ', 'a/b'] })
+  assert.deepEqual(r.labels, ['ab', 'meeting-notes', '회의록'])
+  assert.deepEqual((await x.json('GET', `/api/pages/${page.id}`)).labels, ['ab', 'meeting-notes', '회의록'])
+  const found = await x.json('GET', '/api/search?label=meeting-notes')
+  assert.deepEqual(found.results.map((h: any) => h.id), [page.id])
+  assert.equal((await x.json('GET', '/api/search?label=meeting-notes&q=nomatchword')).total, 0)
+  assert.ok((await x.json('GET', '/api/labels?q=meet')).some((l: any) => l.label === 'meeting-notes' && l.pages === 1))
+  const copy = await x.json('POST', `/api/pages/${page.id}/copy`, {})
+  assert.deepEqual((await x.json('GET', `/api/pages/${copy.id}`)).labels, ['ab', 'meeting-notes', '회의록'])
+  // Restricted away from Bob: neither the page nor its label shows up for him.
+  await x.call('DELETE', `/api/pages/${copy.id}`)
+  await x.call('PUT', `/api/pages/${page.id}/restrictions`, { entries: [{ userId: (await x.json('GET', '/api/me')).id, level: 'edit' }] })
+  const bob = client()
+  await bob.call('POST', '/api/auth/login', { email: 'bob@b.co', password: 'newpassword' })
+  assert.equal((await bob.json('GET', '/api/search?label=meeting-notes')).total, 0)
+  assert.ok(!(await bob.json('GET', '/api/labels')).some((l: any) => l.label === 'meeting-notes'))
+  assert.equal((await bob.call('PUT', `/api/pages/${page.id}/labels`, { labels: ['x'] })).status, 404)
+})
+
 test('templates: saved from a page, per space or global, removable', async () => {
   const admin = client()
   await admin.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })

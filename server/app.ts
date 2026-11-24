@@ -24,6 +24,8 @@ const LOCALES = ['en', 'ko']
 type Env = { Variables: { user: User } }
 const SESSION_DAYS = 30
 const INLINE_MIME = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
+export const normLabel = (s: unknown) =>
+  String(s ?? '').trim().toLowerCase().replace(/^#/, '').replace(/[\s_]+/g, '-').replace(/[^\p{L}\p{N}-]/gu, '').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 50)
 const EMPTY_DOC = { type: 'doc', content: [{ type: 'paragraph' }] }
 
 // API errors carry a stable `code` (clients translate it) and an English `error` for humans and agents.
@@ -559,6 +561,7 @@ export function createApp(db: Db, dataDir: string) {
       if (i === 0) await db.query('UPDATE page_versions SET doc = $2 WHERE page_id = $1', [to, doc])
       else await db.query('INSERT INTO page_versions (page_id, version, title, doc, author_id) VALUES ($1, 1, $2, $3, $4)', [to, t, doc, uid])
       await db.query('INSERT INTO page_restrictions (page_id, user_id, group_id, level) SELECT $1, user_id, group_id, level FROM page_restrictions WHERE page_id = $2', [to, r.id])
+      await db.query('INSERT INTO page_labels (page_id, label) SELECT $1, label FROM page_labels WHERE page_id = $2', [to, r.id])
     }
     return c.json({ ...page, count: newId.size })
   })
@@ -589,6 +592,7 @@ export function createApp(db: Db, dataDir: string) {
       createdAt: p.created_at, createdBy: p.created_by_name,
       space: { id: p.space_id, name: p.space_name, key: p.space_key }, ancestors,
       access: a,
+      labels: (await all('SELECT label FROM page_labels WHERE page_id = $1 ORDER BY label', [p.id])).map((r) => r.label),
       watching: !!(await one('SELECT 1 FROM page_watches WHERE page_id = $1 AND user_id = $2', [p.id, c.get('user').id])),
       restricted: !!(await one(
         `WITH RECURSIVE path(id, parent_id) AS (SELECT id, parent_id FROM pages WHERE id = $1
@@ -597,6 +601,31 @@ export function createApp(db: Db, dataDir: string) {
         [p.id],
       )),
     })
+  })
+
+  // Labels: lowercase words joined by dashes, so "Meeting Notes" and "meeting-notes" are one label.
+  app.put('/api/pages/:id/labels', async (c) => {
+    const denied = await guard(c, id(c), 'edit')
+    if (denied) return denied
+    const b = await c.req.json().catch(() => ({}))
+    if (!Array.isArray(b.labels)) return fail(c, 400, 'bad_request')
+    const labels = [...new Set(b.labels.map(normLabel).filter(Boolean))].slice(0, 30)
+    await tx(db, async (q) => {
+      await q.query('DELETE FROM page_labels WHERE page_id = $1', [id(c)])
+      if (labels.length) await q.query('INSERT INTO page_labels (page_id, label) SELECT $1, unnest($2::text[])', [id(c), labels])
+    })
+    return c.json({ labels: labels.sort() })
+  })
+
+  // Labels in use on pages the caller can see, most used first; `q` narrows by prefix for suggestions.
+  app.get('/api/labels', async (c) => {
+    const q = normLabel(c.req.query('q') ?? '')
+    return c.json(await all(
+      `SELECT l.label, count(*)::int AS pages FROM page_labels l JOIN pages p ON p.id = l.page_id
+       WHERE p.deleted_at IS NULL AND ${visible('p', 1, 2)} AND l.label LIKE $3
+       GROUP BY l.label ORDER BY count(*) DESC, l.label LIMIT 100`,
+      [...who(c), `${q.replace(/[\\%_]/g, '\\$&')}%`],
+    ))
   })
 
   app.put('/api/pages/:id/watch', async (c) => {
@@ -1007,7 +1036,8 @@ export function createApp(db: Db, dataDir: string) {
     const qp = (k: string) => c.req.query(k)?.trim() ?? ''
     const q = qp('q').slice(0, 200)
     const terms = [...new Set(q.split(/\s+/).filter(Boolean))].slice(0, 8)
-    if (!terms.length) return c.json({ total: 0, results: [] })
+    const label = normLabel(qp('label'))
+    if (!terms.length && !label) return c.json({ total: 0, results: [] })
     const limit = Math.min(Math.max(Number(qp('limit')) || 20, 1), 50)
     const offset = Math.min(Math.max(Number(qp('offset')) || 0, 0), 10_000)
     const titleOnly = qp('scope') === 'title'
@@ -1024,15 +1054,14 @@ export function createApp(db: Db, dataDir: string) {
     if (/^\d+$/.test(qp('space'))) where.push(`p.space_id = ${add(Number(qp('space')))}`)
     if (/^\d+$/.test(qp('author'))) where.push(`p.updated_by = ${add(Number(qp('author')))}`)
     if (/^\d+$/.test(qp('days'))) where.push(`p.updated_at > now() - make_interval(days => ${add(Number(qp('days')))})`)
+    if (label) where.push(`EXISTS (SELECT 1 FROM page_labels l WHERE l.page_id = p.id AND l.label = ${add(label)})`)
     const filter = where.join(' AND ')
     const filterParams = [...params]
     // Relevance: the whole query in the title, then every word in the title, then title similarity, then recency.
-    const whole = add(`%${q.replace(/[\\%_]/g, '\\$&')}%`)
-    const titleTerms = terms.map((term) => `p.title ILIKE ${add(`%${term.replace(/[\\%_]/g, '\\$&')}%`)}`).join(' AND ')
-    const qRaw = add(q)
-    const order = qp('sort') === 'recent'
+    // A label alone lists its pages, newest first.
+    const order = qp('sort') === 'recent' || !terms.length
       ? 'p.updated_at DESC'
-      : `(p.title ILIKE ${whole}) DESC, (${titleTerms}) DESC, similarity(p.title, ${qRaw}) DESC, p.updated_at DESC`
+      : `(p.title ILIKE ${add(`%${q.replace(/[\\%_]/g, '\\$&')}%`)}) DESC, (${terms.map((term) => `p.title ILIKE ${add(`%${term.replace(/[\\%_]/g, '\\$&')}%`)}`).join(' AND ')}) DESC, similarity(p.title, ${add(q)}) DESC, p.updated_at DESC`
     const [{ total }] = await all(`SELECT count(*)::int AS total FROM pages p WHERE ${filter}`, filterParams)
     const rows = await all(
       `SELECT p.id, p.title, p.text, p.updated_at AS "updatedAt", u.name AS "updatedBy", s.name AS space, p.space_id AS "spaceId", p.parent_id
@@ -1055,7 +1084,7 @@ export function createApp(db: Db, dataDir: string) {
     return c.json({
       total,
       results: rows.map((r) => ({
-        id: r.id, title: r.title, snippet: snippet(r.text, terms.map(koreanStem).find((term) => r.text.toLowerCase().includes(term.toLowerCase())) ?? koreanStem(terms[0])),
+        id: r.id, title: r.title, snippet: terms.length ? snippet(r.text, terms.map(koreanStem).find((term) => r.text.toLowerCase().includes(term.toLowerCase())) ?? koreanStem(terms[0])) : r.text.slice(0, 160),
         updatedAt: r.updatedAt, updatedBy: r.updatedBy, space: r.space, spaceId: r.spaceId, path: paths.get(r.id) ?? [],
       })),
     })
