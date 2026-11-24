@@ -512,15 +512,53 @@ export function createApp(db: Db, dataDir: string) {
     if (!src) return fail(c, 404, 'page_not_found')
     const b = await c.req.json().catch(() => ({}))
     const title = str(b.title, 500) ?? `${src.title} (copy)`
+    const [admin, uid] = who(c)
+    // With children: every live descendant the caller can see, parents first. Hidden ones (and so their subtrees) stay out.
+    const rows: any[] = b.children
+      ? (await db.query(
+          `WITH RECURSIVE t AS (SELECT id, 0 AS depth FROM pages WHERE id = $1
+             UNION ALL SELECT p.id, t.depth + 1 FROM pages p JOIN t ON p.parent_id = t.id WHERE p.deleted_at IS NULL)
+           SELECT p.* FROM t JOIN pages p ON p.id = t.id WHERE t.depth = 0 OR $2 OR p.id NOT IN (SELECT id FROM hidden_pages($3))
+           ORDER BY t.depth, p.position`,
+          [pageId, admin, uid],
+        )).rows
+      : [src]
+    for (const r of rows) await collab.flush(Number(r.id))
+    // The top page goes through the normal create route, so its permission checks apply.
     const res = await app.request('/api/pages', {
       method: 'POST',
       headers: { authorization: c.req.header('authorization') ?? '', cookie: c.req.header('cookie') ?? '', 'content-type': 'application/json' },
-      body: JSON.stringify({ spaceId: src.space_id, parentId: src.parent_id, kind: src.kind, title, doc: src.doc }),
+      body: JSON.stringify({ spaceId: src.space_id, parentId: src.parent_id, kind: src.kind, title }),
     })
     if (!res.ok) return res
     const page = await res.json()
-    await db.query('INSERT INTO page_restrictions (page_id, user_id, group_id, level) SELECT $1, user_id, group_id, level FROM page_restrictions WHERE page_id = $2', [page.id, pageId])
-    return c.json(page)
+    const newId = new Map<number, number>()
+    // Old file id -> its copy, across the tree, so a subpage showing its parent's image points at the copied parent's file.
+    const files = new Map<string, string>()
+    for (const [i, r0] of rows.entries()) {
+      // Re-read after the flush above so the latest edits are copied.
+      const r = await livePage(Number(r0.id))
+      if (!r || (i > 0 && !newId.has(Number(r.parent_id)))) continue
+      const to = i === 0 ? Number(page.id) : (await one(
+        `INSERT INTO pages (space_id, parent_id, kind, title, doc, text, position, created_by, updated_by)
+         VALUES ($1, $2, $3, $4, $5, '', $6, $7, $7) RETURNING id`,
+        [r.space_id, newId.get(Number(r.parent_id)), r.kind, r.title, EMPTY_DOC, r.position, uid],
+      )).id
+      newId.set(Number(r.id), Number(to))
+      // Attachments are content-addressed, so a copy is just a new row pointing at the same bytes.
+      for (const a of (await db.query('SELECT * FROM attachments WHERE page_id = $1', [r.id])).rows)
+        files.set(String(a.id), String((await one(
+          'INSERT INTO attachments (page_id, name, mime, size, sha256, created_by) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+          [to, a.name, a.mime, a.size, a.sha256, uid],
+        )).id))
+      const doc = JSON.parse(JSON.stringify(r.doc).replace(/\/api\/files\/(\d+)/g, (m, f) => (files.has(f) ? `/api/files/${files.get(f)}` : m)))
+      const t = i === 0 ? title : r.title
+      await db.query('UPDATE pages SET doc = $2, text = $3 WHERE id = $1', [to, doc, docText(doc)])
+      if (i === 0) await db.query('UPDATE page_versions SET doc = $2 WHERE page_id = $1', [to, doc])
+      else await db.query('INSERT INTO page_versions (page_id, version, title, doc, author_id) VALUES ($1, 1, $2, $3, $4)', [to, t, doc, uid])
+      await db.query('INSERT INTO page_restrictions (page_id, user_id, group_id, level) SELECT $1, user_id, group_id, level FROM page_restrictions WHERE page_id = $2', [to, r.id])
+    }
+    return c.json({ ...page, count: newId.size })
   })
 
   app.get('/api/pages/:id', async (c) => {

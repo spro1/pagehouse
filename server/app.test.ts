@@ -173,6 +173,17 @@ test('page restrictions hide pages everywhere and inherit to children', async ()
   assert.equal((await carol.call('GET', `/api/pages/${copy.id}`)).status, 200)
   assert.equal((await dave.call('POST', `/api/pages/${secret.id}/copy`, {})).status, 404)
   await bob.call('DELETE', `/api/pages/${copy.id}`)
+  // With subpages: the child comes along, and the copied attachment link points at the copy's own file.
+  await bob.call('PUT', `/api/pages/${child.id}`, { title: '기밀 하위', doc: { type: 'doc', content: [{ type: 'image', attrs: { src: file.url } }, ...doc.content] }, version: 1 })
+  const copied = await bob.json('POST', `/api/pages/${secret.id}/copy`, { children: true })
+  assert.equal(copied.count, 2)
+  const kids = (await bob.json('GET', `/api/spaces/${space.id}/pages`)).filter((p: any) => p.parentId === copied.id)
+  assert.equal(kids.length, 1)
+  const src = (await bob.json('GET', `/api/pages/${kids[0].id}`)).doc.content[0].attrs.src
+  assert.notEqual(src, file.url)
+  assert.equal((await app.request(src, { headers: { cookie: bob.cookie } })).status, 200)
+  assert.equal((await dave.call('GET', `/api/pages/${kids[0].id}`)).status, 404)
+  await bob.call('DELETE', `/api/pages/${copied.id}`)
 
   // Dave: not listed. Every route behaves as if the pages don't exist.
   const status = async (u: any, m: string, path: string, body?: unknown) => (await u.call(m, path, body)).status
