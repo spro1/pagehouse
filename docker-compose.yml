@@ -37,6 +37,8 @@ services:
       PASSWORD_LOGIN: ${PASSWORD_LOGIN:-1}
       SMTP_URL: ${SMTP_URL:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      LINK_PREVIEW: ${LINK_PREVIEW:-1}
+      LINK_PREVIEW_ALLOW: ${LINK_PREVIEW_ALLOW:-}
       BACKUP_DIR: /backups
     volumes:
       - files:/data

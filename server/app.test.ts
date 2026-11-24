@@ -627,8 +627,42 @@ test('live co-editing: JSON round-trips through Yjs; two editors merge and the r
     evil.p.destroy()
     evil.doc.destroy()
     assert.ok(closed)
-    for (const x of [one, two]) (x.p.destroy(), x.doc.destroy())
+    for (const x of [one, two]) x.p.destroy()
     await live.collab.flushAll()
+
+    // Server restart: a fresh process resumes the stored state, so an editor still holding the old copy
+    // reconnects and merges without duplicating anything.
+    const restarted = createApp(db, dir)
+    const server2 = serve({ fetch: restarted.fetch, port: 0 })
+    restarted.injectWebSocket(server2)
+    await new Promise((r) => server2.once('listening', r))
+    const port2 = (server2.address() as any).port
+    try {
+      const rejoin = (doc: any, epoch: string) => {
+        const Sock = class extends WS { constructor(url: string) { super(url, { headers: { cookie: a.cookie, origin: `http://localhost:${port2}` } }) } }
+        return new WebsocketProvider(`ws://localhost:${port2}/api/collab`, String(page.id), doc, { WebSocketPolyfill: Sock as any, disableBc: true, params: { epoch } })
+      }
+      const epoch = String(one.doc.getMap('meta').get('epoch'))
+      const back = rejoin(one.doc, epoch)
+      await new Promise<void>((r) => back.once('sync', () => r()))
+      await new Promise((r) => setTimeout(r, 200))
+      assert.equal(one.doc.getText('title').toString(), 'Live', 'title not duplicated')
+      assert.equal((JSON.stringify(yToDoc(one.doc)).match(/first/g) ?? []).length, 1, 'body not duplicated')
+      back.destroy()
+      await restarted.collab.flushAll()
+      // Saved outside any room (REST): the next room has a new identity and an old copy is refused, not merged.
+      const cur = await a.json('GET', `/api/pages/${page.id}`)
+      await a.call('PUT', `/api/pages/${page.id}`, { title: 'Live', doc: cur.doc, version: cur.version })
+      await new Promise((r) => setTimeout(r, 100))
+      const stale = rejoin(two.doc, epoch)
+      const code = await new Promise((r) => stale.on('connection-close', (e: any) => r(e?.code)))
+      stale.destroy()
+      assert.equal(code, 4409)
+    } finally {
+      ;(server2 as any).closeAllConnections?.()
+      server2.close()
+    }
+    for (const x of [one, two]) x.doc.destroy()
   } finally {
     ;(server as any).closeAllConnections?.()
     server.close()
@@ -701,4 +735,17 @@ test('MCP: personal token, tools act with the user’s own permissions', async (
   const [t] = await admin.json('GET', '/api/me/tokens')
   await admin.call('DELETE', `/api/me/tokens/${t.id}`)
   assert.equal((await rpc('ping')).status, 401)
+})
+
+test('link previews: metadata parsing, and no fetching of internal addresses', async () => {
+  const { parsePreview, privateAddress } = await import('./preview.ts')
+  const p = parsePreview(`<html><head><title>Fallback</title><meta property="og:title" content="Runbook &amp; FAQ">
+    <meta name="description" content="How we deploy"><meta property="og:image" content="/img.png"></head>`, new URL('https://docs.example.com/x'))
+  assert.deepEqual(p, { url: 'https://docs.example.com/x', title: 'Runbook & FAQ', description: 'How we deploy', image: 'https://docs.example.com/img.png', site: 'docs.example.com' })
+  for (const ip of ['127.0.0.1', '10.1.2.3', '172.20.0.1', '192.168.0.9', '169.254.169.254', '::1', 'fd00::1', '::ffff:127.0.0.1']) assert.ok(privateAddress(ip), ip)
+  for (const ip of ['8.8.8.8', '172.32.0.1', '2606:4700::1111']) assert.ok(!privateAddress(ip), ip)
+  const a = client()
+  await a.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  for (const u of ['http://127.0.0.1:55432/', 'http://localhost:3000/', 'http://[::1]/', 'file:///etc/passwd'])
+    assert.ok([400, 404].includes((await a.call('GET', `/api/link-preview?url=${encodeURIComponent(u)}`)).status), u)
 })

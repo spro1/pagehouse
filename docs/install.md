@@ -103,6 +103,7 @@ Restart after changing it: `docker compose up -d`.
 | `OIDC_AUTO_CREATE` | `1` | `0` lets in only people who already have an account with that email |
 | `PASSWORD_LOGIN` | `1` | `0` with SSO on: only administrators can still sign in with a password |
 | `SMTP_URL`, `SMTP_FROM` | empty | Email for unread notifications, e.g. `smtp://user:pass@mail.example.com:587`. Links in mail need `PUBLIC_URL` |
+| `LINK_PREVIEW` / `LINK_PREVIEW_ALLOW` | `1` / empty | Link cards fetch a pasted link's title and image from the server. Private and loopback addresses are refused unless listed, e.g. `jira.corp.local,.gitlab.corp.local` |
 | `PAGEHOUSE_VERSION` | set by the installer | Image version. Upgrades change it |
 | `BACKUP_INTERVAL_HOURS` / `BACKUP_KEEP` | `24` / `14` | Automatic backup timing and retention |
 

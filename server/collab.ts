@@ -16,7 +16,9 @@ type Room = {
   dirty: boolean; editor: number | null; timer?: NodeJS.Timeout; firstDirty: number; saving: Promise<void>
 }
 export type CollabDeps = {
-  load: (pageId: number) => Promise<{ title: string; doc: Json } | null>
+  load: (pageId: number) => Promise<{ title: string; doc: Json; version: number; ydoc: Buffer | null; ydoc_version: number | null } | null>
+  /** Stores the room's Yjs state as matching page version `version`. */
+  storeState: (pageId: number, version: number, state: Uint8Array) => Promise<void>
   /** Returns false when the page is gone; the room then stops saving. */
   save: (pageId: number, userId: number, title: string, doc: Json, checkpoint: boolean) => Promise<{ version: number; updatedAt: Date; updatedBy: string } | null>
 }
@@ -105,7 +107,11 @@ export function createCollab(deps: CollabDeps) {
     r = { doc, awareness, conns: new Map(), dirty: false, editor: null, firstDirty: 0, saving: Promise.resolve(), ready: Promise.resolve() }
     const rr = r
     rr.ready = deps.load(pageId).then((p) => {
-      if (p) doc.transact(() => docToY(doc, p.doc, p.title), SERVER)
+      if (!p) return
+      // Resume the stored state when it matches the page; otherwise start a new document identity (epoch),
+      // which editors still holding the old one detect and reload instead of merging two copies.
+      if (p.ydoc && p.ydoc_version === p.version) Y.applyUpdate(doc, new Uint8Array(p.ydoc), SERVER)
+      else doc.transact(() => (docToY(doc, p.doc, p.title), doc.getMap('meta').set('epoch', Math.random().toString(36).slice(2))), SERVER)
     })
     doc.on('update', (update: Uint8Array, origin: unknown) => {
       const e = encoding.createEncoder()
@@ -141,7 +147,9 @@ export function createCollab(deps: CollabDeps) {
       const meta = r.doc.getMap('meta')
       const checkpoint = meta.get('checkpoint') === true
       try {
+        const state = Y.encodeStateAsUpdate(r.doc)
         const saved = await deps.save(pageId, r.editor, r.doc.getText('title').toString().trim() || 'Untitled', yToDoc(r.doc), checkpoint)
+        if (saved) await deps.storeState(pageId, saved.version, state)
         // Everyone in the room learns the save landed (their local drafts can go) from this shared map.
         if (saved)
           r.doc.transact(() => {
@@ -162,7 +170,7 @@ export function createCollab(deps: CollabDeps) {
 
   return {
     /** WebSocket handlers for one connection; access is decided by the caller before upgrading. */
-    connect(pageId: number, userId: number, canEdit: boolean) {
+    connect(pageId: number, userId: number, canEdit: boolean, epoch?: string) {
       let r: Room
       let ws: WSContext
       return {
@@ -171,6 +179,8 @@ export function createCollab(deps: CollabDeps) {
           r = room(pageId)
           r.conns.set(ws, { userId, canEdit, clients: new Set() })
           r.ready.then(() => {
+            // A reconnecting editor whose copy comes from another document identity must not merge it.
+            if (epoch && epoch !== r.doc.getMap('meta').get('epoch')) return ws.close(4409, 'document replaced')
             const e = encoding.createEncoder()
             encoding.writeVarUint(e, SYNC)
             sync.writeSyncStep1(e, r.doc)
@@ -190,6 +200,7 @@ export function createCollab(deps: CollabDeps) {
           if (!bytes) return
           // Queued behind seeding, so nobody syncs against an empty document.
           r.ready.then(() => {
+            if (epoch && epoch !== r.doc.getMap('meta').get('epoch')) return
             try {
               const d = decoding.createDecoder(bytes)
               const kind = decoding.readVarUint(d)
@@ -222,12 +233,13 @@ export function createCollab(deps: CollabDeps) {
       }
     },
     /** A save that didn't come through the room (REST, import, MCP): put it into the open room so nobody overwrites it. */
-    replace(pageId: number, json: unknown, title: string) {
+    replace(pageId: number, json: unknown, title: string, version: number) {
       const r = rooms.get(pageId)
       if (!r) return
       r.doc.transact(() => docToY(r.doc, json as Json, title), SERVER)
       r.dirty = false
       clearTimeout(r.timer)
+      void deps.storeState(pageId, version, Y.encodeStateAsUpdate(r.doc)).catch(() => {})
     },
     /** Saves the page's room now, if it has unsaved edits. */
     flush: (pageId: number) => (rooms.has(pageId) ? persist(pageId, rooms.get(pageId)!) : Promise.resolve()),

@@ -55,7 +55,11 @@ export function PageView({ id, me, onTitle, onDeleted }: { id: number; me: User;
     const provider = new WebsocketProvider(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/collab`, String(id), doc, { disableBc: true })
     let settled = false
     const giveUp = setTimeout(() => !settled && ((settled = true), provider.destroy(), setLive(null)), 4000)
+    // The page was replaced outside the room while we were away: our copy can't be merged; reload instead
+    // (anything typed meanwhile is in the local draft, offered after the reload).
+    provider.on('connection-close', (e: CloseEvent | null) => e?.code === 4409 && (provider.destroy(), location.reload()))
     provider.once('sync', () => {
+      provider.params.epoch = String(doc.getMap('meta').get('epoch') ?? '')
       if (settled) return
       settled = true
       clearTimeout(giveUp)
@@ -492,7 +496,7 @@ function TextMenu({ editor }: { editor: Editor }) {
     <BubbleMenu
       editor={editor}
       pluginKey="textMenu"
-      shouldShow={({ editor: e, state }) => e.isEditable && !state.selection.empty && !e.isActive('codeBlock') && !e.isActive('image')}
+      shouldShow={({ editor: e, state }) => e.isEditable && !state.selection.empty && !e.isActive('codeBlock') && !e.isActive('image') && !e.isActive('linkCard')}
       className="bubble"
     >
       {linking !== null ? (

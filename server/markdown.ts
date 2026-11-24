@@ -50,6 +50,7 @@ function block(n: Node, url: UrlMap): string {
       return `${fence}${n.attrs?.language ?? ''}\n${body}\n${fence}`
     }
     case 'horizontalRule': return '---'
+    case 'linkCard': return `[${escapeText(n.attrs?.title || n.attrs?.href || '')}](${url(n.attrs?.href ?? '')})`
     case 'image': return `![${n.attrs?.alt ?? ''}](${url(n.attrs?.src ?? '')})`
     case 'bulletList':
     case 'orderedList':

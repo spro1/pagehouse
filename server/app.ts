@@ -14,6 +14,7 @@ import { oidcConfig, registerSso } from './sso.ts'
 import { createCollab } from './collab.ts'
 import { mailEnabled } from './mail.ts'
 import { registerMcp } from './mcp.ts'
+import { registerPreview } from './preview.ts'
 import { createNodeWebSocket } from '@hono/node-ws'
 import { mentionedInDoc, mentionedInText, notify, registerPeople } from './people.ts'
 
@@ -64,6 +65,7 @@ const ERRORS = {
   group_not_found: 'Group not found.',
   group_in_use: 'This group still grants access to spaces or pages. Remove it there first.',
   bad_group: 'A group needs a unique name.',
+  preview_unavailable: 'No preview for this link.',
   use_sso: 'Sign in with single sign-on.',
 } as const
 type ErrorCode = keyof typeof ERRORS
@@ -115,6 +117,7 @@ export function docText(node: any): string {
   if (!node || typeof node !== 'object') return ''
   if (typeof node.text === 'string') return node.text
   if (node.type === 'mention') return `@${node.attrs?.label ?? ''}`
+  if (node.type === 'linkCard') return `${node.attrs?.title ?? ''} ${node.attrs?.href ?? ''}`
   // Inline pieces (text split by marks, mentions) join directly; blocks are separated by a space.
   return Array.isArray(node.content) ? node.content.map(docText).join(node.content.some((c: any) => c?.type === 'text') ? '' : ' ') : ''
 }
@@ -740,7 +743,9 @@ export function createApp(db: Db, dataDir: string) {
   })().catch((e) => console.error('search text rebuild failed', e))
 
   const collab = createCollab({
-    load: async (pageId) => (await one('SELECT title, doc FROM pages WHERE id = $1 AND deleted_at IS NULL', [pageId])) ?? null,
+    load: async (pageId) => (await one('SELECT title, doc, version, ydoc, ydoc_version FROM pages WHERE id = $1 AND deleted_at IS NULL', [pageId])) ?? null,
+    storeState: async (pageId, version, state) =>
+      void (await db.query('UPDATE pages SET ydoc = $1, ydoc_version = $2 WHERE id = $3 AND version = $2', [Buffer.from(state), version, pageId])),
     save: async (pageId, userId, title, doc, checkpoint) => {
       // Someone who lost edit rights while the room was open no longer gets their edits saved.
       const u = await one('SELECT id, role, name FROM users WHERE id = $1 AND disabled_at IS NULL', [userId])
@@ -761,7 +766,7 @@ export function createApp(db: Db, dataDir: string) {
     }
     const a = await access(id(c), c.get('user'))
     if (!a) return fail(c, 404, 'page_not_found')
-    return ws.upgradeWebSocket(() => collab.connect(id(c), c.get('user').id, a === 'edit'))(c, next)
+    return ws.upgradeWebSocket(() => collab.connect(id(c), c.get('user').id, a === 'edit', c.req.query('epoch') || undefined))(c, next)
   })
 
   app.put('/api/pages/:id', async (c) => {
@@ -774,7 +779,7 @@ export function createApp(db: Db, dataDir: string) {
     await collab.flush(id(c))
     const r = await savePage(id(c), c.get('user').id, title, b.doc, { version: b.version, checkpoint: !!b.checkpoint })
     if (r) {
-      collab.replace(id(c), b.doc, title)
+      collab.replace(id(c), b.doc, title, r.version)
       return c.json(r)
     }
     const cur = await livePage(id(c))
@@ -992,6 +997,7 @@ export function createApp(db: Db, dataDir: string) {
   })
 
   registerMcp(app)
+  registerPreview(app, fail)
   registerAdmin(app, { db, filesDir, fail })
   registerPeople(app, { db, fail, visibleFor: (c) => ({ sql: (alias, first) => visible(alias, first, first + 1), params: who(c) }) })
   registerExport(app, {

@@ -45,7 +45,7 @@ import yaml from 'highlight.js/lib/languages/yaml'
 import { forwardRef, useEffect, useImperativeHandle, useState } from 'react'
 import { t } from '../i18n.ts'
 import { Mention } from '@tiptap/extension-mention'
-import { listPeople, type Person } from '../api.ts'
+import { api, listPeople, type Person } from '../api.ts'
 
 export const CALLOUTS = {
   info: { icon: 'ℹ️', label: t('callout.info') },
@@ -310,6 +310,71 @@ export const CommentMark = Mark.create({
   renderHTML: ({ HTMLAttributes }) => ['span', mergeAttributes({ class: 'inline-comment' }, HTMLAttributes), 0],
 })
 
+// ---------- Link cards: a pasted URL on an empty line shows the page's title, summary and image ----------
+function LinkCardView({ node, updateAttributes, editor, deleteNode }: NodeViewProps) {
+  const { href, title, description, image, site } = node.attrs
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    // Fetched once by whoever adds the card; the result is stored in the page so readers never refetch.
+    if (title || !editor.isEditable) return
+    api(`/api/link-preview?url=${encodeURIComponent(href)}`).then(
+      (p) => updateAttributes({ title: p.title, description: p.description, image: p.image, site: p.site }),
+      () => setFailed(true),
+    )
+  }, [href])
+  const host = (() => { try { return new URL(href).hostname } catch { return href } })()
+  return (
+    <NodeViewWrapper className="link-card" data-drag-handle>
+      <a href={href} target="_blank" rel="noopener noreferrer" contentEditable={false}
+        onClick={(e) => editor.isEditable && !(e.metaKey || e.ctrlKey) && e.preventDefault()}>
+        <span className="lc-body">
+          <b>{title || (failed ? href : t('linkCard.loading'))}</b>
+          {description && <small>{description}</small>}
+          <span className="lc-site">{site || host}</span>
+        </span>
+        {image && <img src={image} alt="" loading="lazy" referrerPolicy="no-referrer" />}
+      </a>
+      {editor.isEditable && (
+        <button type="button" className="ghost icon lc-unwrap" title={t('linkCard.toLink')} aria-label={t('linkCard.toLink')}
+          onClick={() => {
+            const pos = editor.state.selection.from
+            deleteNode()
+            editor.chain().insertContentAt(Math.min(pos, editor.state.doc.content.size), { type: 'paragraph', content: [{ type: 'text', text: title || href, marks: [{ type: 'link', attrs: { href } }] }] }).run()
+          }}>↵</button>
+      )}
+    </NodeViewWrapper>
+  )
+}
+export const LinkCard = Node.create({
+  name: 'linkCard',
+  // Ahead of the link extension's own paste handling.
+  priority: 1000,
+  group: 'block',
+  atom: true,
+  draggable: true,
+  addAttributes: () => Object.fromEntries(['href', 'title', 'description', 'image', 'site'].map((k) => [k, { default: k === 'href' ? '' : null }])),
+  parseHTML: () => [{ tag: 'div[data-link-card]', getAttrs: (el) => ({ href: (el as HTMLElement).getAttribute('data-link-card') }) }],
+  renderHTML: ({ HTMLAttributes }) => ['div', { 'data-link-card': HTMLAttributes.href }, ['a', { href: HTMLAttributes.href }, HTMLAttributes.title || HTMLAttributes.href]],
+  addNodeView: () => ReactNodeViewRenderer(LinkCardView),
+  addProseMirrorPlugins() {
+    const type = this.type
+    return [
+      new Plugin({
+        key: new PluginKey('linkCardPaste'),
+        props: {
+          handlePaste(view, e) {
+            const text = e.clipboardData?.getData('text/plain')?.trim() ?? ''
+            const { $from, empty } = view.state.selection
+            if (!empty || !/^https?:\/\/\S+$/.test(text) || $from.parent.type.name !== 'paragraph' || $from.parent.content.size) return false
+            view.dispatch(view.state.tr.replaceWith($from.before(), $from.after(), type.create({ href: text })))
+            return true
+          },
+        },
+      }),
+    ]
+  },
+})
+
 // ---------- Mermaid diagrams: a ```mermaid code block shows the rendered diagram under it ----------
 let mermaidLib: Promise<typeof import('mermaid').default> | null = null
 const svgCache = new Map<string, string>()
@@ -370,6 +435,7 @@ export function extensions(live?: Live) {
     Highlight,
     CommentMark,
     MermaidPreview,
+    LinkCard,
     TextAlign.configure({ types: ['heading', 'paragraph'] }),
     Typography,
     Callout,
