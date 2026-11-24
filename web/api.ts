@@ -45,3 +45,12 @@ export type Person = { id: number; name: string; email: string }
 // The people list changes rarely; one request per page load serves mentions, pickers and comment chips.
 let people: Promise<Person[]> | null = null
 export const listPeople = () => (people ??= api<Person[]>('/api/users').catch(() => ((people = null), [])))
+
+/** Someone access can be granted to: a person or a group. */
+export type Principal = { userId?: number; groupId?: number; name: string; email?: string; size?: number }
+export const pkey = (p: { userId?: number | null; groupId?: number | null }) => (p.groupId ? `g${p.groupId}` : `u${p.userId}`)
+/** Groups first, then people, for the access pickers. */
+export const listPrincipals = async (): Promise<Principal[]> => [
+  ...(await api<{ id: number; name: string; size: number }[]>('/api/groups').catch(() => [])).map((g) => ({ groupId: g.id, name: g.name, size: g.size })),
+  ...(await listPeople()).map((p) => ({ userId: p.id, name: p.name, email: p.email })),
+]

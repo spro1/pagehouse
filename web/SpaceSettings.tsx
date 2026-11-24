@@ -1,13 +1,26 @@
 import { useEffect, useState } from 'react'
-import { api, listPeople, toast, type Person } from './api.ts'
+import { api, listPrincipals, pkey, toast, type Principal } from './api.ts'
 import { t, type Key } from './i18n.ts'
 import { Icon } from './icons.tsx'
 import { Modal } from './ui.tsx'
 
 type Access = 'edit' | 'view' | 'none'
 type Role = 'admin' | 'edit' | 'view'
-type Member = { userId: number; role: Role; name: string; email: string }
+type Member = Principal & { role: Role }
 const ACCESS: Access[] = ['edit', 'view', 'none']
+
+/** Avatar, name and second line for a person or a group in access lists. */
+export function PrincipalLabel({ p, me }: { p: Principal; me?: { id: number } }) {
+  return (
+    <>
+      <span className="avatar">{p.groupId ? <Icon name="users" size={14} /> : p.name.slice(0, 1)}</span>
+      <span className="person">
+        <b><span>{p.name}</span>{me && p.userId === me.id && <span className="tag">{t('common.me')}</span>}</b>
+        <small>{p.groupId ? t('group.size', { n: p.size ?? 0 }) : p.email}</small>
+      </span>
+    </>
+  )
+}
 
 /** Picks who can see a space: the three levels, as radio cards. Shared by "new space" and space settings. */
 export function AccessChoice({ value, onChange, disabled }: { value: Access; onChange: (a: Access) => void; disabled?: boolean }) {
@@ -28,17 +41,17 @@ export function AccessChoice({ value, onChange, disabled }: { value: Access; onC
 
 export function SpaceSettings({ spaceId, me, onClose, onSaved }: { spaceId: number; me: { id: number }; onClose: () => void; onSaved: () => void }) {
   const [s, setS] = useState<{ name: string; defaultAccess: Access; members: Member[]; canManage: boolean }>()
-  const [people, setPeople] = useState<Person[]>([])
+  const [people, setPeople] = useState<Principal[]>([])
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState(false)
   useEffect(() => {
     api(`/api/spaces/${spaceId}/settings`).then(setS)
-    listPeople().then(setPeople)
+    listPrincipals().then(setPeople)
   }, [spaceId])
 
   const set = (patch: Partial<NonNullable<typeof s>>) => setS((x) => x && { ...x, ...patch })
   const needle = q.trim().toLowerCase()
-  const matches = s && needle ? people.filter((p) => !s.members.some((m) => m.userId === p.id) && `${p.name} ${p.email}`.toLowerCase().includes(needle)).slice(0, 20) : []
+  const matches = s && needle ? people.filter((p) => !s.members.some((m) => pkey(m) === pkey(p)) && `${p.name} ${p.email ?? ''}`.toLowerCase().includes(needle)).slice(0, 20) : []
 
   async function save() {
     if (!s) return
@@ -46,7 +59,7 @@ export function SpaceSettings({ spaceId, me, onClose, onSaved }: { spaceId: numb
     try {
       await api(`/api/spaces/${spaceId}/settings`, {
         method: 'PUT',
-        json: { name: s.name, defaultAccess: s.defaultAccess, members: s.members.map(({ userId, role }) => ({ userId, role })) },
+        json: { name: s.name, defaultAccess: s.defaultAccess, members: s.members.map(({ userId, groupId, role }) => (groupId ? { groupId, role } : { userId, role })) },
       })
       toast(t('space.saved'))
       onSaved()
@@ -89,31 +102,29 @@ export function SpaceSettings({ spaceId, me, onClose, onSaved }: { spaceId: numb
                 <label className="access-search">
                   <Icon name="search" />
                   <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('space.members.add')} aria-label={t('space.members.add')}
-                    onKeyDown={(e) => e.key === 'Enter' && matches[0] && (e.preventDefault(), set({ members: [...s.members, { userId: matches[0].id, name: matches[0].name, email: matches[0].email, role: 'edit' }] }), setQ(''))} />
+                    onKeyDown={(e) => e.key === 'Enter' && matches[0] && (e.preventDefault(), set({ members: [...s.members, { ...matches[0], role: 'edit' }] }), setQ(''))} />
                 </label>
               )}
               <ul className="people">
                 {needle ? (
                   matches.length ? matches.map((p) => (
-                    <li key={p.id}>
-                      <span className="avatar">{p.name.slice(0, 1)}</span>
-                      <span className="person"><b><span>{p.name}</span></b><small>{p.email}</small></span>
-                      <button className="add-btn" onClick={() => (set({ members: [...s.members, { userId: p.id, name: p.name, email: p.email, role: 'edit' }] }), setQ(''))}>
+                    <li key={pkey(p)}>
+                      <PrincipalLabel p={p} />
+                      <button className="add-btn" onClick={() => (set({ members: [...s.members, { ...p, role: 'edit' }] }), setQ(''))}>
                         <Icon name="plus" size={14} /> {t('access.addBtn')}
                       </button>
                     </li>
                   )) : <li className="muted small">{t('access.noMatch', { q: q.trim() })}</li>
                 ) : s.members.length ? (
                   s.members.map((m) => (
-                    <li key={m.userId}>
-                      <span className="avatar">{m.name.slice(0, 1)}</span>
-                      <span className="person"><b><span>{m.name}</span>{m.userId === me.id && <span className="tag">{t('common.me')}</span>}</b><small>{m.email}</small></span>
+                    <li key={pkey(m)}>
+                      <PrincipalLabel p={m} me={me} />
                       <select value={m.role} disabled={!s.canManage} aria-label={t('access.levelFor', { name: m.name })}
-                        onChange={(e) => set({ members: s.members.map((x) => (x.userId === m.userId ? { ...x, role: e.target.value as Role } : x)) })}>
+                        onChange={(e) => set({ members: s.members.map((x) => (pkey(x) === pkey(m) ? { ...x, role: e.target.value as Role } : x)) })}>
                         {(['admin', 'edit', 'view'] as Role[]).map((r) => <option key={r} value={r}>{t(`space.role.${r}` as Key)}</option>)}
                       </select>
                       {s.canManage ? (
-                        <button className="ghost icon" aria-label={t('access.remove', { name: m.name })} onClick={() => set({ members: s.members.filter((x) => x.userId !== m.userId) })}>
+                        <button className="ghost icon" aria-label={t('access.remove', { name: m.name })} onClick={() => set({ members: s.members.filter((x) => pkey(x) !== pkey(m)) })}>
                           <Icon name="x" size={14} />
                         </button>
                       ) : <span style={{ width: 30 }} />}

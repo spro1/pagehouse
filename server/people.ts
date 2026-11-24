@@ -1,6 +1,6 @@
 // Spaces and their members, the home dashboard, @mentions and notifications.
 import type { Hono, Context } from 'hono'
-import type { Db } from './db.ts'
+import { tx, type Db } from './db.ts'
 
 type User = { id: number; email: string; name: string; role: string }
 type Deps = {
@@ -69,8 +69,9 @@ export function registerPeople(app: Hono<any>, { db, fail, visibleFor }: Deps) {
     if (!role) return fail(c, 404, 'space_not_found')
     const s = await one(`SELECT id, key, name, default_access AS "defaultAccess" FROM spaces WHERE id = $1`, [sid(c)])
     const members = await all(
-      `SELECT m.user_id AS "userId", m.role, u.name, u.email FROM space_members m JOIN users u ON u.id = m.user_id
-       WHERE m.space_id = $1 ORDER BY CASE m.role WHEN 'admin' THEN 0 WHEN 'edit' THEN 1 ELSE 2 END, u.name`,
+      `SELECT m.user_id AS "userId", m.group_id AS "groupId", m.role, coalesce(u.name, g.name) AS name, u.email
+       FROM space_members m LEFT JOIN users u ON u.id = m.user_id LEFT JOIN groups g ON g.id = m.group_id
+       WHERE m.space_id = $1 ORDER BY CASE m.role WHEN 'admin' THEN 0 WHEN 'edit' THEN 1 ELSE 2 END, m.group_id IS NULL, coalesce(u.name, g.name)`,
       [sid(c)],
     )
     return c.json({ ...s, members, canManage: role === 'admin' })
@@ -82,33 +83,69 @@ export function registerPeople(app: Hono<any>, { db, fail, visibleFor }: Deps) {
     const name = typeof b.name === 'string' ? b.name.trim().slice(0, 100) : ''
     if (!name || !ACCESS.includes(b.defaultAccess) || !Array.isArray(b.members) || b.members.length > 5000) return fail(c, 400, 'bad_request')
     const members = new Map<number, string>()
+    const groups = new Map<number, string>()
     for (const m of b.members) {
-      if (!Number.isInteger(m?.userId) || !ROLES.includes(m?.role)) return fail(c, 400, 'bad_request')
-      members.set(m.userId, m.role)
+      if (!ROLES.includes(m?.role) || Number.isInteger(m?.userId) === Number.isInteger(m?.groupId)) return fail(c, 400, 'bad_request')
+      if (m.groupId) groups.set(m.groupId, m.role)
+      else members.set(m.userId, m.role)
     }
     // Whoever saves keeps managing the space (site admins can always reach it anyway).
     if (me(c).role !== 'admin') members.set(me(c).id, 'admin')
-    if (![...members.values()].includes('admin') && me(c).role !== 'admin') return fail(c, 400, 'bad_request')
     const ids = [...members.keys()]
+    const gids = [...groups.keys()]
     if (ids.length && (await all('SELECT id FROM users WHERE id = ANY($1::bigint[])', [ids])).length !== ids.length) return fail(c, 400, 'user_not_found')
-    const client = await db.connect()
-    try {
-      await client.query('BEGIN')
-      await client.query('UPDATE spaces SET name = $1, default_access = $2 WHERE id = $3', [name, b.defaultAccess, sid(c)])
-      await client.query('DELETE FROM space_members WHERE space_id = $1', [sid(c)])
-      if (ids.length)
-        await client.query(
-          'INSERT INTO space_members (space_id, user_id, role) SELECT $1, u, r FROM unnest($2::bigint[], $3::text[]) AS x(u, r)',
-          [sid(c), ids, ids.map((i) => members.get(i))],
-        )
-      await client.query('COMMIT')
-    } catch (e) {
-      await client.query('ROLLBACK')
-      throw e
-    } finally {
-      client.release()
-    }
+    if (gids.length && (await all('SELECT id FROM groups WHERE id = ANY($1::bigint[])', [gids])).length !== gids.length) return fail(c, 400, 'group_not_found')
+    await tx(db, async (q) => {
+      await q.query('UPDATE spaces SET name = $1, default_access = $2 WHERE id = $3', [name, b.defaultAccess, sid(c)])
+      await q.query('DELETE FROM space_members WHERE space_id = $1', [sid(c)])
+      await q.query(
+        `INSERT INTO space_members (space_id, user_id, group_id, role)
+         SELECT $1::bigint, u, NULL::bigint, r FROM unnest($2::bigint[], $3::text[]) AS x(u, r)
+         UNION ALL SELECT $1::bigint, NULL::bigint, g, r FROM unnest($4::bigint[], $5::text[]) AS y(g, r)`,
+        [sid(c), ids, ids.map((i) => members.get(i)), gids, gids.map((i) => groups.get(i))],
+      )
+    })
     return c.json({ ok: true })
+  })
+
+  // ---------- groups ----------
+  // Everyone can list groups (to pick them in space and page settings); only admins change them.
+  app.get('/api/groups', async (c) =>
+    c.json(await all(`SELECT g.id, g.name, (SELECT count(*)::int FROM group_members m WHERE m.group_id = g.id) AS size FROM groups g ORDER BY g.name`)),
+  )
+  app.get('/api/admin/groups/:id', async (c) => {
+    const g = await one('SELECT id, name FROM groups WHERE id = $1', [sid(c)])
+    if (!g) return fail(c, 404, 'group_not_found')
+    const members = await all(
+      'SELECT u.id, u.name, u.email FROM group_members m JOIN users u ON u.id = m.user_id WHERE m.group_id = $1 ORDER BY u.name', [g.id])
+    return c.json({ ...g, members })
+  })
+  const saveGroup = async (c: Context<any>, groupId: number | null) => {
+    const b = await c.req.json().catch(() => ({}))
+    const name = typeof b.name === 'string' ? b.name.trim().slice(0, 100) : ''
+    const members: number[] = Array.isArray(b.members) ? [...new Set<number>(b.members)] : []
+    if (!name || !members.every(Number.isInteger)) return fail(c, 400, 'bad_group')
+    const r = await tx(db, async (q) => {
+      const row = groupId
+        ? (await q.query('UPDATE groups SET name = $1 WHERE id = $2 AND NOT EXISTS (SELECT 1 FROM groups WHERE name = $1 AND id <> $2) RETURNING id', [name, groupId])).rows[0]
+        : (await q.query('INSERT INTO groups (name) VALUES ($1) ON CONFLICT (name) DO NOTHING RETURNING id', [name])).rows[0]
+      if (!row) return null
+      await q.query('DELETE FROM group_members WHERE group_id = $1', [row.id])
+      await q.query('INSERT INTO group_members (group_id, user_id) SELECT $1, u FROM unnest($2::bigint[]) u WHERE u IN (SELECT id FROM users)', [row.id, members])
+      return row
+    })
+    if (!r) return groupId && !(await one('SELECT 1 FROM groups WHERE id = $1', [groupId])) ? fail(c, 404, 'group_not_found') : fail(c, 409, 'bad_group')
+    return c.json({ id: r.id, name })
+  }
+  app.post('/api/admin/groups', (c) => saveGroup(c, null))
+  app.put('/api/admin/groups/:id', (c) => saveGroup(c, sid(c)))
+  app.delete('/api/admin/groups/:id', async (c) => {
+    // Refused while in use: removing a group's grants could open restricted pages or change space roles.
+    const used = await one(
+      `SELECT EXISTS (SELECT 1 FROM page_restrictions WHERE group_id = $1) OR EXISTS (SELECT 1 FROM space_members WHERE group_id = $1) AS used`, [sid(c)])
+    if (used.used) return fail(c, 409, 'group_in_use')
+    const r = await db.query('DELETE FROM groups WHERE id = $1', [sid(c)])
+    return r.rowCount ? c.json({ ok: true }) : fail(c, 404, 'group_not_found')
   })
 
   // ---------- home ----------

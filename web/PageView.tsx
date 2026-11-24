@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react'
 import { BubbleMenu } from '@tiptap/react/menus'
 import { CellSelection } from '@tiptap/pm/tables'
-import { ApiError, api, ago, fullDate, listPeople, toast, type Person, type User } from './api.ts'
+import { ApiError, api, ago, fullDate, listPeople, listPrincipals, pkey, toast, type Person, type Principal, type User } from './api.ts'
+import { PrincipalLabel } from './SpaceSettings.tsx'
 import { t } from './i18n.ts'
 import { Icon } from './icons.tsx'
 import { toMarkdown } from '../server/markdown.ts'
@@ -529,27 +530,27 @@ function Toc({ editor }: { editor: Editor }) {
   )
 }
 
-type Entry = { userId: number; level: 'view' | 'edit'; name: string; email: string }
+type Entry = Principal & { level: 'view' | 'edit' }
 
 function RestrictionsModal({ pageId, me, canEdit, onClose, onSaved }: {
   pageId: number; me: User; canEdit: boolean; onClose: () => void; onSaved: (restricted: boolean) => void
 }) {
   const [entries, setEntries] = useState<Entry[]>()
   const [inherited, setInherited] = useState<{ id: number; title: string }[]>([])
-  const [users, setUsers] = useState<Person[]>([])
+  const [users, setUsers] = useState<Principal[]>([])
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState(false)
   useEffect(() => {
     api(`/api/pages/${pageId}/restrictions`).then((r) => (setEntries(r.entries), setInherited(r.inherited)))
-    api('/api/users').then(setUsers)
+    listPrincipals().then(setUsers)
   }, [pageId])
 
   const restricted = !!entries?.length
   const needle = q.trim().toLowerCase()
   const matches = needle
-    ? users.filter((u) => !entries?.some((e) => e.userId === u.id) && (u.name + ' ' + u.email).toLowerCase().includes(needle)).slice(0, 20)
+    ? users.filter((u) => !entries?.some((e) => pkey(e) === pkey(u)) && (u.name + ' ' + (u.email ?? '')).toLowerCase().includes(needle)).slice(0, 20)
     : []
-  const add = (u: Person) => (setEntries([...(entries ?? []), { userId: u.id, name: u.name, email: u.email, level: 'view' }]), setQ(''))
+  const add = (u: Principal) => (setEntries([...(entries ?? []), { ...u, level: 'view' }]), setQ(''))
   // Turning restriction on starts with yourself as editor, the same thing the server enforces.
   const restrictOn = () => !restricted && setEntries([{ userId: me.id, name: me.name, email: me.email, level: 'edit' }])
   const locked = (e: Entry) => e.userId === me.id && me.role !== 'admin'
@@ -560,7 +561,7 @@ function RestrictionsModal({ pageId, me, canEdit, onClose, onSaved }: {
     try {
       const r = await api(`/api/pages/${pageId}/restrictions`, {
         method: 'PUT',
-        json: { entries: entries.map(({ userId, level }) => ({ userId, level })) },
+        json: { entries: entries.map(({ userId, groupId, level }) => (groupId ? { groupId, level } : { userId, level })) },
       })
       onSaved(r.restricted || inherited.length > 0)
       toast(r.restricted ? t('access.saved') : t('access.cleared'))
@@ -622,9 +623,8 @@ function RestrictionsModal({ pageId, me, canEdit, onClose, onSaved }: {
               {needle ? (
                 matches.length ? (
                   matches.map((u) => (
-                    <li key={u.id}>
-                      <span className="avatar">{u.name.slice(0, 1)}</span>
-                      <span className="person"><b><span>{u.name}</span></b><small>{u.email}</small></span>
+                    <li key={pkey(u)}>
+                      <PrincipalLabel p={u} />
                       <button className="add-btn" onClick={() => add(u)}><Icon name="plus" size={14} /> {t('access.addBtn')}</button>
                     </li>
                   ))
@@ -633,24 +633,20 @@ function RestrictionsModal({ pageId, me, canEdit, onClose, onSaved }: {
                 )
               ) : (
                 entries.map((e) => (
-                  <li key={e.userId}>
-                    <span className="avatar">{e.name.slice(0, 1)}</span>
-                    <span className="person">
-                      <b><span>{e.name}</span>{e.userId === me.id && <span className="tag">{t('common.me')}</span>}</b>
-                      <small>{e.email}</small>
-                    </span>
+                  <li key={pkey(e)}>
+                    <PrincipalLabel p={e} me={me} />
                     <select
                       value={e.level}
                       aria-label={t('access.levelFor', { name: e.name })}
                       disabled={!canEdit || locked(e)}
-                      onChange={(ev) => setEntries(entries.map((x) => (x.userId === e.userId ? { ...x, level: ev.target.value as Entry['level'] } : x)))}
+                      onChange={(ev) => setEntries(entries.map((x) => (pkey(x) === pkey(e) ? { ...x, level: ev.target.value as Entry['level'] } : x)))}
                     >
                       <option value="view">{t('access.view')}</option>
                       <option value="edit">{t('access.edit')}</option>
                     </select>
                     {/* Placeholder keeps rows aligned when the remove button is hidden. */}
                     {canEdit && !locked(e) ? (
-                      <button className="ghost icon" aria-label={t('access.remove', { name: e.name })} onClick={() => setEntries(entries.filter((x) => x.userId !== e.userId))}>
+                      <button className="ghost icon" aria-label={t('access.remove', { name: e.name })} onClick={() => setEntries(entries.filter((x) => pkey(x) !== pkey(e)))}>
                         <Icon name="x" size={14} />
                       </button>
                     ) : (

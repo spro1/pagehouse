@@ -522,3 +522,47 @@ test('OIDC single sign-on creates and signs in an account by email', async () =>
     idp.close()
   }
 })
+
+test('groups grant space roles and page access; a group in use cannot be deleted', async () => {
+  const admin = client()
+  await admin.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  const join = async (email: string) => {
+    const { token } = await admin.json('POST', '/api/admin/invites', { role: 'member' })
+    const u = client()
+    const me = await u.json('POST', '/api/auth/register', { email, name: email.split('@')[0], password: 'password1', invite: token })
+    return Object.assign(u, { id: me.id as number })
+  }
+  const lead = await join('lead@g.co')
+  const dev = await join('dev@g.co')
+  const other = await join('other@g.co')
+  const devs = await admin.json('POST', '/api/admin/groups', { name: 'Developers', members: [dev.id] })
+  assert.equal((await admin.call('POST', '/api/admin/groups', { name: 'Developers', members: [] })).status, 409)
+  assert.equal((await dev.call('POST', '/api/admin/groups', { name: 'X', members: [] })).status, 403)
+
+  const space = await lead.json('POST', '/api/spaces', { name: 'Eng', key: 'ENG', defaultAccess: 'none' })
+  const page = await lead.json('POST', '/api/pages', { spaceId: space.id, title: 'Runbook' })
+  assert.equal((await dev.call('GET', `/api/pages/${page.id}`)).status, 404)
+  await lead.call('PUT', `/api/spaces/${space.id}/settings`, { name: 'Eng', defaultAccess: 'none', members: [{ groupId: devs.id, role: 'edit' }] })
+  assert.equal((await dev.json('GET', `/api/pages/${page.id}`)).access, 'edit')
+  assert.equal((await other.call('GET', `/api/pages/${page.id}`)).status, 404)
+  // A personal membership overrides the group role.
+  await lead.call('PUT', `/api/spaces/${space.id}/settings`, { name: 'Eng', defaultAccess: 'none', members: [{ groupId: devs.id, role: 'edit' }, { userId: dev.id, role: 'view' }] })
+  assert.equal((await dev.json('GET', `/api/pages/${page.id}`)).access, 'view')
+
+  // Page restricted to the group: members see it, others don't, in lists and search too.
+  const open = await admin.json('POST', '/api/spaces', { name: 'Open', key: 'OPENG', defaultAccess: 'edit' })
+  const secret = await lead.json('POST', '/api/pages', { spaceId: open.id, title: 'Grouponly' })
+  assert.equal((await lead.call('PUT', `/api/pages/${secret.id}/restrictions`, { entries: [{ groupId: devs.id, level: 'view' }] })).status, 200)
+  assert.equal((await dev.json('GET', `/api/pages/${secret.id}`)).access, 'view')
+  assert.equal((await other.call('GET', `/api/pages/${secret.id}`)).status, 404)
+  assert.equal((await other.json('GET', '/api/search?q=Grouponly')).total, 0)
+  assert.equal((await dev.json('GET', '/api/search?q=Grouponly')).total, 1)
+  const r = await lead.json('GET', `/api/pages/${secret.id}/restrictions`)
+  assert.deepEqual(r.entries.map((e: any) => e.name), ['Developers', 'lead'])
+
+  // Deleting a group that still grants access would open the page; refused.
+  assert.equal((await admin.call('DELETE', `/api/admin/groups/${devs.id}`)).status, 409)
+  // Leaving the group removes access.
+  await admin.call('PUT', `/api/admin/groups/${devs.id}`, { name: 'Developers', members: [] })
+  assert.equal((await dev.call('GET', `/api/pages/${secret.id}`)).status, 404)
+})

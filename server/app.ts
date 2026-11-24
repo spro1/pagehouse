@@ -57,6 +57,9 @@ const ERRORS = {
   file_too_large: 'Files can be up to 50 MB.',
   too_many_attempts: 'Too many attempts. Try again in a few minutes.',
   bad_origin: 'Request from another site was refused.',
+  group_not_found: 'Group not found.',
+  group_in_use: 'This group still grants access to spaces or pages. Remove it there first.',
+  bad_group: 'A group needs a unique name.',
   use_sso: 'Sign in with single sign-on.',
 } as const
 type ErrorCode = keyof typeof ERRORS
@@ -772,8 +775,9 @@ export function createApp(db: Db, dataDir: string) {
     const denied = await guard(c, id(c), 'view')
     if (denied) return denied
     const entries = await all(
-      `SELECT r.user_id AS "userId", r.level, u.name, u.email FROM page_restrictions r JOIN users u ON u.id = r.user_id
-       WHERE r.page_id = $1 ORDER BY u.name`,
+      `SELECT r.user_id AS "userId", r.group_id AS "groupId", r.level, coalesce(u.name, g.name) AS name, u.email
+       FROM page_restrictions r LEFT JOIN users u ON u.id = r.user_id LEFT JOIN groups g ON g.id = r.group_id
+       WHERE r.page_id = $1 ORDER BY r.group_id IS NULL, coalesce(u.name, g.name)`,
       [id(c)],
     )
     // Restricted pages above this one, which also limit who gets here.
@@ -795,26 +799,28 @@ export function createApp(db: Db, dataDir: string) {
     if (!Array.isArray(b.entries) || b.entries.length > 1000) return fail(c, 400, 'bad_request')
     const user = c.get('user')
     const map = new Map<number, 'view' | 'edit'>()
+    const groups = new Map<number, 'view' | 'edit'>()
     for (const e of b.entries) {
-      if (!Number.isInteger(e?.userId) || !['view', 'edit'].includes(e?.level)) return fail(c, 400, 'bad_request')
-      map.set(e.userId, e.level)
+      if (!['view', 'edit'].includes(e?.level) || Number.isInteger(e?.userId) === Number.isInteger(e?.groupId)) return fail(c, 400, 'bad_request')
+      if (e.groupId) groups.set(e.groupId, e.level)
+      else map.set(e.userId, e.level)
     }
     // Whoever restricts a page keeps edit on it, so nobody locks themselves out by accident.
-    if (map.size && user.role !== 'admin') map.set(user.id, 'edit')
+    if ((map.size || groups.size) && user.role !== 'admin') map.set(user.id, 'edit')
     const ids = [...map.keys()]
-    if (ids.length) {
-      const found = await all('SELECT id FROM users WHERE id = ANY($1::bigint[])', [ids])
-      if (found.length !== ids.length) return fail(c, 400, 'user_not_found')
-    }
+    const gids = [...groups.keys()]
+    if (ids.length && (await all('SELECT id FROM users WHERE id = ANY($1::bigint[])', [ids])).length !== ids.length) return fail(c, 400, 'user_not_found')
+    if (gids.length && (await all('SELECT id FROM groups WHERE id = ANY($1::bigint[])', [gids])).length !== gids.length) return fail(c, 400, 'group_not_found')
     await tx(db, async (q) => {
       await q.query('DELETE FROM page_restrictions WHERE page_id = $1', [id(c)])
-      if (ids.length)
-        await q.query(
-          'INSERT INTO page_restrictions (page_id, user_id, level) SELECT $1, u, l FROM unnest($2::bigint[], $3::text[]) AS x(u, l)',
-          [id(c), ids, ids.map((i) => map.get(i))],
-        )
+      await q.query(
+        `INSERT INTO page_restrictions (page_id, user_id, group_id, level)
+         SELECT $1::bigint, u, NULL::bigint, l FROM unnest($2::bigint[], $3::text[]) AS x(u, l)
+         UNION ALL SELECT $1::bigint, NULL::bigint, g, l FROM unnest($4::bigint[], $5::text[]) AS y(g, l)`,
+        [id(c), ids, ids.map((i) => map.get(i)), gids, gids.map((i) => groups.get(i))],
+      )
     })
-    return c.json({ ok: true, restricted: ids.length > 0 })
+    return c.json({ ok: true, restricted: ids.length + gids.length > 0 })
   })
 
   // Search: every word must appear (in the title, or anywhere with scope=all).
