@@ -320,6 +320,19 @@ function LoadedPage({ page, live, me, onTitle, onDeleted }: { page: Page; live: 
               <button role="menuitem" onClick={() => (setMenu(false), print())}>{t('page.print')}</button>
               <a role="menuitem" className="menu-link" href={`/api/pages/${page.id}/export`} download onClick={() => setMenu(false)}>{t('export.page')}</a>
               <button role="menuitem" onClick={() => (setMenu(false), setSavingTpl(true))}>{t('tpl.save')}</button>
+              <button
+                role="menuitem"
+                onClick={() => {
+                  setMenu(false)
+                  api(`/api/pages/${page.id}/copy`, { method: 'POST', json: { title: t('page.copy.title', { title }) } }).then((p) => {
+                    dispatchEvent(new CustomEvent('ph:tree-changed'))
+                    location.hash = `#/p/${p.id}`
+                    toast(t('page.copied'))
+                  }, (e) => toast(e.message))
+                }}
+              >
+                {t('page.copy')}
+              </button>
               {canEdit && (
                 <button role="menuitem" onClick={() => (setMenu(false), dispatchEvent(new CustomEvent('ph:import', { detail: { parentId: page.id, parentTitle: title } })))}>
                   {t('import.page')}

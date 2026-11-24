@@ -165,6 +165,15 @@ test('page restrictions hide pages everywhere and inherit to children', async ()
   const r = await bob.json('GET', `/api/pages/${secret.id}/restrictions`)
   assert.deepEqual(r.entries.map((e: any) => [e.userId, e.level]).sort(), [[bob.id, 'edit'], [carol.id, 'view']].sort())
 
+  // A copy has the same body and keeps the restrictions; someone who can't see the page can't copy it.
+  const copy = await bob.json('POST', `/api/pages/${secret.id}/copy`, {})
+  assert.equal(copy.title, '기밀 문서 (copy)')
+  assert.deepEqual((await bob.json('GET', `/api/pages/${copy.id}`)).doc, doc)
+  assert.equal((await dave.call('GET', `/api/pages/${copy.id}`)).status, 404)
+  assert.equal((await carol.call('GET', `/api/pages/${copy.id}`)).status, 200)
+  assert.equal((await dave.call('POST', `/api/pages/${secret.id}/copy`, {})).status, 404)
+  await bob.call('DELETE', `/api/pages/${copy.id}`)
+
   // Dave: not listed. Every route behaves as if the pages don't exist.
   const status = async (u: any, m: string, path: string, body?: unknown) => (await u.call(m, path, body)).status
   for (const pid of [secret.id, child.id]) {

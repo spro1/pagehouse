@@ -502,6 +502,27 @@ export function createApp(db: Db, dataDir: string) {
     return c.json({ id: row.id, parentId, kind, title })
   })
 
+  // A copy of one page (not its children) next to it. It keeps the original's restrictions, so copying never widens access.
+  app.post('/api/pages/:id/copy', async (c) => {
+    const pageId = id(c)
+    const denied = await guard(c, pageId, 'view')
+    if (denied) return denied
+    await collab.flush(pageId)
+    const src = await livePage(pageId)
+    if (!src) return fail(c, 404, 'page_not_found')
+    const b = await c.req.json().catch(() => ({}))
+    const title = str(b.title, 500) ?? `${src.title} (copy)`
+    const res = await app.request('/api/pages', {
+      method: 'POST',
+      headers: { authorization: c.req.header('authorization') ?? '', cookie: c.req.header('cookie') ?? '', 'content-type': 'application/json' },
+      body: JSON.stringify({ spaceId: src.space_id, parentId: src.parent_id, kind: src.kind, title, doc: src.doc }),
+    })
+    if (!res.ok) return res
+    const page = await res.json()
+    await db.query('INSERT INTO page_restrictions (page_id, user_id, group_id, level) SELECT $1, user_id, group_id, level FROM page_restrictions WHERE page_id = $2', [page.id, pageId])
+    return c.json(page)
+  })
+
   app.get('/api/pages/:id', async (c) => {
     const p = await one(
       `SELECT p.*, u.name AS updated_by_name, cu.name AS created_by_name, s.name AS space_name, s.key AS space_key
