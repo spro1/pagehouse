@@ -13,6 +13,7 @@ import { registerExport } from './export.ts'
 import { oidcConfig, registerSso } from './sso.ts'
 import { createCollab } from './collab.ts'
 import { mailEnabled } from './mail.ts'
+import { registerMcp } from './mcp.ts'
 import { createNodeWebSocket } from '@hono/node-ws'
 import { mentionedInDoc, mentionedInText, notify, registerPeople } from './people.ts'
 
@@ -307,13 +308,22 @@ export function createApp(db: Db, dataDir: string) {
   app.use('/api/*', async (c, next) => {
     if (c.req.path.startsWith('/api/auth/')) return next()
     const token = getCookie(c, 'sid')
+    // API clients and agents send a personal token instead of the session cookie.
+    const bearer = c.req.header('authorization')?.match(/^Bearer\s+(ph_[A-Za-z0-9_-]+)$/)?.[1]
     const user = token
       ? await one(
           `SELECT u.id, u.email, u.name, u.role, u.locale, u.theme FROM sessions s JOIN users u ON u.id = s.user_id
            WHERE s.token_hash = $1 AND s.expires_at > now() AND u.disabled_at IS NULL`,
           [sha256(token)],
         )
-      : undefined
+      : bearer
+        ? await one(
+            `UPDATE api_tokens t SET last_used_at = now() FROM users u
+             WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND u.id = t.user_id AND u.disabled_at IS NULL
+             RETURNING u.id, u.email, u.name, u.role, u.locale, u.theme`,
+            [sha256(bearer)],
+          )
+        : undefined
     if (!user) return fail(c, 401, 'login_required')
     c.set('user', user)
     if (c.req.path.startsWith('/api/admin/') && user.role !== 'admin') return fail(c, 403, 'admin_only')
@@ -332,6 +342,24 @@ export function createApp(db: Db, dataDir: string) {
     await db.query('UPDATE users SET locale = coalesce($1, locale), theme = coalesce($2, theme), email_notify = coalesce($3, email_notify) WHERE id = $4',
       [locale ?? null, theme ?? null, emailNotify, c.get('user').id])
     return c.json({ ...c.get('user'), ...(locale && { locale }), ...(theme && { theme }), ...(emailNotify !== null && { emailNotify }) })
+  })
+
+  app.get('/api/me/tokens', async (c) =>
+    c.json(await all(`SELECT id, name, created_at AS "createdAt", last_used_at AS "lastUsedAt" FROM api_tokens
+      WHERE user_id = $1 AND revoked_at IS NULL ORDER BY id DESC`, [c.get('user').id])))
+  app.post('/api/me/tokens', async (c) => {
+    // A token can't mint more tokens: only a signed-in browser session can.
+    if (!getCookie(c, 'sid')) return fail(c, 403, 'login_required')
+    const b = await c.req.json().catch(() => ({}))
+    const name = str(b.name, 100)
+    if (!name) return fail(c, 400, 'bad_request')
+    const token = `ph_${randomBytes(24).toString('base64url')}`
+    const row = await one('INSERT INTO api_tokens (user_id, name, token_hash) VALUES ($1, $2, $3) RETURNING id', [c.get('user').id, name, sha256(token)])
+    return c.json({ id: row.id, name, token })
+  })
+  app.delete('/api/me/tokens/:id', async (c) => {
+    const r = await db.query('UPDATE api_tokens SET revoked_at = now() WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL', [id(c), c.get('user').id])
+    return r.rowCount ? c.json({ ok: true }) : fail(c, 404, 'bad_request')
   })
 
   app.post('/api/me/password', async (c) => {
@@ -963,6 +991,7 @@ export function createApp(db: Db, dataDir: string) {
     })
   })
 
+  registerMcp(app)
   registerAdmin(app, { db, filesDir, fail })
   registerPeople(app, { db, fail, visibleFor: (c) => ({ sql: (alias, first) => visible(alias, first, first + 1), params: who(c) }) })
   registerExport(app, {

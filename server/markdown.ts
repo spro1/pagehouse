@@ -78,3 +78,114 @@ export function toMarkdown(title: string, doc: unknown, url: UrlMap = (u) => u) 
   const body = block(doc as Node, url).trim()
   return `# ${title}\n\n${body}\n`
 }
+
+// ---------- Markdown → ProseMirror JSON (for the API and agents; the browser editor has its own parser) ----------
+// Covers what agents write: headings, paragraphs, lists (nested by indent), task lists, code fences, quotes and
+// GitHub alerts, tables, rules, images; inline bold, italic, strike, highlight, code and links.
+
+const md = (s: string) => s.replace(/\\([\\`*_[\]<>|#>+\-.!~=])/g, '$1')
+function inlineFrom(src: string): Node[] {
+  const out: Node[] = []
+  const push = (text: string, marks: Node['marks'] = []) => {
+    if (!text) return
+    const last = out[out.length - 1]
+    if (last && JSON.stringify(last.marks ?? []) === JSON.stringify(marks)) last.text += text
+    else out.push({ type: 'text', text, ...(marks.length ? { marks } : {}) })
+  }
+  const re = /(`+)([\s\S]*?)\1|!\[([^\]]*)\]\(([^)\s]+)\)|\[([^\]]+)\]\(([^)\s]+)\)|\*\*([\s\S]+?)\*\*|__([\s\S]+?)__|~~([\s\S]+?)~~|==([\s\S]+?)==|\*([^*\s][^*]*?)\*|_([^_\s][^_]*?)_|( {2,}|\\)\n/g
+  const walk = (s: string, marks: NonNullable<Node['marks']>) => {
+    let i = 0
+    for (const m of s.matchAll(re)) {
+      push(md(s.slice(i, m.index)), marks)
+      i = m.index! + m[0].length
+      if (m[1]) push(m[2], [...marks, { type: 'code' }])
+      else if (m[4]) out.push({ type: 'image', attrs: { src: m[4], alt: m[3] } })
+      else if (m[6]) walk(m[5], [...marks, { type: 'link', attrs: { href: m[6] } }])
+      else if (m[7] ?? m[8]) walk(m[7] ?? m[8], [...marks, { type: 'bold' }])
+      else if (m[9]) walk(m[9], [...marks, { type: 'strike' }])
+      else if (m[10]) walk(m[10], [...marks, { type: 'highlight' }])
+      else if (m[11] ?? m[12]) walk(m[11] ?? m[12], [...marks, { type: 'italic' }])
+      else if (m[13]) out.push({ type: 'hardBreak' })
+    }
+    push(md(s.slice(i)), marks)
+  }
+  walk(src, [])
+  return out
+}
+const para = (text: string): Node => {
+  const content = inlineFrom(text.replace(/\n(?! )/g, ' ').trim())
+  return { type: 'paragraph', ...(content.length ? { content } : {}) }
+}
+const LIST = /^(\s*)([-*+]|\d+[.)])\s+(\[[ xX]\]\s+)?(.*)$/
+const CALLOUT: Record<string, string> = ALERT_TO_CALLOUT
+
+function blocksFrom(lines: string[]): Node[] {
+  const out: Node[] = []
+  let i = 0
+  while (i < lines.length) {
+    const line = lines[i]
+    if (!line.trim()) { i++; continue }
+    const fence = line.match(/^\s*(`{3,}|~{3,})\s*([\w+-]*)/)
+    if (fence) {
+      const body: string[] = []
+      for (i++; i < lines.length && !lines[i].trim().startsWith(fence[1]); i++) body.push(lines[i])
+      i++
+      out.push({ type: 'codeBlock', attrs: { language: fence[2] || null }, ...(body.length ? { content: [{ type: 'text', text: body.join('\n') }] } : {}) })
+      continue
+    }
+    const h = line.match(/^(#{1,6})\s+(.*?)\s*#*$/)
+    if (h) { out.push({ type: 'heading', attrs: { level: Math.min(h[1].length, 3) }, content: inlineFrom(h[2]) }); i++; continue }
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { out.push({ type: 'horizontalRule' }); i++; continue }
+    if (/^\s*>/.test(line)) {
+      const body: string[] = []
+      for (; i < lines.length && /^\s*>/.test(lines[i]); i++) body.push(lines[i].replace(/^\s*> ?/, ''))
+      const alert = body[0]?.match(/^\[!(\w+)\]\s*$/)
+      const inner = blocksFrom(alert ? body.slice(1) : body)
+      out.push(alert && CALLOUT[alert[1].toUpperCase()]
+        ? { type: 'callout', attrs: { variant: CALLOUT[alert[1].toUpperCase()] }, content: inner.length ? inner : [{ type: 'paragraph' }] }
+        : { type: 'blockquote', content: inner.length ? inner : [{ type: 'paragraph' }] })
+      continue
+    }
+    if (/^\s*\|.*\|\s*$/.test(line) && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1] ?? '')) {
+      const cells = (l: string) => l.trim().replace(/^\||\|$/g, '').split(/(?<!\\)\|/).map((c) => c.trim())
+      const rows = [cells(line)]
+      for (i += 2; i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i]); i++) rows.push(cells(lines[i]))
+      out.push({ type: 'table', content: rows.map((r, ri) => ({ type: 'tableRow', content: r.map((c) => ({
+        type: ri === 0 ? 'tableHeader' : 'tableCell', content: c.split(/<br\s*\/?>/i).map(para) })) })) })
+      continue
+    }
+    const li = line.match(LIST)
+    if (li) {
+      const indent = li[1].length
+      const ordered = /\d/.test(li[2])
+      const task = !!li[3]
+      const items: Node[] = []
+      while (i < lines.length) {
+        const m = lines[i].match(LIST)
+        if (!m || m[1].length !== indent || /\d/.test(m[2]) !== ordered || !!m[3] !== task) break
+        // The item's own text, then anything indented deeper (nested lists, continuation lines).
+        const body = [m[4]]
+        for (i++; i < lines.length && (lines[i].match(/^(\s*)/)![1].length > indent || (!lines[i].trim() && (lines[i + 1] ?? '').match(/^(\s*)/)![1].length > indent)); i++)
+          body.push(lines[i].slice(Math.min(indent + 2, lines[i].match(/^(\s*)/)![1].length)))
+        const inner = blocksFrom(body)
+        items.push(task
+          ? { type: 'taskItem', attrs: { checked: /x/i.test(m[3]) }, content: inner.length ? inner : [{ type: 'paragraph' }] }
+          : { type: 'listItem', content: inner.length ? inner : [{ type: 'paragraph' }] })
+      }
+      out.push({ type: task ? 'taskList' : ordered ? 'orderedList' : 'bulletList', ...(ordered ? { attrs: { start: Number(li[2].replace(/\D/g, '')) || 1 } } : {}), content: items })
+      continue
+    }
+    const text: string[] = []
+    for (; i < lines.length && lines[i].trim() && !/^\s*(#{1,6}\s|>|```|~~~|\|)/.test(lines[i]) && !LIST.test(lines[i]); i++) text.push(lines[i])
+    if (!text.length) { text.push(lines[i]); i++ }
+    const p = para(text.join('\n'))
+    // A paragraph that is only an image becomes an image block.
+    out.push(p.content?.length === 1 && p.content[0].type === 'image' ? p.content[0] : p)
+  }
+  return out
+}
+
+export function fromMarkdown(src: string): Node {
+  const content = blocksFrom(src.replace(/\r\n?/g, '\n').split('\n'))
+  return { type: 'doc', content: content.length ? content : [{ type: 'paragraph' }] }
+}

@@ -670,3 +670,35 @@ test('watching: creators watch their pages; one unread update notice per page', 
   await admin.call('PUT', `/api/pages/${page.id}`, { title: 'Watched', doc: doc('three'), version: 3 })
   assert.equal((await w.json('GET', '/api/notifications')).unread, 0)
 })
+
+test('MCP: personal token, tools act with the user’s own permissions', async () => {
+  const admin = client()
+  await admin.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  const { token } = await admin.json('POST', '/api/me/tokens', { name: 'agent' })
+  assert.match(token, /^ph_/)
+  const rpc = async (method: string, params?: unknown, auth = token) => {
+    const res = await app.request('/api/mcp', { method: 'POST', headers: { authorization: `Bearer ${auth}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) })
+    return { status: res.status, body: await res.json().catch(() => null) }
+  }
+  assert.equal((await rpc('initialize', { protocolVersion: '2025-06-18' })).body.result.protocolVersion, '2025-06-18')
+  assert.ok((await rpc('tools/list')).body.result.tools.some((t: any) => t.name === 'create_page'))
+  assert.equal((await rpc('tools/list', undefined, 'ph_wrong')).status, 401)
+  const tool = async (name: string, args: unknown) => (await rpc('tools/call', { name, arguments: args })).body.result
+  const space = (await admin.json('GET', '/api/spaces')).find((x: any) => x.key === 'GENERAL')
+  const created = await tool('create_page', { spaceId: space.id, title: 'Agent notes', markdown: '## Steps\n\n- check **logs**\n- restart' })
+  const id = Number(created.content[0].text.match(/page (\d+)/)[1])
+  const page = await tool('get_page', { id })
+  assert.match(page.content[0].text, /## Steps[\s\S]*- check \*\*logs\*\*/)
+  await tool('update_page', { id, markdown: 'replaced' })
+  assert.equal((await admin.json('GET', `/api/pages/${id}/versions`)).length, 2, 'old version kept')
+  assert.match((await tool('search', { query: 'replaced' })).content[0].text, /Agent notes/)
+  // A page the user can't see is an error result, not a leak.
+  assert.equal((await tool('get_page', { id: 999999 })).isError, true)
+  // Tokens can't create more tokens, and revoked tokens stop working.
+  const viaToken = await app.request('/api/me/tokens', { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: '{"name":"x"}' })
+  assert.equal(viaToken.status, 403)
+  const [t] = await admin.json('GET', '/api/me/tokens')
+  await admin.call('DELETE', `/api/me/tokens/${t.id}`)
+  assert.equal((await rpc('ping')).status, 401)
+})

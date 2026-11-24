@@ -391,6 +391,55 @@ export function LangSelect({ account }: { account?: boolean }) {
   )
 }
 
+/** Personal API tokens, for the REST API and AI agents over MCP. */
+function Tokens() {
+  const [list, setList] = useState<{ id: number; name: string; createdAt: string; lastUsedAt: string | null }[]>([])
+  const [name, setName] = useState('')
+  const [fresh, setFresh] = useState<string | null>(null)
+  const load = () => api('/api/me/tokens').then(setList)
+  useEffect(() => void load(), [])
+  const url = `${location.origin}/api/mcp`
+  return (
+    <section className="box">
+      <h3>{t('tokens.title')}</h3>
+      <p className="muted small">{t('tokens.sub')}</p>
+      <form className="row" onSubmit={async (e) => {
+        e.preventDefault()
+        try {
+          const r = await api('/api/me/tokens', { json: { name } })
+          setFresh(r.token)
+          setName('')
+          load()
+        } catch (err: any) {
+          toast(err.message)
+        }
+      }}>
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('tokens.name')} aria-label={t('tokens.name')} maxLength={100} style={{ flex: 1 }} />
+        <button className="primary" disabled={!name.trim()}>{t('tokens.create')}</button>
+      </form>
+      {fresh && (
+        <>
+          <CopyBox label={t('tokens.once')} url={fresh} />
+          <CopyBox label={t('tokens.claude')} url={`claude mcp add --transport http pagehouse ${url} --header "Authorization: Bearer ${fresh}"`} />
+        </>
+      )}
+      <p className="muted small">{t('tokens.endpoint')} <code>{url}</code></p>
+      <ul className="people">
+        {list.map((k) => (
+          <li key={k.id}>
+            <span className="person"><b><span>{k.name}</span></b>
+              <small>{t('tokens.meta', { created: ago(k.createdAt), used: k.lastUsedAt ? ago(k.lastUsedAt) : t('tokens.never') })}</small></span>
+            <button className="link small danger" onClick={async () => {
+              if (!(await confirmDialog({ title: t('tokens.revoke.title', { name: k.name }), body: t('tokens.revoke.body'), ok: t('tokens.revoke'), danger: true }))) return
+              api(`/api/me/tokens/${k.id}`, { method: 'DELETE' }).then(load, (e) => toast(e.message))
+            }}>{t('tokens.revoke')}</button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
 /** Email preference; shown only when the server can send mail. */
 function MailSetting() {
   const [m, setM] = useState<{ mail: boolean; emailNotify: boolean }>()
@@ -435,6 +484,7 @@ export function Settings({ me }: { me: User }) {
         <LangSelect account />
       </section>
       <MailSetting />
+      <Tokens />
       <section className="box">
         <h3>{t('settings.password')}</h3>
         <form
