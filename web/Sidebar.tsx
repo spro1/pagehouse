@@ -84,6 +84,8 @@ export function Sidebar(p: Props) {
         </a>
       )}
 
+      <QuickLinks current={p.current} />
+
       <div className="tree-head">
         <span>{t('nav.pages')}</span>
         <button className="ghost icon" title={t('nav.newPage')} aria-label={t('nav.newPage')} onClick={() => p.onNewPage(null)}>
@@ -255,5 +257,54 @@ function ThemeButton() {
       onClick={() => (applyTheme(next), api('/api/me', { method: 'PATCH', json: { theme: next } }).catch(() => {}))}>
       <Icon name={th === 'system' ? 'monitor' : th === 'light' ? 'sun' : 'moon'} />
     </button>
+  )
+}
+
+type Quick = { id: number; title: string; kind: string }
+/** Favorites and recently viewed pages, across spaces. Refreshed as pages open and stars change. */
+function QuickLinks({ current }: { current: number | null }) {
+  const [q, setQ] = useState<{ starred: Quick[]; recent: Quick[] }>({ starred: [], recent: [] })
+  const [open, setOpen] = useState(() => {
+    try {
+      return localStorage.getItem('ph.recentOpen') !== '0'
+    } catch {
+      return true
+    }
+  })
+  useEffect(() => {
+    const load = () => api('/api/me/quick').then(setQ, () => {})
+    load()
+    addEventListener('ph:quick-changed', load)
+    return () => removeEventListener('ph:quick-changed', load)
+  }, [current])
+  const toggle = () => {
+    setOpen(!open)
+    try {
+      localStorage.setItem('ph.recentOpen', open ? '0' : '1')
+    } catch {}
+  }
+  const link = (x: Quick) => (
+    <a key={x.id} className={`nav-item quick ${x.id === current ? 'on' : ''}`} href={`#/p/${x.id}`}>
+      <Icon name="page" size={14} /> <span className="ellipsis">{x.title || t('common.untitled')}</span>
+    </a>
+  )
+  return (
+    <>
+      {q.starred.length > 0 && (
+        <>
+          <div className="tree-head"><span>{t('nav.starred')}</span></div>
+          {q.starred.map(link)}
+        </>
+      )}
+      {q.recent.length > 0 && (
+        <>
+          <div className="tree-head">
+            <span>{t('nav.recent')}</span>
+            <button className="ghost icon" aria-expanded={open} aria-label={t('nav.recent')} onClick={toggle}><Icon name={open ? 'down' : 'chevron'} size={14} /></button>
+          </div>
+          {open && q.recent.filter((x) => x.id !== current).slice(0, 5).map(link)}
+        </>
+      )}
+    </>
   )
 }

@@ -183,6 +183,25 @@ export function registerPeople(app: Hono<any>, { db, fail, visibleFor }: Deps) {
     return r.rowCount ? c.json({ ok: true }) : fail(c, 404, 'group_not_found')
   })
 
+  // ---------- favorites and recently viewed (sidebar) ----------
+  app.get('/api/me/quick', async (c) => {
+    const v = visibleFor(c)
+    const u = me(c).id
+    const [starred, recent] = await Promise.all([
+      all(
+        `SELECT p.id, p.title, p.kind FROM page_stars st JOIN pages p ON p.id = st.page_id
+         WHERE st.user_id = $1 AND p.deleted_at IS NULL AND ${v.sql('p', 2)} ORDER BY st.created_at DESC LIMIT 50`,
+        [u, ...v.params],
+      ),
+      all(
+        `SELECT p.id, p.title, p.kind FROM page_views pv JOIN pages p ON p.id = pv.page_id
+         WHERE pv.user_id = $1 AND p.deleted_at IS NULL AND ${v.sql('p', 2)} ORDER BY pv.viewed_at DESC LIMIT 8`,
+        [u, ...v.params],
+      ),
+    ])
+    return c.json({ starred, recent })
+  })
+
   // ---------- home ----------
   app.get('/api/home', async (c) => {
     const v = visibleFor(c)

@@ -40,7 +40,7 @@ function clearDraft(id: number) {
 type Page = {
   id: number; title: string; doc: any; version: number; updatedAt: string; updatedBy: string
   createdAt: string; createdBy: string; space: { id: number; name: string }; ancestors: { id: number; title: string }[]
-  access: 'edit' | 'view'; restricted: boolean; watching: boolean; labels: string[]
+  access: 'edit' | 'view'; restricted: boolean; watching: boolean; labels: string[]; starred: boolean
 }
 
 export function PageView({ id, me, onTitle, onDeleted }: { id: number; me: User; onTitle: (t: string) => void; onDeleted: () => void }) {
@@ -302,6 +302,7 @@ function LoadedPage({ page, live, me, onTitle, onDeleted }: { page: Page; live: 
           <Icon name="link" />
           <span className="label">{t('page.copyLink')}</span>
         </button>
+        <StarButton pageId={page.id} initial={page.starred} />
         <button className={`ghost ${watching ? 'on' : ''}`} aria-pressed={watching} title={watching ? t('page.watching.tip') : t('page.watch.tip')}
           onClick={() => api(`/api/pages/${page.id}/watch`, { method: 'PUT', json: { watching: !watching } }).then((r) => (setWatching(r.watching), toast(r.watching ? t('page.watch.on') : t('page.watch.off'))), (e) => toast(e.message))}>
           <Icon name="eye" />
@@ -1108,4 +1109,15 @@ function exportMarkdown(title: string, editor: Editor) {
   a.download = `${title.replace(/[\\/:*?"<>|]/g, '_') || 'page'}.md`
   a.click()
   URL.revokeObjectURL(a.href)
+}
+
+function StarButton({ pageId, initial }: { pageId: number; initial: boolean }) {
+  const [on, setOn] = useState(initial)
+  useEffect(() => setOn(initial), [pageId])
+  return (
+    <button className={`ghost icon star ${on ? 'starred' : ''}`} aria-pressed={on} title={t(on ? 'page.unstar' : 'page.star')} aria-label={t(on ? 'page.unstar' : 'page.star')}
+      onClick={() => api(`/api/pages/${pageId}/star`, { method: 'PUT', json: { starred: !on } }).then((r) => (setOn(r.starred), dispatchEvent(new CustomEvent('ph:quick-changed'))), (e) => toast(e.message))}>
+      <Icon name="star" />
+    </button>
+  )
 }

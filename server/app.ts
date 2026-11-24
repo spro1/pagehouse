@@ -593,6 +593,7 @@ export function createApp(db: Db, dataDir: string) {
       space: { id: p.space_id, name: p.space_name, key: p.space_key }, ancestors,
       access: a,
       labels: (await all('SELECT label FROM page_labels WHERE page_id = $1 ORDER BY label', [p.id])).map((r) => r.label),
+      starred: !!(await one('SELECT 1 FROM page_stars WHERE page_id = $1 AND user_id = $2', [p.id, c.get('user').id])),
       watching: !!(await one('SELECT 1 FROM page_watches WHERE page_id = $1 AND user_id = $2', [p.id, c.get('user').id])),
       restricted: !!(await one(
         `WITH RECURSIVE path(id, parent_id) AS (SELECT id, parent_id FROM pages WHERE id = $1
@@ -626,6 +627,16 @@ export function createApp(db: Db, dataDir: string) {
        GROUP BY l.label ORDER BY count(*) DESC, l.label LIMIT 100`,
       [...who(c), `${q.replace(/[\\%_]/g, '\\$&')}%`],
     ))
+  })
+
+  app.put('/api/pages/:id/star', async (c) => {
+    const denied = await guard(c, id(c), 'view')
+    if (denied) return denied
+    const b = await c.req.json().catch(() => ({}))
+    await db.query(b.starred
+      ? 'INSERT INTO page_stars (user_id, page_id) VALUES ($1, $2) ON CONFLICT DO NOTHING'
+      : 'DELETE FROM page_stars WHERE user_id = $1 AND page_id = $2', [c.get('user').id, id(c)])
+    return c.json({ starred: !!b.starred })
   })
 
   app.put('/api/pages/:id/watch', async (c) => {

@@ -807,6 +807,24 @@ test('labels: normalized, searchable on their own, hidden pages stay hidden, cop
   assert.equal((await bob.call('PUT', `/api/pages/${page.id}/labels`, { labels: ['x'] })).status, 404)
 })
 
+test('favorites and recently viewed: per person, only pages they can still see', async () => {
+  const x = client()
+  await x.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  const [space] = await x.json('GET', '/api/spaces')
+  const fav = await x.json('POST', '/api/pages', { spaceId: space.id, title: 'Fav' })
+  assert.equal((await x.json('GET', `/api/pages/${fav.id}`)).starred, false)
+  assert.deepEqual(await x.json('PUT', `/api/pages/${fav.id}/star`, { starred: true }), { starred: true })
+  assert.equal((await x.json('GET', `/api/pages/${fav.id}`)).starred, true)
+  const q = await x.json('GET', '/api/me/quick')
+  assert.equal(q.starred[0].id, fav.id)
+  assert.equal(q.recent[0].id, fav.id)
+  const bob = client()
+  await bob.call('POST', '/api/auth/login', { email: 'bob@b.co', password: 'newpassword' })
+  assert.ok(!(await bob.json('GET', '/api/me/quick')).starred.some((p: any) => p.id === fav.id))
+  await x.call('DELETE', `/api/pages/${fav.id}`)
+  assert.ok(!(await x.json('GET', '/api/me/quick')).starred.some((p: any) => p.id === fav.id))
+})
+
 test('templates: saved from a page, per space or global, removable', async () => {
   const admin = client()
   await admin.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
