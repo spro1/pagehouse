@@ -86,7 +86,7 @@ curl -fsSL https://github.com/spro1/pagehouse/releases/latest/download/install.s
 베타 기간에는 버전을 지정합니다:
 
 ```sh
-curl -fsSL https://github.com/spro1/pagehouse/releases/download/v0.1.0-beta.2/install.sh | sh -s -- --dir /opt/pagehouse --version 0.1.0-beta.2
+curl -fsSL https://github.com/spro1/pagehouse/releases/download/v0.1.0-beta.3/install.sh | sh -s -- --dir /opt/pagehouse --version 0.1.0-beta.3
 ```
 
 설치 스크립트는 다음을 처리합니다.

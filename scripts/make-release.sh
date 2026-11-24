@@ -37,15 +37,16 @@ sed -i.bak "s#^PAGEHOUSE_VERSION=.*#PAGEHOUSE_VERSION=$VERSION#" "$stage/.env.ex
 chmod +x "$stage/install.sh" "$stage"/scripts/*.sh
 grep -q "$IMAGE" "$stage/docker-compose.yml" || { echo "failed to stamp the image into docker-compose.yml" >&2; exit 1; }
 
-tar -C "$out" -czf "$out/pagehouse-$VERSION.tar.gz" "pagehouse-$VERSION"
+tar -C "$out" --exclude "pagehouse-$VERSION/images" -czf "$out/pagehouse-$VERSION.tar.gz" "pagehouse-$VERSION"
 cp "$out/pagehouse-$VERSION.tar.gz" "$out/pagehouse.tar.gz"
 cp "$stage/install.sh" "$out/install.sh"
 echo "$out/pagehouse-$VERSION.tar.gz"
 
 if [ -n "$OFFLINE" ]; then
   mkdir -p "$stage/images"
-  $CLI save -o "$stage/images/pagehouse.tar" "$IMAGE:$VERSION"
-  $CLI save -o "$stage/images/postgres.tar" "$IMAGE-postgres:17"
+  # CI puts single-architecture archives here first (see release.yml); locally the images are saved now.
+  [ -s "$stage/images/pagehouse.tar" ] || $CLI save -o "$stage/images/pagehouse.tar" "$IMAGE:$VERSION"
+  [ -s "$stage/images/postgres.tar" ] || $CLI save -o "$stage/images/postgres.tar" "$IMAGE-postgres:17"
   tar -C "$out" -czf "$out/pagehouse-$VERSION-offline-$OFFLINE.tar.gz" "pagehouse-$VERSION"
   echo "$out/pagehouse-$VERSION-offline-$OFFLINE.tar.gz"
 fi

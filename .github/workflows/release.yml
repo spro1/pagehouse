@@ -64,20 +64,25 @@ jobs:
     needs: [meta, image]
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         arch: [amd64, arm64]
     steps:
       - uses: actions/checkout@v4
-      # Images of a private repository need a login even to pull.
-      - uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Pull images for ${{ matrix.arch }}
+      # One architecture per archive. `docker save` of a multi-arch image fails on missing manifests,
+      # so skopeo (preinstalled on GitHub runners) copies exactly the platform we want.
+      - name: Save ${{ matrix.arch }} images
+        env:
+          CREDS: ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}
         run: |
-          docker pull --platform linux/${{ matrix.arch }} ${{ needs.meta.outputs.image }}:${{ needs.meta.outputs.version }}
-          docker pull --platform linux/${{ matrix.arch }} ${{ needs.meta.outputs.image }}-postgres:17
+          dir="release/pagehouse-${{ needs.meta.outputs.version }}/images"
+          mkdir -p "$dir"
+          skopeo copy --src-creds "$CREDS" --override-os linux --override-arch ${{ matrix.arch }} \
+            docker://${{ needs.meta.outputs.image }}:${{ needs.meta.outputs.version }} \
+            docker-archive:"$dir/pagehouse.tar":${{ needs.meta.outputs.image }}:${{ needs.meta.outputs.version }}
+          skopeo copy --src-creds "$CREDS" --override-os linux --override-arch ${{ matrix.arch }} \
+            docker://${{ needs.meta.outputs.image }}-postgres:17 \
+            docker-archive:"$dir/postgres.tar":${{ needs.meta.outputs.image }}-postgres:17
       - name: Build bundles
         run: sh scripts/make-release.sh "${{ needs.meta.outputs.version }}" "${{ needs.meta.outputs.image }}" "${GITHUB_REPOSITORY}" --offline ${{ matrix.arch }}
       - uses: actions/upload-artifact@v4
