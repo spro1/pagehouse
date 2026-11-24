@@ -144,6 +144,10 @@ export function Home({ me, spaceId, onCreate }: { me: User; spaceId?: number; on
       setD({ ...r, forYou: await Promise.all(r.forYou.map(async (i: any) => ({ ...i, excerpt: i.excerpt ? await mentionsToNames(i.excerpt) : null }))) })
     })
   }, [])
+  const [custom, setCustom] = useState<{ id: number; spaceId: number | null; name: string; icon: string; title: string; doc: any; createdBy: number }[]>([])
+  useEffect(() => {
+    if (spaceId) api(`/api/templates?space=${spaceId}`).then(setCustom, () => setCustom([]))
+  }, [spaceId])
   const hour = new Date().getHours()
   const greet = hour < 12 ? 'home.morning' : hour < 18 ? 'home.afternoon' : 'home.evening'
   const list = (items: any[] | undefined, empty: string, meta: (r: any) => string, metaTitle: (r: any) => string) =>
@@ -167,6 +171,20 @@ export function Home({ me, spaceId, onCreate }: { me: User; spaceId?: number; on
           <button key={tpl.key} disabled={!spaceId} title={spaceId ? tpl.desc : t('home.needSpace')} onClick={() => onCreate(tpl)}>
             <span aria-hidden="true">{tpl.icon}</span> {tpl.name}
           </button>
+        ))}
+        {custom.map((c) => (
+          <span key={c.id} className="custom-tpl">
+            <button title={c.spaceId ? t('tpl.custom.space') : t('tpl.custom.global')}
+              onClick={() => onCreate({ key: `c${c.id}`, name: c.name, desc: '', icon: c.icon, title: () => c.title, doc: () => c.doc })}>
+              <span aria-hidden="true">{c.icon}</span> {c.name}
+            </button>
+            {(c.createdBy === me.id || me.role === 'admin') && (
+              <button className="ghost icon tpl-remove" aria-label={t('tpl.custom.remove', { name: c.name })} onClick={async () => {
+                if (!(await confirmDialog({ title: t('tpl.custom.remove', { name: c.name }), body: t('tpl.custom.remove.body'), ok: t('common.delete'), danger: true }))) return
+                api(`/api/templates/${c.id}`, { method: 'DELETE' }).then(() => setCustom((l) => l.filter((x) => x.id !== c.id)), (e) => toast(e.message))
+              }}><Icon name="x" size={12} /></button>
+            )}
+          </span>
         ))}
         <button disabled={!spaceId} title={t('tpl.import.desc')} onClick={() => dispatchEvent(new CustomEvent('ph:import', { detail: { parentId: null } }))}>
           <span aria-hidden="true">📥</span> {t('tpl.import')}

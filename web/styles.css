@@ -721,3 +721,9 @@ a.btn.sso:hover { background: var(--accent-hover); }
 /* Other people's cursors while co-editing */
 .collaboration-carets__caret { position: relative; margin: 0 -1px; border-left: 1px solid; border-right: 1px solid; word-break: normal; pointer-events: none; }
 .collaboration-carets__label { position: absolute; top: -1.4em; left: -1px; padding: 1px 5px; border-radius: 4px 4px 4px 0; color: #fff; font-size: 11px; font-weight: 600; line-height: normal; white-space: nowrap; user-select: none; }
+
+/* Saved templates on the home screen */
+.custom-tpl { position: relative; display: inline-flex; }
+.custom-tpl .tpl-remove { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; padding: 0; border-radius: 50%; background: var(--bg); border: 1px solid var(--line); opacity: 0; }
+.custom-tpl:hover .tpl-remove, .custom-tpl .tpl-remove:focus-visible { opacity: 1; }
+label.check { display: flex; flex-direction: row; align-items: center; gap: 8px; }

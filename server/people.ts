@@ -108,6 +108,41 @@ export function registerPeople(app: Hono<any>, { db, fail, visibleFor }: Deps) {
     return c.json({ ok: true })
   })
 
+  // ---------- templates ----------
+  app.get('/api/templates', async (c) => {
+    const space = Number(c.req.query('space')) || 0
+    const role = space ? await spaceRole(c, space) : null
+    return c.json(await all(
+      `SELECT t.id, t.space_id AS "spaceId", t.name, t.icon, t.title, t.doc, t.created_by AS "createdBy"
+       FROM templates t WHERE t.deleted_at IS NULL AND (t.space_id IS NULL OR ($1 AND t.space_id = $2)) ORDER BY t.space_id NULLS FIRST, t.name`,
+      [!!role, space]))
+  })
+  app.post('/api/templates', async (c) => {
+    const b = await c.req.json().catch(() => ({}))
+    const name = typeof b.name === 'string' ? b.name.trim().slice(0, 100) : ''
+    const icon = typeof b.icon === 'string' && b.icon.trim() ? [...b.icon.trim()].slice(0, 2).join('') : '📄'
+    if (!name || !Number.isInteger(b.pageId)) return fail(c, 400, 'bad_request')
+    // The page must be one the caller can open; its current content becomes the template.
+    const v = visibleFor(c)
+    const page = await one(`SELECT p.space_id, p.title, p.doc FROM pages p WHERE p.id = $1 AND p.deleted_at IS NULL AND ${v.sql('p', 2)}`, [b.pageId, ...v.params])
+    if (!page) return fail(c, 404, 'page_not_found')
+    const global = b.global === true
+    if (global ? me(c).role !== 'admin' : !['admin', 'edit'].includes((await spaceRole(c, page.space_id)) ?? '')) return fail(c, 403, 'no_edit_permission')
+    const row = await one(
+      `INSERT INTO templates (space_id, name, icon, title, doc, created_by) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [global ? null : page.space_id, name, icon, page.title, page.doc, me(c).id])
+    return c.json({ id: row.id })
+  })
+  app.delete('/api/templates/:id', async (c) => {
+    const tpl = await one('SELECT space_id, created_by FROM templates WHERE id = $1 AND deleted_at IS NULL', [sid(c)])
+    if (!tpl) return fail(c, 404, 'bad_request')
+    const ok = me(c).role === 'admin' || tpl.created_by === me(c).id || (tpl.space_id && (await spaceRole(c, tpl.space_id)) === 'admin')
+    if (!ok) return fail(c, 403, 'space_admin_only')
+    // Kept, only hidden, like everything else that gets deleted.
+    await db.query('UPDATE templates SET deleted_at = now() WHERE id = $1', [sid(c)])
+    return c.json({ ok: true })
+  })
+
   // ---------- groups ----------
   // Everyone can list groups (to pick them in space and page settings); only admins change them.
   app.get('/api/groups', async (c) =>

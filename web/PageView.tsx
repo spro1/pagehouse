@@ -82,6 +82,7 @@ function LoadedPage({ page, live, me, onTitle, onDeleted }: { page: Page; live: 
   const [panel, setPanel] = useState<'history' | null>(null)
   const [menu, setMenu] = useState(false)
   const [sharing, setSharing] = useState(false)
+  const [savingTpl, setSavingTpl] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!menu) return
@@ -307,6 +308,7 @@ function LoadedPage({ page, live, me, onTitle, onDeleted }: { page: Page; live: 
               <button role="menuitem" onClick={() => (setMenu(false), exportMarkdown(title, editor))}>{t('page.exportMd')}</button>
               <button role="menuitem" onClick={() => (setMenu(false), print())}>{t('page.print')}</button>
               <a role="menuitem" className="menu-link" href={`/api/pages/${page.id}/export`} download onClick={() => setMenu(false)}>{t('export.page')}</a>
+              <button role="menuitem" onClick={() => (setMenu(false), setSavingTpl(true))}>{t('tpl.save')}</button>
               {canEdit && (
                 <button role="menuitem" onClick={() => (setMenu(false), dispatchEvent(new CustomEvent('ph:import', { detail: { parentId: page.id, parentTitle: title } })))}>
                   {t('import.page')}
@@ -405,6 +407,7 @@ function LoadedPage({ page, live, me, onTitle, onDeleted }: { page: Page; live: 
           <input ref={fileInput} type="file" hidden multiple onChange={(e) => (takeFiles(e.target.files), (e.target.value = ''))} />
           <Comments pageId={page.id} me={me} editor={editor} />
         </article>
+        {savingTpl && <SaveTemplateModal pageId={page.id} me={me} title={title} onClose={() => setSavingTpl(false)} />}
         {sharing && (
           <RestrictionsModal pageId={page.id} me={me} canEdit={canEdit} onClose={() => setSharing(false)} onSaved={setRestricted} />
         )}
@@ -415,6 +418,44 @@ function LoadedPage({ page, live, me, onTitle, onDeleted }: { page: Page; live: 
         )}
       </div>
     </div>
+  )
+}
+
+function SaveTemplateModal({ pageId, me, title, onClose }: { pageId: number; me: User; title: string; onClose: () => void }) {
+  const [name, setName] = useState(title)
+  const [icon, setIcon] = useState('📄')
+  const [global, setGlobal] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const save = async () => {
+    setBusy(true)
+    try {
+      await api('/api/templates', { json: { pageId, name, icon, global } })
+      toast(t('tpl.saved'))
+      onClose()
+    } catch (e: any) {
+      toast(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Modal title={t('tpl.save')} onClose={onClose} onSubmit={(e) => (e.preventDefault(), save())} footer={
+      <>
+        <span className="note-text">{t('tpl.save.note')}</span>
+        <button type="button" onClick={onClose}>{t('common.cancel')}</button>
+        <button className="primary" disabled={busy || !name.trim()}>{t('common.save')}</button>
+      </>
+    }>
+      <div className="form">
+        <div className="row">
+          <label style={{ width: 80 }}>{t('tpl.icon')}<input value={icon} onChange={(e) => setIcon(e.target.value)} maxLength={4} /></label>
+          <label style={{ flex: 1 }}>{t('tpl.name')}<input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} autoFocus /></label>
+        </div>
+        {me.role === 'admin' && (
+          <label className="check"><input type="checkbox" checked={global} onChange={(e) => setGlobal(e.target.checked)} /> {t('tpl.global')}</label>
+        )}
+      </div>
+    </Modal>
   )
 }
 

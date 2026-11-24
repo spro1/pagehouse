@@ -630,3 +630,19 @@ test('live co-editing: JSON round-trips through Yjs; two editors merge and the r
     server.close()
   }
 })
+
+test('templates: saved from a page, per space or global, removable', async () => {
+  const admin = client()
+  await admin.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  const [space] = await admin.json('GET', '/api/spaces')
+  const doc = { type: 'doc', content: [{ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'Agenda' }] }] }
+  const page = await admin.json('POST', '/api/pages', { spaceId: space.id, title: 'Retro', doc })
+  const tpl = await admin.json('POST', '/api/templates', { pageId: page.id, name: 'Retro', icon: '🔁' })
+  const list = await admin.json('GET', `/api/templates?space=${space.id}`)
+  assert.deepEqual(list.find((x: any) => x.id === tpl.id).doc, doc)
+  // Not offered in other spaces unless global.
+  const other = await admin.json('POST', '/api/spaces', { name: 'Other', key: 'OTHTPL' })
+  assert.ok(!(await admin.json('GET', `/api/templates?space=${other.id}`)).some((x: any) => x.id === tpl.id))
+  assert.equal((await admin.call('DELETE', `/api/templates/${tpl.id}`)).status, 200)
+  assert.ok(!(await admin.json('GET', `/api/templates?space=${space.id}`)).some((x: any) => x.id === tpl.id))
+})
