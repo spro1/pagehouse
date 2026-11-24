@@ -7,7 +7,10 @@ import { PrincipalLabel } from './SpaceSettings.tsx'
 import { t } from './i18n.ts'
 import { Icon } from './icons.tsx'
 import { toMarkdown } from '../server/markdown.ts'
-import { CODE_LANGUAGES, extensions } from './editor/extensions.tsx'
+import { CODE_LANGUAGES, extensions, type Live } from './editor/extensions.tsx'
+import * as Y from 'yjs'
+import { WebsocketProvider } from 'y-websocket'
+import { ySyncPluginKey } from '@tiptap/y-tiptap'
 import { AutoTextarea, Modal, confirmDialog } from './ui.tsx'
 
 // Unsaved edits are mirrored to this browser until the server confirms the save,
@@ -40,9 +43,24 @@ type Page = {
 
 export function PageView({ id, me, onTitle, onDeleted }: { id: number; me: User; onTitle: (t: string) => void; onDeleted: () => void }) {
   const [page, setPage] = useState<Page | null>()
+  // The page's live editing room; null when it can't be reached (an old proxy without WebSockets, say):
+  // then the page saves the classic way, with a version check.
+  const [live, setLive] = useState<Live | null>()
   useEffect(() => {
     setPage(undefined)
+    setLive(undefined)
     api(`/api/pages/${id}`).then(setPage, () => setPage(null))
+    const doc = new Y.Doc()
+    const provider = new WebsocketProvider(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/collab`, String(id), doc, { disableBc: true })
+    let settled = false
+    const giveUp = setTimeout(() => !settled && ((settled = true), provider.destroy(), setLive(null)), 4000)
+    provider.once('sync', () => {
+      if (settled) return
+      settled = true
+      clearTimeout(giveUp)
+      setLive({ doc, provider, user: { name: me.name, color: `hsl(${(me.id * 137) % 360} 70% 45%)` } })
+    })
+    return () => (clearTimeout(giveUp), provider.destroy(), doc.destroy())
   }, [id])
   if (page === null)
     return (
@@ -52,10 +70,12 @@ export function PageView({ id, me, onTitle, onDeleted }: { id: number; me: User;
         <a className="btn" href="#/">{t('page.goHome')}</a>
       </div>
     )
-  return page ? <LoadedPage key={page.id} page={page} me={me} onTitle={onTitle} onDeleted={onDeleted} /> : <div className="loading" />
+  return page && live !== undefined
+    ? <LoadedPage key={page.id} page={page} live={live} me={me} onTitle={onTitle} onDeleted={onDeleted} />
+    : <div className="loading" />
 }
 
-function LoadedPage({ page, me, onTitle, onDeleted }: { page: Page; me: User; onTitle: (t: string) => void; onDeleted: () => void }) {
+function LoadedPage({ page, live, me, onTitle, onDeleted }: { page: Page; live: Live | null; me: User; onTitle: (t: string) => void; onDeleted: () => void }) {
   const [title, setTitle] = useState(page.title)
   const [status, setStatus] = useState<{ text: string; kind?: 'error' | 'busy' }>({ text: '' })
   const [meta, setMeta] = useState({ updatedAt: page.updatedAt, updatedBy: page.updatedBy })
@@ -82,10 +102,11 @@ function LoadedPage({ page, me, onTitle, onDeleted }: { page: Page; me: User; on
   })
 
   const editor = useEditor({
-    extensions: extensions(),
-    content: page.doc,
+    extensions: extensions(live ?? undefined),
+    ...(!live && { content: page.doc }),
     editable: canEdit,
-    onUpdate: () => schedule(),
+    // In a live room, edits arriving from others are not ours to save or keep as a draft.
+    onUpdate: ({ transaction }) => !transaction.getMeta(ySyncPluginKey)?.isChangeOrigin && schedule(),
     editorProps: {
       handlePaste: (_v, e) => takeFiles(e.clipboardData?.files),
       // Dropped files go where they were dropped, not where the cursor happened to be.
@@ -145,11 +166,47 @@ function LoadedPage({ page, me, onTitle, onDeleted }: { page: Page; me: User; on
     s.current.dirty = true
     if (editor) writeDraft(page.id, { base: s.current.version, title: s.current.title, doc: editor.getJSON(), at: Date.now() })
     if (!s.current.conflict) setStatus({ text: t('page.saving'), kind: 'busy' })
+    if (live) {
+      // The room saves for us; a title change travels through the shared doc too.
+      const yt = live.doc.getText('title')
+      if (yt.toString() !== s.current.title) live.doc.transact(() => (yt.delete(0, yt.length), yt.insert(0, s.current.title)))
+      if (s.current.checkpoint) live.doc.getMap('meta').set('checkpoint', true), (s.current.checkpoint = false)
+      return
+    }
     clearTimeout(s.current.timer)
     s.current.timer = window.setTimeout(flush, 800)
   }
+  // Live room: the server reports each save in the shared "meta" map; others' title edits arrive in "title".
+  useEffect(() => {
+    if (!live) return
+    const meta = live.doc.getMap('meta')
+    const yt = live.doc.getText('title')
+    const onMeta = () => {
+      const v = meta.get('version') as number | undefined
+      if (!v || v === s.current.version) return
+      s.current.version = v
+      s.current.dirty = false
+      clearDraft(page.id)
+      setMeta({ updatedAt: meta.get('updatedAt') as string, updatedBy: meta.get('updatedBy') as string })
+      setStatus({ text: t('page.saved') })
+    }
+    const onTitleChange = (e: Y.YTextEvent) => {
+      if (e.transaction.local) return
+      const v = yt.toString()
+      s.current.title = v
+      setTitle(v)
+      onTitle(v || t('common.untitled'))
+    }
+    const onStatus = ({ status: st }: { status: string }) =>
+      st === 'connected' ? setStatus((x) => (x.kind === 'error' ? { text: '' } : x)) : setStatus({ text: t('page.offline'), kind: 'error' })
+    meta.observe(onMeta)
+    yt.observe(onTitleChange)
+    live.provider.on('status', onStatus)
+    return () => (meta.unobserve(onMeta), yt.unobserve(onTitleChange), live.provider.off('status', onStatus))
+  }, [live])
   async function flush() {
     const st = s.current
+    if (live) return
     if (st.saving || !st.dirty || st.conflict || !editor) return
     st.saving = true
     st.dirty = false

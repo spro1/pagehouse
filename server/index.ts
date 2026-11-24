@@ -26,10 +26,12 @@ app.get('*', serveStatic({ path: './dist/index.html' }))
 
 const port = Number(process.env.PORT ?? 3000)
 const server = serve({ fetch: app.fetch, port }, () => console.log(`pagehouse listening on http://localhost:${port}`))
+app.injectWebSocket(server)
 
 // On stop or upgrade, let in-flight requests (saves) finish before exiting.
 for (const sig of ['SIGTERM', 'SIGINT'] as const)
   process.on(sig, () => {
-    server.close(() => process.exit(0))
+    // Live editing rooms save what they hold before the process goes.
+    void app.collab.flushAll().finally(() => server.close(() => process.exit(0)))
     setTimeout(() => process.exit(0), 10_000).unref()
   })

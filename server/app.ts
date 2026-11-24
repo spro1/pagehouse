@@ -11,6 +11,8 @@ import { tx, type Db } from './db.ts'
 import { registerAdmin, uploadAllowed } from './admin.ts'
 import { registerExport } from './export.ts'
 import { oidcConfig, registerSso } from './sso.ts'
+import { createCollab } from './collab.ts'
+import { createNodeWebSocket } from '@hono/node-ws'
 import { mentionedInDoc, mentionedInText, notify, registerPeople } from './people.ts'
 
 type User = { id: number; email: string; name: string; role: string; locale: string | null; theme: string | null }
@@ -102,7 +104,8 @@ export function docText(node: any): string {
   if (!node || typeof node !== 'object') return ''
   if (typeof node.text === 'string') return node.text
   if (node.type === 'mention') return `@${node.attrs?.label ?? ''}`
-  return Array.isArray(node.content) ? node.content.map(docText).join(' ') : ''
+  // Inline pieces (text split by marks, mentions) join directly; blocks are separated by a space.
+  return Array.isArray(node.content) ? node.content.map(docText).join(node.content.some((c: any) => c?.type === 'text') ? '' : ' ') : ''
 }
 
 export function createApp(db: Db, dataDir: string) {
@@ -629,21 +632,16 @@ export function createApp(db: Db, dataDir: string) {
     return r.rowCount ? c.json({ ok: true }) : fail(c, 403, 'not_comment_author')
   })
 
-  app.put('/api/pages/:id', async (c) => {
-    const b = await c.req.json().catch(() => ({}))
-    const title = str(b.title, 500)
-    if (!title || b.doc?.type !== 'doc' || !Number.isInteger(b.version)) return fail(c, 400, 'bad_request')
-    const denied = await guard(c, id(c), 'edit')
-    if (denied) return denied
-    const user = c.get('user')
+  // Saves a page and its history. `version` is the optimistic lock (null for the live editing room, which
+  // merges everyone's edits itself). Returns null when the version no longer matches.
+  async function savePage(pageId: number, userId: number, title: string, doc: unknown, o: { version: number | null; checkpoint?: boolean }) {
     let newlyMentioned: number[] = []
     const r = await tx(db, async (q) => {
-      // Optimistic lock: the version check and bump happen in one UPDATE, so two writers
-      // holding the same version can't both succeed.
+      // The version check and bump happen in one UPDATE, so two writers holding the same version can't both succeed.
       const up = await q.query(
         `UPDATE pages SET title = $1, doc = $2, text = $3, version = version + 1, updated_by = $4, updated_at = now()
-         WHERE id = $5 AND deleted_at IS NULL AND version = $6 RETURNING version, updated_at`,
-        [title, b.doc, docText(b.doc), user.id, id(c), b.version],
+         WHERE id = $5 AND deleted_at IS NULL AND ($6::int IS NULL OR version = $6) RETURNING version, updated_at`,
+        [title, doc, docText(doc), userId, pageId, o.version],
       )
       if (!up.rowCount) return null
       const { version, updated_at } = up.rows[0]
@@ -653,20 +651,70 @@ export function createApp(db: Db, dataDir: string) {
       const last = (await q.query(
         `SELECT id, author_id, doc, created_at > now() - interval '10 minutes' AS recent
          FROM page_versions WHERE page_id = $1 ORDER BY id DESC LIMIT 1 FOR UPDATE`,
-        [id(c)],
+        [pageId],
       )).rows[0]
       const before = mentionedInDoc(last?.doc)
-      newlyMentioned = [...mentionedInDoc(b.doc)].filter((u) => !before.has(u))
-      const merge = last && !b.checkpoint && last.author_id === user.id && last.recent && !losesContent(last.doc, b.doc)
+      newlyMentioned = [...mentionedInDoc(doc)].filter((u) => !before.has(u))
+      const merge = last && !o.checkpoint && last.author_id === userId && last.recent && !losesContent(last.doc, doc)
       if (merge)
-        await q.query('UPDATE page_versions SET version = $1, title = $2, doc = $3 WHERE id = $4', [version, title, b.doc, last.id])
+        await q.query('UPDATE page_versions SET version = $1, title = $2, doc = $3 WHERE id = $4', [version, title, doc, last.id])
       else
         await q.query('INSERT INTO page_versions (page_id, version, title, doc, author_id) VALUES ($1, $2, $3, $4, $5)',
-          [id(c), version, title, b.doc, user.id])
-      return { version, updatedAt: updated_at }
+          [pageId, version, title, doc, userId])
+      return { version: version as number, updatedAt: updated_at as Date }
     })
+    if (r) await notify(db, userId, pageId, null, newlyMentioned.map((u) => [u, 'mention']))
+    return r
+  }
+
+  // One-time rebuild of search text after docText changed (formatting no longer splits words). Runs in the background.
+  void (async () => {
+    const claimed = await db.query(`INSERT INTO settings (key, value) VALUES ('search_text_v2', 'true') ON CONFLICT DO NOTHING`)
+    if (!claimed.rowCount) return
+    for (let after = 0; ; ) {
+      const rows = (await db.query('SELECT id, doc FROM pages WHERE id > $1 ORDER BY id LIMIT 200', [after])).rows
+      if (!rows.length) break
+      for (const r of rows) await db.query('UPDATE pages SET text = $1 WHERE id = $2', [docText(r.doc), r.id])
+      after = rows[rows.length - 1].id
+    }
+  })().catch((e) => console.error('search text rebuild failed', e))
+
+  const collab = createCollab({
+    load: async (pageId) => (await one('SELECT title, doc FROM pages WHERE id = $1 AND deleted_at IS NULL', [pageId])) ?? null,
+    save: async (pageId, userId, title, doc, checkpoint) => {
+      // Someone who lost edit rights while the room was open no longer gets their edits saved.
+      const u = await one('SELECT id, role, name FROM users WHERE id = $1 AND disabled_at IS NULL', [userId])
+      if (!u || (await access(pageId, u)) !== 'edit') return null
+      const r = await savePage(pageId, userId, title.slice(0, 500), doc, { version: null, checkpoint })
+      return r && { ...r, updatedBy: u.name }
+    },
+  })
+  const ws = createNodeWebSocket({ app })
+  app.get('/api/collab/:id', async (c, next) => {
+    // Browsers send Origin on WebSocket upgrades but no CORS check applies, so refuse other sites here.
+    const origin = c.req.header('origin')
+    const host = c.req.header('x-forwarded-host') ?? c.req.header('host')
+    try {
+      if (!origin || new URL(origin).host !== host) return fail(c, 403, 'bad_origin')
+    } catch {
+      return fail(c, 403, 'bad_origin')
+    }
+    const a = await access(id(c), c.get('user'))
+    if (!a) return fail(c, 404, 'page_not_found')
+    return ws.upgradeWebSocket(() => collab.connect(id(c), c.get('user').id, a === 'edit'))(c, next)
+  })
+
+  app.put('/api/pages/:id', async (c) => {
+    const b = await c.req.json().catch(() => ({}))
+    const title = str(b.title, 500)
+    if (!title || b.doc?.type !== 'doc' || !Number.isInteger(b.version)) return fail(c, 400, 'bad_request')
+    const denied = await guard(c, id(c), 'edit')
+    if (denied) return denied
+    // Unsaved live edits go in first, so this save is checked against them (and gets a conflict instead of erasing them).
+    await collab.flush(id(c))
+    const r = await savePage(id(c), c.get('user').id, title, b.doc, { version: b.version, checkpoint: !!b.checkpoint })
     if (r) {
-      await notify(db, user.id, id(c), null, newlyMentioned.map((u) => [u, 'mention']))
+      collab.replace(id(c), b.doc, title)
       return c.json(r)
     }
     const cur = await livePage(id(c))
@@ -887,5 +935,5 @@ export function createApp(db: Db, dataDir: string) {
     visibleFor: (c) => ({ sql: (alias, first) => visible(alias, first, first + 1), params: who(c) }),
   })
 
-  return app
+  return Object.assign(app, { injectWebSocket: ws.injectWebSocket, collab })
 }

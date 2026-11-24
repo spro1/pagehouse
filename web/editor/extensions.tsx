@@ -12,6 +12,9 @@ import { TextAlign } from '@tiptap/extension-text-align'
 import { Typography } from '@tiptap/extension-typography'
 import { CodeBlockLowlight } from '@tiptap/extension-code-block-lowlight'
 import { createLowlight } from 'lowlight'
+import { Collaboration } from '@tiptap/extension-collaboration'
+import { CollaborationCaret } from '@tiptap/extension-collaboration-caret'
+import type * as Y from 'yjs'
 // The languages a team wiki actually sees (infra, backend, frontend), instead of lowlight's general-purpose set.
 import bash from 'highlight.js/lib/languages/bash'
 import c from 'highlight.js/lib/languages/c'
@@ -302,9 +305,13 @@ export const CommentMark = Mark.create({
   renderHTML: ({ HTMLAttributes }) => ['span', mergeAttributes({ class: 'inline-comment' }, HTMLAttributes), 0],
 })
 
-export function extensions() {
+export type Live = { doc: Y.Doc; provider: { awareness: unknown } & Record<string, any>; user: { name: string; color: string } }
+
+/** With `live`, the editor is bound to a shared Yjs document (co-editing): undo then follows only your own edits. */
+export function extensions(live?: Live) {
   return [
-    StarterKit.configure({ codeBlock: false, link: { openOnClick: false, autolink: true } }),
+    StarterKit.configure({ codeBlock: false, link: { openOnClick: false, autolink: true }, ...(live && { undoRedo: false }) }),
+    ...(live ? [Collaboration.configure({ document: live.doc }), CollaborationCaret.configure({ provider: live.provider, user: live.user })] : []),
     CodeBlockLowlight.configure({ lowlight, defaultLanguage: null }),
     Image,
     TableKit.configure({ table: { resizable: true } }),

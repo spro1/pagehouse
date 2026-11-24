@@ -566,3 +566,67 @@ test('groups grant space roles and page access; a group in use cannot be deleted
   await admin.call('PUT', `/api/admin/groups/${devs.id}`, { name: 'Developers', members: [] })
   assert.equal((await dev.call('GET', `/api/pages/${secret.id}`)).status, 404)
 })
+
+test('live co-editing: JSON round-trips through Yjs; two editors merge and the room saves', async () => {
+  const Y = await import('yjs')
+  const { docToY, yToDoc } = await import('./collab.ts')
+  const sample = { type: 'doc', content: [
+    { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'Plan' }] },
+    { type: 'paragraph', content: [
+      { type: 'text', text: 'bold ', marks: [{ type: 'bold' }] },
+      { type: 'text', text: 'link', marks: [{ type: 'link', attrs: { href: 'https://x.co' } }, { type: 'comment', attrs: { id: '1' } }, { type: 'comment', attrs: { id: '2' } }] },
+    ] },
+    { type: 'bulletList', content: [{ type: 'listItem', content: [{ type: 'paragraph' }] }] },
+  ] }
+  const yd = new Y.Doc()
+  docToY(yd, sample as any, 'T')
+  assert.deepEqual(yToDoc(yd), sample)
+
+  const { serve } = await import('@hono/node-server')
+  const { default: WS } = await import('ws')
+  const { WebsocketProvider } = await import('y-websocket')
+  const dir = mkdtempSync(join(tmpdir(), 'pagehouse-'))
+  const live = createApp(db, dir)
+  const server = serve({ fetch: live.fetch, port: 0 })
+  live.injectWebSocket(server)
+  await new Promise((r) => server.once('listening', r))
+  const port = (server.address() as any).port
+  try {
+    const a = client()
+    await a.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+    const [space] = await a.json('GET', '/api/spaces')
+    const page = await a.json('POST', '/api/pages', { spaceId: space.id, title: 'Live' })
+    const join = (cookie: string, origin = `http://localhost:${port}`) => {
+      const doc = new Y.Doc()
+      const Sock = class extends WS { constructor(url: string) { super(url, { headers: { cookie, origin } }) } }
+      const p = new WebsocketProvider(`ws://localhost:${port}/api/collab`, String(page.id), doc, { WebSocketPolyfill: Sock as any, disableBc: true })
+      return { doc, p, synced: new Promise<void>((r) => p.once('sync', () => r())) }
+    }
+    const one = join(a.cookie)
+    const two = join(a.cookie)
+    await Promise.all([one.synced, two.synced])
+    // Both start from the stored page.
+    assert.equal(two.doc.getText('title').toString(), 'Live')
+    // Simultaneous edits in two places both survive.
+    const para = (d: any) => d.getXmlFragment('default').get(0) as any
+    para(one.doc).insert(0, [new Y.XmlText('first ')])
+    para(two.doc).insert(0, [new Y.XmlText('second ')])
+    await new Promise((r) => setTimeout(r, 2200))
+    const saved = await a.json('GET', `/api/pages/${page.id}`)
+    const text = JSON.stringify(saved.doc)
+    assert.ok(text.includes('first') && text.includes('second'), text)
+    assert.ok(saved.version > 1)
+    assert.equal(one.doc.getMap('meta').get('version'), saved.version)
+    // Another site can't open a room with the user's cookie.
+    const evil = join(a.cookie, 'http://evil.example')
+    const closed = await new Promise((r) => evil.p.once('connection-close', () => r(true)))
+    evil.p.destroy()
+    evil.doc.destroy()
+    assert.ok(closed)
+    for (const x of [one, two]) (x.p.destroy(), x.doc.destroy())
+    await live.collab.flushAll()
+  } finally {
+    ;(server as any).closeAllConnections?.()
+    server.close()
+  }
+})
