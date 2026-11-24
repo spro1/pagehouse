@@ -12,6 +12,7 @@ import { registerAdmin, uploadAllowed } from './admin.ts'
 import { registerExport } from './export.ts'
 import { oidcConfig, registerSso } from './sso.ts'
 import { createCollab } from './collab.ts'
+import { auditMiddleware, registerAudit } from './audit.ts'
 import { mailEnabled } from './mail.ts'
 import { registerMcp } from './mcp.ts'
 import { registerPreview } from './preview.ts'
@@ -189,6 +190,7 @@ export function createApp(db: Db, dataDir: string) {
   const WINDOW = 15 * 60 * 1000
   const clientIp = (c: Context) =>
     c.req.header('x-forwarded-for')?.split(',')[0].trim() || (c.env as any)?.incoming?.socket?.remoteAddress || 'local'
+  app.use('/api/*', auditMiddleware(db, clientIp))
   const recent = (key: string) => (failures.get(key) ?? []).filter((t) => Date.now() - t < WINDOW)
   const throttled = (c: Context, account: string) => {
     const ip = clientIp(c)
@@ -1062,6 +1064,7 @@ export function createApp(db: Db, dataDir: string) {
   registerMcp(app)
   registerPreview(app, fail)
   registerAdmin(app, { db, filesDir, fail })
+  registerAudit(app, db)
   registerPeople(app, { db, fail, visibleFor: (c) => ({ sql: (alias, first) => visible(alias, first, first + 1), params: who(c) }) })
   registerExport(app, {
     db, filesDir, fail, guard,

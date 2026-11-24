@@ -470,6 +470,10 @@ button.locked:hover { color: var(--danger); }
 .grid td { height: 52px; padding: 0 10px; border-bottom: 1px solid var(--line); }
 .grid tr:last-child td { border-bottom: 0; }
 .grid select { width: auto; height: 30px; }
+.audit td { height: auto; padding: 8px 10px; vertical-align: top; }
+.audit .nowrap { white-space: nowrap; }
+.audit pre { margin: 4px 0 0; white-space: pre-wrap; word-break: break-all; }
+.tag.danger { background: var(--danger-soft); color: var(--danger); }
 .grid tr.dim td { color: var(--muted); }
 .row-actions { text-align: right; white-space: nowrap; }
 .row-actions button + button { margin-left: 14px; }

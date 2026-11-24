@@ -761,6 +761,28 @@ test('co-editing across two app instances: edits and saves meet through Postgres
   }
 })
 
+test('audit log: sign-ins (failed too), permission changes and deletions, admins only', async () => {
+  const x = client()
+  assert.equal((await x.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'wrong-password' })).status, 401)
+  await x.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  const [space] = await x.json('GET', '/api/spaces')
+  const page = await x.json('POST', '/api/pages', { spaceId: space.id, title: 'Audited' })
+  await x.call('PUT', `/api/pages/${page.id}/restrictions`, { entries: [] })
+  await x.call('DELETE', `/api/pages/${page.id}`)
+  const log = await x.json('GET', '/api/admin/audit')
+  const [del, restr, ok, bad] = log
+  assert.deepEqual([del.action, del.target.name, restr.action, ok.action, ok.ok, bad.action, bad.ok], ['page.delete', 'Audited', 'page.restrictions', 'auth.login', true, 'auth.login', false])
+  assert.ok(ok.actor.name)
+  assert.equal(bad.actor, null)
+  assert.equal(bad.detail.email, 'a@b.co')
+  assert.ok(!JSON.stringify(log).includes('password1'))
+  const filtered = await x.json('GET', '/api/admin/audit?action=page.delete')
+  assert.ok(filtered.every((r: any) => r.action === 'page.delete') && filtered[0].id === del.id)
+  const bob = client()
+  await bob.call('POST', '/api/auth/login', { email: 'bob@b.co', password: 'newpassword' })
+  assert.equal((await bob.call('GET', '/api/admin/audit')).status, 403)
+})
+
 test('templates: saved from a page, per space or global, removable', async () => {
   const admin = client()
   await admin.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })

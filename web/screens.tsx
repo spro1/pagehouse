@@ -1,4 +1,5 @@
 import { Groups } from './Groups.tsx'
+import { Audit } from './Audit.tsx'
 import { useEffect, useState } from 'react'
 import { api, ago, fullDate, toast, type User } from './api.ts'
 import { LANGS, lang, setLang, t, type Lang } from './i18n.ts'
@@ -280,18 +281,18 @@ export function Admin({ me }: { me: User }) {
     const { token } = await api('/api/admin/invites', { json: { role } })
     setShared({ label: t(role === 'admin' ? 'admin.invite.admin' : 'admin.invite.member'), url: link('invite', token) })
   }
-  const [tab, setTab] = useState<'overview' | 'people' | 'groups'>(() => (location.hash.includes('people') ? 'people' : location.hash.includes('groups') ? 'groups' : 'overview'))
+  const [tab, setTab] = useState<'overview' | 'people' | 'groups' | 'audit'>(() => (['people', 'groups', 'audit'] as const).find((k) => location.hash.includes(k)) ?? 'overview')
   return (
     <div className="screen wide">
       <h1>{t('admin.title')}</h1>
       <div className="tabs" role="tablist">
-        {(['overview', 'people', 'groups'] as const).map((k) => (
+        {(['overview', 'people', 'groups', 'audit'] as const).map((k) => (
           <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
             {t(`admin.tab.${k}`)}
           </button>
         ))}
       </div>
-      {tab === 'overview' ? <Monitor /> : tab === 'groups' ? <Groups /> : <>
+      {tab === 'overview' ? <Monitor /> : tab === 'groups' ? <Groups /> : tab === 'audit' ? <Audit /> : <>
       <section className="box">
         <div className="box-head">
           <div>
