@@ -70,6 +70,7 @@ helm install wiki pagehouse-<버전>.tgz -n wiki --create-namespace \
 | 값 | 기본값 | 의미 |
 |---|---|---|
 | `image.repository` | 배포된 이미지 | 폐쇄망에서는 사내 레지스트리 미러를 지정하세요 |
+| `replicaCount` + `persistence.accessMode=ReadWriteMany` | 1 | 앱 파드 여러 개(첨부 파일용 ReadWriteMany 스토리지 필요). 동시 편집은 PostgreSQL을 거쳐 파드 사이에서도 동작 |
 | `persistence.size` / `postgresql.size` / `backup.size` | 10Gi / 10Gi / 20Gi | 볼륨 크기 |
 | `postgresql.enabled=false` + `externalDatabase.url` | | 외부 PostgreSQL 14 이상 사용 |
 | `backup.schedule` / `backup.keep` | `0 3 * * *` / 14 | 백업 주기와 보관 개수 |

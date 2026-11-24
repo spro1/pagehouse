@@ -670,14 +670,25 @@ test('live co-editing: JSON round-trips through Yjs; two editors merge and the r
       assert.equal((JSON.stringify(yToDoc(one.doc)).match(/first/g) ?? []).length, 1, 'body not duplicated')
       back.destroy()
       await restarted.collab.flushAll()
-      // Saved outside any room (REST): the next room has a new identity and an old copy is refused, not merged.
+      // Saved outside any room (REST): the change goes into the stored state, so an old copy rejoins and catches up
+      // without duplicating anything.
       const cur = await a.json('GET', `/api/pages/${page.id}`)
-      await a.call('PUT', `/api/pages/${page.id}`, { title: 'Live', doc: cur.doc, version: cur.version })
-      await new Promise((r) => setTimeout(r, 100))
+      const restDoc = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'rest edit' }] }] }
+      await a.call('PUT', `/api/pages/${page.id}`, { title: 'Live', doc: restDoc, version: cur.version })
       const stale = rejoin(two.doc, epoch)
-      const code = await new Promise((r) => stale.on('connection-close', (e: any) => r(e?.code)))
+      await new Promise<void>((r) => stale.once('sync', () => r()))
+      await new Promise((r) => setTimeout(r, 200))
+      assert.deepEqual(yToDoc(two.doc), restDoc)
+      assert.equal(two.doc.getText('title').toString(), 'Live')
       stale.destroy()
+      // A document identity the server never had is still refused, not merged.
+      const bogusDoc = new Y.Doc()
+      const bogus = rejoin(bogusDoc, 'nope')
+      const code = await new Promise((r) => bogus.on('connection-close', (e: any) => r(e?.code)))
+      bogus.destroy()
+      bogusDoc.destroy()
       assert.equal(code, 4409)
+      await restarted.collab.flushAll()
     } finally {
       ;(server2 as any).closeAllConnections?.()
       server2.close()
@@ -686,6 +697,67 @@ test('live co-editing: JSON round-trips through Yjs; two editors merge and the r
   } finally {
     ;(server as any).closeAllConnections?.()
     server.close()
+  }
+})
+
+test('co-editing across two app instances: edits and saves meet through Postgres', async () => {
+  const Y = await import('yjs')
+  const { serve } = await import('@hono/node-server')
+  const { default: WS } = await import('ws')
+  const { WebsocketProvider } = await import('y-websocket')
+  const { startRelay } = await import('./cluster.ts')
+  const { yToDoc } = await import('./collab.ts')
+  const dir = mkdtempSync(join(tmpdir(), 'pagehouse-'))
+  const nodes = await Promise.all([0, 1].map(async () => {
+    const app = createApp(db, dir)
+    const server = serve({ fetch: app.fetch, port: 0 })
+    app.injectWebSocket(server)
+    await new Promise((r) => server.once('listening', r))
+    return { app, server, port: (server.address() as any).port as number, stop: await startRelay(db, url, app.collab) }
+  }))
+  const docs: any[] = []
+  const provs: any[] = []
+  try {
+    const a = client()
+    await a.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+    const [space] = await a.json('GET', '/api/spaces')
+    const page = await a.json('POST', '/api/pages', { spaceId: space.id, title: 'Cluster' })
+    // Both instances open the page at the same moment: they must agree on one document identity.
+    const [one, two] = nodes.map(({ port }) => {
+      const doc = new Y.Doc()
+      const Sock = class extends WS { constructor(u: string) { super(u, { headers: { cookie: a.cookie, origin: `http://localhost:${port}` } }) } }
+      const p = new WebsocketProvider(`ws://localhost:${port}/api/collab`, String(page.id), doc, { WebSocketPolyfill: Sock as any, disableBc: true })
+      docs.push(doc)
+      provs.push(p)
+      return { doc, synced: new Promise<void>((r) => p.once('sync', () => r())) }
+    })
+    await Promise.all([one.synced, two.synced])
+    assert.equal(one.doc.getMap('meta').get('epoch'), two.doc.getMap('meta').get('epoch'))
+    const para = (d: any) => d.getXmlFragment('default').get(0) as any
+    para(one.doc).insert(0, [new Y.XmlText('from one ')])
+    para(two.doc).insert(0, [new Y.XmlText('from two ')])
+    await new Promise((r) => setTimeout(r, 2500))
+    for (const d of [one.doc, two.doc]) {
+      const t = JSON.stringify(yToDoc(d))
+      assert.ok(t.includes('from one') && t.includes('from two'), t)
+      assert.equal(d.getText('title').toString(), 'Cluster')
+    }
+    const saved = JSON.stringify((await a.json('GET', `/api/pages/${page.id}`)).doc)
+    assert.ok(saved.includes('from one') && saved.includes('from two'), saved)
+    // A REST save handled by an instance reaches editors connected to the other one.
+    const cur = await a.json('GET', `/api/pages/${page.id}`)
+    const restDoc = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'via rest' }] }] }
+    assert.equal((await nodes[0].app.request(`/api/pages/${page.id}`, {
+      method: 'PUT', headers: { cookie: a.cookie, 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Cluster', doc: restDoc, version: cur.version }),
+    })).status, 200)
+    await new Promise((r) => setTimeout(r, 300))
+    assert.deepEqual(yToDoc(two.doc), restDoc)
+    assert.deepEqual(yToDoc(one.doc), restDoc)
+  } finally {
+    for (const p of provs) p.destroy()
+    for (const n of nodes) await n.app.collab.flushAll()
+    for (const d of docs) d.destroy()
+    for (const n of nodes) (await n.stop(), (n.server as any).closeAllConnections?.(), n.server.close())
   }
 })
 

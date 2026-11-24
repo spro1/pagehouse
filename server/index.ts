@@ -4,6 +4,7 @@ import { compress } from 'hono/compress'
 import { createApp } from './app.ts'
 import { openDb } from './db.ts'
 import { startMailer } from './mail.ts'
+import { startRelay } from './cluster.ts'
 
 if (!process.env.DATABASE_URL) {
   console.error('DATABASE_URL is required, e.g. postgres://user:pass@localhost:5432/pagehouse')
@@ -12,6 +13,7 @@ if (!process.env.DATABASE_URL) {
 const db = await openDb(process.env.DATABASE_URL)
 const app = createApp(db, process.env.DATA_DIR ?? './data')
 startMailer(db)
+await startRelay(db, process.env.DATABASE_URL, app.collab)
 
 app.use('/assets/*', compress())
 // Build output under /assets has content hashes in its names: cache it for a year.

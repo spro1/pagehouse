@@ -24,10 +24,13 @@ metadata:
   name: {{ include "pagehouse.fullname" . }}
   labels: {{- include "pagehouse.labels" . | nindent 4 }}
 spec:
-  replicas: 1
-  # One pod at a time: the attachment volume is ReadWriteOnce and migrations run on start.
+  replicas: {{ .Values.replicaCount }}
+  {{- if and (gt (int .Values.replicaCount) 1) (ne .Values.persistence.accessMode "ReadWriteMany") }}
+  {{- fail "replicaCount > 1 needs persistence.accessMode: ReadWriteMany" }}
+  {{- end }}
+  # With a ReadWriteOnce volume, one pod at a time. Migrations take a database lock, so rolling pods is safe otherwise.
   strategy:
-    type: Recreate
+    type: {{ if eq .Values.persistence.accessMode "ReadWriteMany" }}RollingUpdate{{ else }}Recreate{{ end }}
   selector:
     matchLabels:
       {{- include "pagehouse.selector" . | nindent 6 }}

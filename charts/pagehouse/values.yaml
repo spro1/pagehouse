@@ -37,7 +37,11 @@ resources:
   requests: { cpu: 100m, memory: 192Mi }
   limits: { memory: 512Mi }
 
-# Attachments. The app runs as a single replica because this volume is ReadWriteOnce.
+# App pods. More than one needs persistence.accessMode ReadWriteMany (e.g. NFS, CephFS, EFS) so every pod sees the
+# attachments; live co-editing between pods goes through PostgreSQL.
+replicaCount: 1
+
+# Attachments.
 persistence:
   size: 10Gi
   storageClass: ""

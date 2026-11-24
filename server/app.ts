@@ -802,9 +802,13 @@ export function createApp(db: Db, dataDir: string) {
   })().catch((e) => console.error('search text rebuild failed', e))
 
   const collab = createCollab({
-    load: async (pageId) => (await one('SELECT title, doc, version, ydoc, ydoc_version FROM pages WHERE id = $1 AND deleted_at IS NULL', [pageId])) ?? null,
-    storeState: async (pageId, version, state) =>
-      void (await db.query('UPDATE pages SET ydoc = $1, ydoc_version = $2 WHERE id = $3 AND version = $2', [Buffer.from(state), version, pageId])),
+    load: async (pageId) => (await one('SELECT title, doc, version, ydoc FROM pages WHERE id = $1 AND deleted_at IS NULL', [pageId])) ?? null,
+    storeState: async (pageId, state, claim) => {
+      const r = await db.query(`UPDATE pages SET ydoc = $1 WHERE id = $2${claim ? ' AND ydoc IS NULL' : ''}`, [state && Buffer.from(state), pageId])
+      // A new document identity: updates relayed for the old one must never merge into it.
+      if (claim && r.rowCount) await db.query('DELETE FROM collab_updates WHERE page_id = $1', [pageId])
+      return !!r.rowCount
+    },
     save: async (pageId, userId, title, doc, checkpoint) => {
       // Someone who lost edit rights while the room was open no longer gets their edits saved.
       const u = await one('SELECT id, role, name FROM users WHERE id = $1 AND disabled_at IS NULL', [userId])
@@ -838,7 +842,7 @@ export function createApp(db: Db, dataDir: string) {
     await collab.flush(id(c))
     const r = await savePage(id(c), c.get('user').id, title, b.doc, { version: b.version, checkpoint: !!b.checkpoint })
     if (r) {
-      collab.replace(id(c), b.doc, title, r.version)
+      await collab.replace(id(c), b.doc, title)
       return c.json(r)
     }
     const cur = await livePage(id(c))

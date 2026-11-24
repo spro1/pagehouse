@@ -1,7 +1,7 @@
 // Live co-editing. Everyone with a page open joins its room over a WebSocket (the y-websocket protocol);
 // edits merge as Yjs updates, so two people typing at once never conflict. The server keeps one Y.Doc per open
 // page, seeded from the database, and saves it back (with history) a moment after the last edit.
-// shortcut: rooms live in this process's memory, so this needs a single app instance (the chart runs one).
+// With several app instances, a relay (cluster.ts) passes each room's updates to the same room on the other instances.
 import * as Y from 'yjs'
 import * as sync from 'y-protocols/sync'
 import * as aw from 'y-protocols/awareness'
@@ -16,9 +16,9 @@ type Room = {
   dirty: boolean; editor: number | null; timer?: NodeJS.Timeout; firstDirty: number; saving: Promise<void>
 }
 export type CollabDeps = {
-  load: (pageId: number) => Promise<{ title: string; doc: Json; version: number; ydoc: Buffer | null; ydoc_version: number | null } | null>
-  /** Stores the room's Yjs state as matching page version `version`. */
-  storeState: (pageId: number, version: number, state: Uint8Array) => Promise<void>
+  load: (pageId: number) => Promise<{ title: string; doc: Json; version: number; ydoc: Buffer | null } | null>
+  /** Stores the room's Yjs state. With `claim`, only if none is stored, returning whether it was (first instance wins). */
+  storeState: (pageId: number, state: Uint8Array | null, claim?: boolean) => Promise<boolean>
   /** Returns false when the page is gone; the room then stops saving. */
   save: (pageId: number, userId: number, title: string, doc: Json, checkpoint: boolean) => Promise<{ version: number; updatedAt: Date; updatedBy: string } | null>
 }
@@ -26,6 +26,12 @@ export type CollabDeps = {
 const SYNC = 0
 const AWARENESS = 1
 const SERVER = 'server' // transaction origin for the server's own changes (seeding, saved-state, REST saves)
+const REMOTE = 'remote' // changes relayed from another app instance
+export type Relay = {
+  publish: (pageId: number, kind: 'u' | 'a', data: Uint8Array) => void
+  /** Updates other instances relayed for this page since its state was last claimed. */
+  backlog: (pageId: number) => Promise<Uint8Array[]>
+}
 const QUIET_MS = 1500
 const MAX_WAIT_MS = 10_000
 
@@ -90,6 +96,7 @@ export const yToDoc = (doc: Y.Doc): Json => {
 // ---------- rooms ----------
 export function createCollab(deps: CollabDeps) {
   const rooms = new Map<number, Room>()
+  let relay: Relay | null = null
 
   const send = (ws: WSContext, m: Uint8Array) => {
     try {
@@ -106,19 +113,30 @@ export function createCollab(deps: CollabDeps) {
     awareness.setLocalState(null)
     r = { doc, awareness, conns: new Map(), dirty: false, editor: null, firstDirty: 0, saving: Promise.resolve(), ready: Promise.resolve() }
     const rr = r
-    rr.ready = deps.load(pageId).then((p) => {
+    rr.ready = (async () => {
+      let p = await deps.load(pageId)
       if (!p) return
-      // Resume the stored state when it matches the page; otherwise start a new document identity (epoch),
-      // which editors still holding the old one detect and reload instead of merging two copies.
-      if (p.ydoc && p.ydoc_version === p.version) Y.applyUpdate(doc, new Uint8Array(p.ydoc), SERVER)
-      else doc.transact(() => (docToY(doc, p.doc, p.title), doc.getMap('meta').set('epoch', Math.random().toString(36).slice(2))), SERVER)
-    })
+      // Resume the stored state (cleared whenever the page is saved outside a room); otherwise start a new document
+      // identity (epoch), which editors still holding the old one detect and reload instead of merging two copies.
+      // Two instances opening the page at once both build one; the first stored wins and the other loads it.
+      if (!p.ydoc) {
+        const fresh = new Y.Doc()
+        fresh.transact(() => (docToY(fresh, p!.doc, p!.title), fresh.getMap('meta').set('epoch', Math.random().toString(36).slice(2))))
+        const state = Y.encodeStateAsUpdate(fresh)
+        fresh.destroy()
+        p = (await deps.storeState(pageId, state, true)) ? { ...p, ydoc: Buffer.from(state) } : await deps.load(pageId)
+        if (!p?.ydoc) return
+      }
+      Y.applyUpdate(doc, new Uint8Array(p.ydoc), SERVER)
+      for (const u of (await relay?.backlog(pageId)) ?? []) Y.applyUpdate(doc, u, REMOTE)
+    })()
     doc.on('update', (update: Uint8Array, origin: unknown) => {
       const e = encoding.createEncoder()
       encoding.writeVarUint(e, SYNC)
       sync.writeUpdate(e, update)
       broadcast(rr, encoding.toUint8Array(e))
-      if (origin === SERVER) return
+      if (origin !== REMOTE) relay?.publish(pageId, 'u', update)
+      if (origin === SERVER || origin === REMOTE) return
       rr.editor = rr.conns.get(origin as WSContext)?.userId ?? rr.editor
       if (!rr.dirty) rr.firstDirty = Date.now()
       rr.dirty = true
@@ -131,9 +149,11 @@ export function createCollab(deps: CollabDeps) {
       if (conn) for (const id of added) conn.clients.add(id)
       if (conn) for (const id of removed) conn.clients.delete(id)
       const e = encoding.createEncoder()
+      const a = aw.encodeAwarenessUpdate(awareness, [...added, ...updated, ...removed])
       encoding.writeVarUint(e, AWARENESS)
-      encoding.writeVarUint8Array(e, aw.encodeAwarenessUpdate(awareness, [...added, ...updated, ...removed]))
+      encoding.writeVarUint8Array(e, a)
       broadcast(rr, encoding.toUint8Array(e))
+      if (origin !== REMOTE) relay?.publish(pageId, 'a', a)
     })
     rooms.set(pageId, r)
     return r
@@ -149,7 +169,7 @@ export function createCollab(deps: CollabDeps) {
       try {
         const state = Y.encodeStateAsUpdate(r.doc)
         const saved = await deps.save(pageId, r.editor, r.doc.getText('title').toString().trim() || 'Untitled', yToDoc(r.doc), checkpoint)
-        if (saved) await deps.storeState(pageId, saved.version, state)
+        if (saved) await deps.storeState(pageId, state)
         // Everyone in the room learns the save landed (their local drafts can go) from this shared map.
         if (saved)
           r.doc.transact(() => {
@@ -233,13 +253,35 @@ export function createCollab(deps: CollabDeps) {
       }
     },
     /** A save that didn't come through the room (REST, import, MCP): put it into the open room so nobody overwrites it. */
-    replace(pageId: number, json: unknown, title: string, version: number) {
+    async replace(pageId: number, json: unknown, title: string) {
+      const r = rooms.get(pageId)
+      if (r) {
+        await r.ready
+        r.doc.transact(() => docToY(r.doc, json as Json, title), SERVER)
+        r.dirty = false
+        clearTimeout(r.timer)
+        return void (await deps.storeState(pageId, Y.encodeStateAsUpdate(r.doc)).catch(() => {}))
+      }
+      // No room here: apply the change to the stored state (plus what other instances relayed since) and relay the
+      // difference, so rooms open elsewhere get it as an ordinary edit and the next room starts from it.
+      const p = await deps.load(pageId)
+      if (!p?.ydoc) return
+      const d = new Y.Doc()
+      Y.applyUpdate(d, new Uint8Array(p.ydoc))
+      for (const u of (await relay?.backlog(pageId)) ?? []) Y.applyUpdate(d, u)
+      const before = Y.encodeStateVector(d)
+      docToY(d, json as Json, title)
+      relay?.publish(pageId, 'u', Y.encodeStateAsUpdate(d, before))
+      await deps.storeState(pageId, Y.encodeStateAsUpdate(d)).catch(() => {})
+      d.destroy()
+    },
+    setRelay: (r: Relay | null) => void (relay = r),
+    /** An update or awareness change from the same page's room on another instance. */
+    receive(pageId: number, kind: 'u' | 'a', data: Uint8Array) {
       const r = rooms.get(pageId)
       if (!r) return
-      r.doc.transact(() => docToY(r.doc, json as Json, title), SERVER)
-      r.dirty = false
-      clearTimeout(r.timer)
-      void deps.storeState(pageId, version, Y.encodeStateAsUpdate(r.doc)).catch(() => {})
+      if (kind === 'u') Y.applyUpdate(r.doc, data, REMOTE)
+      else aw.applyAwarenessUpdate(r.awareness, data, REMOTE)
     },
     /** Saves the page's room now, if it has unsaved edits. */
     flush: (pageId: number) => (rooms.has(pageId) ? persist(pageId, rooms.get(pageId)!) : Promise.resolve()),

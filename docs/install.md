@@ -70,6 +70,7 @@ What you get: the app (one replica), a PostgreSQL StatefulSet, a daily backup Cr
 | Value | Default | Meaning |
 |---|---|---|
 | `image.repository` | the published image | Point at a registry mirror for closed networks |
+| `replicaCount` + `persistence.accessMode=ReadWriteMany` | 1 | Several app pods (needs a ReadWriteMany storage class for attachments). Live co-editing works across pods through PostgreSQL |
 | `persistence.size` / `postgresql.size` / `backup.size` | 10Gi / 10Gi / 20Gi | Volume sizes |
 | `postgresql.enabled=false` + `externalDatabase.url` | | Use your own PostgreSQL 14+ |
 | `backup.schedule` / `backup.keep` | `0 3 * * *` / 14 | Backup timing and retention |
