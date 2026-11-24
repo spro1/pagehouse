@@ -12,6 +12,7 @@ import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
 import { ySyncPluginKey } from '@tiptap/y-tiptap'
 import { AutoTextarea, Modal, confirmDialog } from './ui.tsx'
+import { diffLines, type DiffLine } from './diff.ts'
 
 // Unsaved edits are mirrored to this browser until the server confirms the save,
 // so a dropped connection, a closed tab or an edit conflict never loses typing.
@@ -780,6 +781,7 @@ function RestrictionsModal({ pageId, me, canEdit, onClose, onSaved }: {
 
 function History({ pageId, editor, canEdit, onRestore, onClose }: { pageId: number; editor: Editor; canEdit: boolean; onRestore: () => void; onClose: () => void }) {
   const [versions, setVersions] = useState<any[]>()
+  const [comparing, setComparing] = useState<[any, any] | null>(null)
   useEffect(() => {
     api(`/api/pages/${pageId}/versions`).then(setVersions)
   }, [pageId])
@@ -798,6 +800,7 @@ function History({ pageId, editor, canEdit, onRestore, onClose }: { pageId: numb
             {i === 0 && <span className="tag">{t('history.current')}</span>}
           </div>
           <div className="muted small">{v.author} · {v.title}</div>
+          {versions[i + 1] && <button className="link" onClick={() => setComparing([versions[i + 1], v])}>{t('history.changes')}</button>}
           {i > 0 && canEdit && (
             <button
               className="link"
@@ -816,7 +819,30 @@ function History({ pageId, editor, canEdit, onRestore, onClose }: { pageId: numb
       ))}
       </ol>
       {versions && !versions.length && <p className="muted">{t('history.empty')}</p>}
+      {comparing && <DiffModal older={comparing[0]} newer={comparing[1]} onClose={() => setComparing(null)} />}
     </aside>
+  )
+}
+
+/** What one save changed, as a Markdown line diff. */
+function DiffModal({ older, newer, onClose }: { older: any; newer: any; onClose: () => void }) {
+  const [lines, setLines] = useState<DiffLine[]>()
+  useEffect(() => {
+    Promise.all([api(`/api/versions/${older.id}`), api(`/api/versions/${newer.id}`)]).then(([a, b]) => {
+      const md = (v: any) => toMarkdown(v.title, v.doc).split('\n')
+      setLines(diffLines(md(a), md(b)))
+    })
+  }, [older.id, newer.id])
+  const changed = lines?.filter((l) => l.kind !== 'same').length ?? 0
+  // Long unchanged stretches fold down to a few lines of context around each change.
+  const shown = lines?.filter((l, i) => l.kind !== 'same' || lines.slice(Math.max(0, i - 2), i + 3).some((x) => x.kind !== 'same'))
+  return (
+    <Modal title={t('history.changes.title', { when: fullDate(newer.createdAt), name: newer.author })} onClose={onClose} size="wide"
+      footer={<button onClick={onClose}>{t('common.close')}</button>}>
+      {!lines ? <span className="spinner" /> : !changed ? <p className="muted">{t('history.changes.none')}</p> : (
+        <pre className="diff">{shown!.map((l, i) => <div key={i} className={`diff-${l.kind}`}>{l.kind === 'add' ? '+ ' : l.kind === 'del' ? '- ' : '  '}{l.text || ' '}</div>)}</pre>
+      )}
+    </Modal>
   )
 }
 

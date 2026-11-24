@@ -727,3 +727,10 @@ a.btn.sso:hover { background: var(--accent-hover); }
 .custom-tpl .tpl-remove { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; padding: 0; border-radius: 50%; background: var(--bg); border: 1px solid var(--line); opacity: 0; }
 .custom-tpl:hover .tpl-remove, .custom-tpl .tpl-remove:focus-visible { opacity: 1; }
 label.check { display: flex; flex-direction: row; align-items: center; gap: 8px; }
+
+/* Version comparison */
+pre.diff { margin: 0; max-height: 60vh; overflow: auto; font-size: 13px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+.diff-add { background: var(--c-success); }
+.diff-del { background: var(--c-danger); text-decoration: line-through; text-decoration-color: var(--danger); }
+.diff-same { color: var(--muted); }
+.modal.wide { width: min(860px, 100%); }

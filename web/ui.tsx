@@ -10,7 +10,7 @@ type ModalProps = {
   footer?: ReactNode
   /** When set, body and footer become one form so Enter submits it. */
   onSubmit?: (e: FormEvent<HTMLFormElement>) => void
-  size?: 'sm'
+  size?: 'sm' | 'wide'
 }
 
 export function Modal({ title, onClose, children, footer, onSubmit, size }: ModalProps) {
