@@ -42,7 +42,7 @@ jobs:
     needs: meta
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.TAG }}
       - name: Version in package.json matches the tag
@@ -82,7 +82,7 @@ jobs:
       matrix:
         arch: [amd64, arm64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.TAG }}
       # One architecture per archive. `docker save` of a multi-arch image fails on missing manifests,
@@ -112,7 +112,7 @@ jobs:
     needs: [meta, bundles]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.TAG }}
       # Only our bundles: other artifacts in the run would collide when merged into one folder.
