@@ -80,6 +80,15 @@ function checkPassword(password: string, stored: string) {
   return timingSafeEqual(scryptSync(password, salt, 64), Buffer.from(hash, 'hex'))
 }
 
+// Korean words carry particles ("배포를", "배포는"); searching by the stem finds every form.
+// Only stripped when at least two syllables remain, so short words stay exact.
+const PARTICLES = ['으로부터', '에서는', '에게서', '으로는', '이라는', '에서', '에게', '으로', '이랑', '까지', '부터', '처럼', '보다', '라는', '하고', '을', '를', '이', '가', '은', '는', '에', '의', '로', '와', '과', '도', '만', '랑']
+export function koreanStem(term: string) {
+  if (!/[가-힣]$/.test(term)) return term
+  for (const p of PARTICLES) if (term.endsWith(p) && [...term.slice(0, -p.length)].length >= 2) return term.slice(0, -p.length)
+  return term
+}
+
 // ~120 characters around the first match, starting and ending on word boundaries.
 export function snippet(text: string, q: string) {
   const flat = text.replace(/\s+/g, ' ').trim()
@@ -908,8 +917,11 @@ export function createApp(db: Db, dataDir: string) {
     const add = (v: unknown) => (params.push(v), `$${params.length}`)
     const where = [`p.deleted_at IS NULL`, `p.kind = 'page'`, visible('p', 1, 2)]
     for (const term of terms) {
-      const like = add(`%${term.replace(/[\\%_]/g, '\\$&')}%`)
-      where.push(titleOnly ? `p.title ILIKE ${like}` : `(p.title ILIKE ${like} OR p.text ILIKE ${like})`)
+      const like = add(`%${koreanStem(term).replace(/[\\%_]/g, '\\$&')}%`)
+      // Body searches also look in comments and attachment names.
+      where.push(titleOnly ? `p.title ILIKE ${like}` : `(p.title ILIKE ${like} OR p.text ILIKE ${like}
+        OR EXISTS (SELECT 1 FROM comments cm WHERE cm.page_id = p.id AND cm.deleted_at IS NULL AND cm.body ILIKE ${like})
+        OR EXISTS (SELECT 1 FROM attachments at WHERE at.page_id = p.id AND at.name ILIKE ${like}))`)
     }
     if (/^\d+$/.test(qp('space'))) where.push(`p.space_id = ${add(Number(qp('space')))}`)
     if (/^\d+$/.test(qp('author'))) where.push(`p.updated_by = ${add(Number(qp('author')))}`)
@@ -945,7 +957,7 @@ export function createApp(db: Db, dataDir: string) {
     return c.json({
       total,
       results: rows.map((r) => ({
-        id: r.id, title: r.title, snippet: snippet(r.text, terms.find((term) => r.text.toLowerCase().includes(term.toLowerCase())) ?? terms[0]),
+        id: r.id, title: r.title, snippet: snippet(r.text, terms.map(koreanStem).find((term) => r.text.toLowerCase().includes(term.toLowerCase())) ?? koreanStem(terms[0])),
         updatedAt: r.updatedAt, updatedBy: r.updatedBy, space: r.space, spaceId: r.spaceId, path: paths.get(r.id) ?? [],
       })),
     })

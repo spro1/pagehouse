@@ -53,10 +53,14 @@ test('register, edit with conflict detection, search, attachments', async () => 
   // Two-character Korean query, and LIKE wildcards are treated literally.
   assert.equal((await (await call('GET', `/api/search?q=${encodeURIComponent('배포')}`)).json()).results[0].id, page.id)
   assert.equal((await (await call('GET', '/api/search?q=%25')).json()).total, 0)
+  // A particle on the query word ("배포를") still finds "배포 완료".
+  assert.equal((await (await call('GET', `/api/search?q=${encodeURIComponent('배포를')}`)).json()).results[0]?.id, page.id)
 
   const form = new FormData()
   form.append('file', new File(['<script>alert(1)</script>'], 'x.html', { type: 'text/html' }))
   const up = await (await app.request(`/api/pages/${page.id}/attachments`, { method: 'POST', headers: { cookie: a.cookie }, body: form })).json()
+  // Attachment names are searchable.
+  assert.equal((await (await call('GET', '/api/search?q=x.html')).json()).results[0]?.id, page.id)
   const file = await call('GET', up.url)
   assert.equal(file.headers.get('content-type'), 'application/octet-stream')
   assert.match(file.headers.get('content-disposition')!, /^attachment/)
