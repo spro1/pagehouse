@@ -29,26 +29,27 @@ Weekly reports, meeting notes and technical docs in one place, inside your own n
 
 | | Pagehouse |
 |---|---|
-| **Where data lives** | Entirely on your server (PostgreSQL and a file volume). The app makes no outbound requests: no external fonts, CDNs or telemetry |
+| **Where data lives** | Entirely on your server (PostgreSQL and a file volume). No external fonts, CDNs or telemetry; the only outbound requests are ones you turn on (SSO, email) and link-card previews (`LINK_PREVIEW=0` turns them off) |
 | **No internet** | Install and upgrade from an offline bundle that contains the images |
 | **Cost** | Apache-2.0 open source, no seat limits |
 | **What you need** | One Linux server with Docker or Podman, or a Kubernetes cluster (Helm chart) |
 | **Moving parts** | The app, PostgreSQL and a backup job: three containers, no external services |
 | **Data safety** | Trash that never empties itself, version history, daily automatic backups, a backup before every upgrade and restore |
 | **Leaving** | Export any space as Markdown plus attachments. Your data isn't tied to a format |
-| **Not yet** | SSO (OIDC), real-time co-editing, email notifications; see the [roadmap](#roadmap) |
+| **Sign-in** | Local accounts with invite links, or SSO with any OpenID Connect provider (Keycloak, Entra ID, Google Workspace, Okta) |
 
 ## Features
 
 | | |
 |---|---|
-| ✍️ **Editor** | `/` block menu, Markdown shortcuts, tables with merge and split, code highlighting for 25 languages, info and warning panels, to-dos, images and files by paste or drop, `@` mentions |
-| 🏠 **Home and notifications** | A landing page with recently viewed pages, new pages, and docs and comments that mention you; an unread counter on the bell |
-| 🗂️ **Organize** | Spaces, nested pages with drag and drop, templates (weekly report, meeting notes, tech doc), trash with undo |
-| 🔎 **Search** | ⌘K quick search and a full search page: every word must match (Korean included), filters by space, author and date |
-| 🔒 **Permissions** | Per-space access (everyone edits, everyone views, private) with member roles, plus per-page view/edit restrictions. What you can't see never appears in search, files or history |
-| 💬 **Collaborate** | Comments with replies and resolve, version history with restore, edit-conflict protection |
-| 📦 **Migrate** | Import Confluence HTML, Notion, Markdown and HTML; export Markdown plus attachments as a ZIP |
+| ✍️ **Editor** | `/` block menu, Markdown shortcuts, tables with merge and split, code highlighting for 25 languages, Mermaid diagrams, info and warning panels, to-dos, link cards, images and files by paste or drop, `@` mentions |
+| 🏠 **Home and notifications** | A landing page with recently viewed pages, new pages, and docs and comments that mention you; watch pages for edits; unread notifications by email (SMTP) |
+| 🗂️ **Organize** | Spaces, nested pages with drag and drop, built-in templates plus your own saved per space, trash with undo |
+| 🔎 **Search** | ⌘K quick search and a full search page: every word must match (Korean particles handled), comments and attachment names included, filters by space, author and date |
+| 🔒 **Permissions** | Per-space access (everyone edits, everyone views, private) for people or groups, plus per-page view/edit restrictions. What you can't see never appears in search, files or history |
+| 💬 **Collaborate** | Real-time co-editing with live cursors, inline comments on selected text, comments with replies and resolve, version history with diff and restore |
+| 🤖 **AI agents** | Built-in MCP server: agents search, read and write pages with a personal API token and exactly your permissions |
+| 📦 **Migrate** | Import Confluence HTML exports (page tree and order, attachments, panels, expand, status, tasks), Notion, Markdown and HTML; export Markdown plus attachments as a ZIP |
 | 📊 **Admin** | Storage use against a limit, disk space, backup status, activity, largest files |
 | 🌐 **Interface** | English and Korean, light and dark themes, set per account |
 
@@ -153,7 +154,7 @@ Import always adds new pages and never touches existing ones. If you don't like 
 
 ## Security
 
-- **Nothing leaves your network.** No outbound calls, no telemetry, no externally loaded assets.
+- **Nothing leaves your network unless you say so.** No telemetry or externally loaded assets. Outbound requests happen only for SSO and email you configure, and for link-card previews, which never reach private addresses unless allowed (`LINK_PREVIEW=0` disables them).
 - **Permissions are enforced on the server.** A page you can't see answers 404 everywhere: the API, search, attachments, history and export.
 - **Browser hardening:**
   - a strict Content-Security-Policy,
@@ -177,7 +178,7 @@ No. Installing (from the offline bundle), using and upgrading all work without i
 There is no seat limit. A single-server setup is aimed at a few hundred people.
 
 **Can people sign in with company accounts (SSO)?**
-Not yet; accounts are local and created through invite links. OIDC-based SSO is next on the roadmap.
+Yes, with any OpenID Connect provider. Set `OIDC_ISSUER`, `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`; see the [install guide](docs/install.md). Accounts are matched by email.
 
 **Can administrators see private documents?**
 Yes. Site administrators can open every space and page, so they can unlock content when needed. Give the admin role sparingly.
@@ -190,10 +191,10 @@ Yes. Export any space as standard Markdown files and attachments.
 
 ## Roadmap
 
-- SSO (OIDC: Keycloak, Microsoft Entra, Google Workspace, …)
-- Real-time co-editing
-- Email and chat (webhook) notifications
-- API tokens and an MCP server for agents
+- LDAP / SAML sign-in
+- Chat (Slack, Teams, Mattermost) webhooks
+- Direct import from a Confluence server over its API
+- Full-text search inside attachments (PDF, Office)
 
 ## Documentation
 
