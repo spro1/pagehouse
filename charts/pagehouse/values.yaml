@@ -27,6 +27,8 @@ ingress:
   annotations: {}
     # Uploads are up to 50 MB:
     # nginx.ingress.kubernetes.io/proxy-body-size: 50m
+    # Keep live-editing WebSockets open longer than the 60 s default (they reconnect either way):
+    # nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
   tls: []
     # - secretName: wiki-tls
     #   hosts: [wiki.example.com]
