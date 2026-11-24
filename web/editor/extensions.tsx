@@ -1,7 +1,8 @@
 import { Extension, Mark, Node, mergeAttributes, type Editor, type Range } from '@tiptap/core'
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, ReactRenderer, type NodeViewProps } from '@tiptap/react'
 import Suggestion, { type SuggestionProps } from '@tiptap/suggestion'
-import { PluginKey } from '@tiptap/pm/state'
+import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import StarterKit from '@tiptap/starter-kit'
 import { Image } from '@tiptap/extension-image'
 import { TableKit } from '@tiptap/extension-table'
@@ -119,6 +120,10 @@ export const SLASH_ITEMS: SlashItem[] = [
     run: (e: Editor, r: Range) => e.chain().focus().deleteRange(r).setCallout(v).run(),
   })),
   { title: t('slash.code'), hint: t('slash.code.hint'), icon: '</>', keywords: 'code snippet 코드', run: (e, r) => e.chain().focus().deleteRange(r).toggleCodeBlock().run() },
+  {
+    title: t('slash.diagram'), hint: t('slash.diagram.hint'), icon: '◇', keywords: 'diagram mermaid flowchart sequence 다이어그램 흐름도 순서도',
+    run: (e, r) => e.chain().focus().deleteRange(r).insertContent({ type: 'codeBlock', attrs: { language: 'mermaid' }, content: [{ type: 'text', text: 'flowchart LR\n  A[시작] --> B{확인}\n  B -->|예| C[배포]\n  B -->|아니오| D[수정]' }] }).run(),
+  },
   { title: t('slash.quote'), hint: t('slash.quote.hint'), icon: '❝', keywords: 'quote blockquote 인용', run: (e, r) => e.chain().focus().deleteRange(r).toggleBlockquote().run() },
   { title: t('slash.divider'), hint: t('slash.divider.hint'), icon: '—', keywords: 'divider hr line rule 구분선', run: (e, r) => e.chain().focus().deleteRange(r).setHorizontalRule().run() },
   {
@@ -305,6 +310,51 @@ export const CommentMark = Mark.create({
   renderHTML: ({ HTMLAttributes }) => ['span', mergeAttributes({ class: 'inline-comment' }, HTMLAttributes), 0],
 })
 
+// ---------- Mermaid diagrams: a ```mermaid code block shows the rendered diagram under it ----------
+let mermaidLib: Promise<typeof import('mermaid').default> | null = null
+const svgCache = new Map<string, string>()
+function renderMermaid(src: string, el: HTMLElement) {
+  const done = (svg: string) => ((el.innerHTML = svg), el.classList.remove('loading'))
+  if (svgCache.has(src)) return done(svgCache.get(src)!)
+  mermaidLib ??= import('mermaid').then((m) => {
+    const dark = document.documentElement.dataset.theme === 'dark' || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches)
+    // strict: labels can't carry HTML or script; the SVG is sanitized by mermaid itself.
+    m.default.initialize({ startOnLoad: false, securityLevel: 'strict', theme: dark ? 'dark' : 'default' })
+    return m.default
+  })
+  mermaidLib
+    .then((m) => m.render(`mmd-${Math.random().toString(36).slice(2)}`, src))
+    .then(({ svg }) => (svgCache.size > 100 && svgCache.clear(), svgCache.set(src, svg), done(svg)))
+    .catch((e) => ((el.textContent = `${t('mermaid.error')}: ${String(e?.message ?? e).split('\n')[0]}`), el.classList.add('error'), el.classList.remove('loading')))
+}
+const MermaidPreview = Extension.create({
+  name: 'mermaidPreview',
+  addProseMirrorPlugins: () => [
+    new Plugin({
+      key: new PluginKey('mermaidPreview'),
+      props: {
+        decorations(state) {
+          const decos: Decoration[] = []
+          state.doc.descendants((node, pos) => {
+            if (node.type.name !== 'codeBlock' || node.attrs.language !== 'mermaid' || !node.textContent.trim()) return
+            const src = node.textContent
+            // Keyed by the source, so the widget is only rebuilt when the diagram text changes.
+            decos.push(Decoration.widget(pos + node.nodeSize, () => {
+              const el = document.createElement('div')
+              el.className = 'mermaid-preview loading'
+              el.contentEditable = 'false'
+              renderMermaid(src, el)
+              return el
+            }, { key: `mmd:${src}`, side: -1, ignoreSelection: true }))
+            return false
+          })
+          return DecorationSet.create(state.doc, decos)
+        },
+      },
+    }),
+  ],
+})
+
 export type Live = { doc: Y.Doc; provider: { awareness: unknown } & Record<string, any>; user: { name: string; color: string } }
 
 /** With `live`, the editor is bound to a shared Yjs document (co-editing): undo then follows only your own edits. */
@@ -319,6 +369,7 @@ export function extensions(live?: Live) {
     TaskItem.configure({ nested: true }),
     Highlight,
     CommentMark,
+    MermaidPreview,
     TextAlign.configure({ types: ['heading', 'paragraph'] }),
     Typography,
     Callout,

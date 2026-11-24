@@ -734,3 +734,9 @@ pre.diff { margin: 0; max-height: 60vh; overflow: auto; font-size: 13px; line-he
 .diff-del { background: var(--c-danger); text-decoration: line-through; text-decoration-color: var(--danger); }
 .diff-same { color: var(--muted); }
 .modal.wide { width: min(860px, 100%); }
+
+/* Mermaid diagram under its code block */
+.mermaid-preview { margin: -8px 0 16px; padding: 16px; border: 1px solid var(--line); border-top: 0; border-radius: 0 0 8px 8px; overflow-x: auto; text-align: center; }
+.mermaid-preview.loading { min-height: 60px; }
+.mermaid-preview.error { color: var(--danger); font-size: 13px; text-align: left; }
+.mermaid-preview svg { max-width: 100%; height: auto; }
