@@ -117,9 +117,73 @@ function fromHtml(html: string): { doc: Json; title: string | null; crumbs: stri
     code.textContent = pre.textContent
     pre.replaceChildren(code)
   }
+  confluenceMacros(dom, root)
   root.querySelectorAll('script, style, .pageSection.group, #footer, .page-metadata').forEach((e) => e.remove())
   editor().commands.setContent(root.innerHTML, { emitUpdate: false })
   return { doc: editor().getJSON() as Json, title: title || null, crumbs }
+}
+
+/** Confluence macros that have an equivalent here become it; the rest keep their text. */
+function confluenceMacros(dom: Document, root: Element) {
+  const el = (tag: string, html = '', attrs: Record<string, string> = {}) => {
+    const e = dom.createElement(tag)
+    e.innerHTML = html
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v)
+    return e
+  }
+  // Generated or interactive bits with nothing to keep.
+  root.querySelectorAll('.toc-macro, .client-side-toc-macro, .plugin_pagetree, .recently-updated, .children-display').forEach((e) => e.remove())
+  // Panels → info panel, with their title as a bold first line.
+  for (const p of root.querySelectorAll('.panel')) {
+    const title = p.querySelector('.panelHeader')?.textContent?.trim()
+    const body = p.querySelector('.panelContent')?.innerHTML ?? p.innerHTML
+    p.replaceWith(el('div', (title ? `<p><strong>${escapeHtml(title)}</strong></p>` : '') + body, { 'data-callout': 'info' }))
+  }
+  // Expand: the content is shown, under its title in bold.
+  for (const x of root.querySelectorAll('.expand-container')) {
+    const title = x.querySelector('.expand-control-text')?.textContent?.trim()
+    const body = x.querySelector('.expand-content')?.innerHTML ?? ''
+    x.replaceWith(el('div', (title ? `<p><strong>${escapeHtml(title)}</strong></p>` : '') + body))
+  }
+  // Status lozenges → highlighted text.
+  for (const st of root.querySelectorAll('.status-macro')) st.replaceWith(el('mark', escapeHtml(st.textContent?.trim() ?? '')))
+  // @mentions of Confluence users → plain "@Name" (accounts don't carry over).
+  for (const u of root.querySelectorAll('a.confluence-userlink, a.user-mention')) u.replaceWith(dom.createTextNode(`@${u.textContent?.trim() ?? ''}`))
+  // Emoticons → their text.
+  for (const img of root.querySelectorAll('img.emoticon')) img.replaceWith(dom.createTextNode(img.getAttribute('data-emoji-fallback') ?? img.getAttribute('alt') ?? ''))
+  // Task lists → our checklists.
+  for (const ul of root.querySelectorAll('ul.inline-task-list')) {
+    ul.setAttribute('data-type', 'taskList')
+    for (const li of ul.querySelectorAll(':scope > li')) {
+      li.setAttribute('data-type', 'taskItem')
+      li.setAttribute('data-checked', String(li.classList.contains('checked')))
+      if (!li.querySelector(':scope > p')) li.innerHTML = `<p>${li.innerHTML}</p>`
+    }
+  }
+  // Jira issue macros → a link to the issue.
+  for (const j of root.querySelectorAll('.jira-issue')) {
+    const a = j.querySelector('a[href]')
+    if (a) j.replaceWith(el('a', escapeHtml(j.textContent?.replace(/\s+/g, ' ').trim() ?? ''), { href: a.getAttribute('href')! }))
+  }
+}
+const escapeHtml = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
+
+/** Confluence's index.html lists every page as a nested tree: the true parent and sibling order. */
+function confluenceTree(html: string, dir: string): Map<string, { parent: string | null; order: number }> {
+  const dom = new DOMParser().parseFromString(html, 'text/html')
+  const out = new Map<string, { parent: string | null; order: number }>()
+  let order = 0
+  const walk = (ul: Element, parent: string | null) => {
+    for (const li of ul.querySelectorAll(':scope > li')) {
+      const href = li.querySelector(':scope > a[href]')?.getAttribute('href')
+      const key = href ? norm(`${dir}/${href}`) : null
+      if (key) out.set(key, { parent, order: order++ })
+      for (const sub of li.querySelectorAll(':scope > ul')) walk(sub, key ?? parent)
+    }
+  }
+  const top = dom.querySelector('#content ul, .pageSection ul, body ul')
+  if (top) walk(top, null)
+  return out
 }
 
 function fromText(text: string): Json {
@@ -160,7 +224,9 @@ export function plan(items: Item[]): Plan {
   const skipped = items.filter((i) => !DOC_EXT.test(i.path) && !/\.(png|jpe?g|gif|webp|svg|pdf|zip|csv|docx?|xlsx?|pptx?|txt|json)$/i.test(i.path)).map((i) => i.path)
   const htmlCount = docItems.filter((i) => /\.html?$/i.test(i.path)).length
   const confluence = htmlCount > 0 && docItems.some((i) => /\.html?$/i.test(i.path) && /id="breadcrumbs"|confluence/i.test(decode(i.data).slice(0, 20000)))
-  // Confluence's index.html is the space overview listing, not a page.
+  // Confluence's index.html is the space overview listing, not a page; its tree gives parents and order.
+  const indexItem = confluence ? docItems.find((i) => baseName(i.path).toLowerCase() === 'index.html') : undefined
+  const tree = indexItem ? confluenceTree(decode(indexItem.data), dirOf(indexItem.path)) : new Map()
   if (confluence && htmlCount > 1) docItems = docItems.filter((i) => baseName(i.path).toLowerCase() !== 'index.html')
   const notion = docItems.some((i) => /\s[0-9a-f]{32}\.md$/i.test(i.path))
 
@@ -181,7 +247,7 @@ export function plan(items: Item[]): Plan {
       doc = h.doc
       title = h.title || name.replace(/_\d+$/, '').replace(/[-_]+/g, ' ')
       const last = h.crumbs.filter((c) => c && !/index\.html?$/i.test(c)).pop()
-      if (confluence && last) parent = norm(`${dirOf(it.path)}/${last}`)
+      if (confluence) parent = tree.get(it.path)?.parent ?? (last ? norm(`${dirOf(it.path)}/${last}`) : null)
     } else if (/\.txt$/i.test(it.path)) doc = fromText(text)
     else doc = fromMarkdown(text.replace(/^---\n[\s\S]*?\n---\n/, ''))
     ;({ doc, title } = dropTitleHeading(doc, title, /\.(md|markdown)$/i.test(it.path)))
@@ -218,7 +284,9 @@ export function plan(items: Item[]): Plan {
     seen.add(d.key)
     ordered.push(d)
   }
-  docs.sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true })).forEach((d) => visit(d))
+  // Confluence keeps its own page order; everything else sorts by name.
+  const rank = (d: Doc) => tree.get(d.key)?.order ?? Number.MAX_SAFE_INTEGER
+  docs.sort((a, b) => rank(a) - rank(b) || a.path.localeCompare(b.path, undefined, { numeric: true })).forEach((d) => visit(d))
   return { kind: confluence ? 'confluence' : notion ? 'notion' : 'files', docs: ordered, files, skipped }
 }
 
