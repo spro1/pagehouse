@@ -1,11 +1,18 @@
 # Push a tag like v0.2.0 to publish:
 #   - ghcr.io/<owner>/pagehouse:<version> and :latest (linux/amd64 + linux/arm64)
 #   - a GitHub Release with install.sh, the compose bundle, offline bundles per architecture and the Helm chart
+# If a release run fails for a reason outside the code, run this workflow by hand (Actions → Release → Run workflow)
+# with the same tag: it rebuilds from that tag using the current workflow, without creating a new version.
 name: Release
 
 on:
   push:
     tags: ["v*.*.*", "v*.*.*-*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to (re)publish, e.g. v0.1.0-beta.3
+        required: true
 
 permissions:
   contents: write
@@ -13,6 +20,9 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
+  TAG: ${{ inputs.tag || github.ref_name }}
+  # The build action's own build-record artifacts are not part of the release.
+  DOCKER_BUILD_RECORD_UPLOAD: false
 
 jobs:
   meta:
@@ -20,17 +30,21 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
       image: ${{ steps.v.outputs.image }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
     steps:
       - id: v
         run: |
-          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
           echo "image=${REGISTRY}/$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+          case "$TAG" in *-*) echo "prerelease=true" ;; *) echo "prerelease=false" ;; esac >> "$GITHUB_OUTPUT"
 
   image:
     needs: meta
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
       - name: Version in package.json matches the tag
         run: test "$(node -p "require('./package.json').version")" = "${{ needs.meta.outputs.version }}"
       - uses: docker/setup-qemu-action@v3
@@ -49,7 +63,7 @@ jobs:
           # Pre-releases (v1.2.0-beta.1) never move :latest.
           tags: |
             ${{ needs.meta.outputs.image }}:${{ needs.meta.outputs.version }}
-            ${{ !contains(github.ref_name, '-') && format('{0}:latest', needs.meta.outputs.image) || '' }}
+            ${{ needs.meta.outputs.prerelease != 'true' && format('{0}:latest', needs.meta.outputs.image) || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: PostgreSQL image (patched, without gosu)
@@ -69,6 +83,8 @@ jobs:
         arch: [amd64, arm64]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
       # One architecture per archive. `docker save` of a multi-arch image fails on missing manifests,
       # so skopeo (preinstalled on GitHub runners) copies exactly the platform we want.
       - name: Save ${{ matrix.arch }} images
@@ -97,8 +113,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      # Only our bundles: other artifacts in the run would collide when merged into one folder.
       - uses: actions/download-artifact@v4
         with:
+          pattern: bundles-*
           path: release
           merge-multiple: true
       - uses: azure/setup-helm@v4
@@ -111,8 +131,9 @@ jobs:
         run: cd release && sha256sum *.tar.gz *.tgz install.sh > SHA256SUMS
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.TAG }}
           generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ needs.meta.outputs.prerelease == 'true' }}
           files: |
             release/install.sh
             release/pagehouse.tar.gz
