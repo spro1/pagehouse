@@ -85,7 +85,7 @@ jobs:
             docker-archive:"$dir/postgres.tar":${{ needs.meta.outputs.image }}-postgres:17
       - name: Build bundles
         run: sh scripts/make-release.sh "${{ needs.meta.outputs.version }}" "${{ needs.meta.outputs.image }}" "${GITHUB_REPOSITORY}" --offline ${{ matrix.arch }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: bundles-${{ matrix.arch }}
           path: |
