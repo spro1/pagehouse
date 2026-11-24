@@ -48,6 +48,8 @@ Weekly reports, meeting notes and technical docs in one place, inside your own n
 | 🔎 **Search** | ⌘K quick search and a full search page: every word must match (Korean particles handled), comments and attachment names included, filters by space, author and date |
 | 🔒 **Permissions** | Per-space access (everyone edits, everyone views, private) for people or groups, plus per-page view/edit restrictions. What you can't see never appears in search, files or history |
 | 💬 **Collaborate** | Real-time co-editing with live cursors, inline comments on selected text, comments with replies and resolve, version history with diff and restore |
+| 🗂️ **Organizing** | Labels across spaces, favorites and recently viewed in the sidebar, copy a page with or without its subpages, PDF and Markdown export |
+| 🛡️ **Audit log** | Sign-ins (failed ones too), account, group and permission changes, deletions and exports, for admins |
 | 🤖 **AI agents** | Built-in MCP server: agents search, read and write pages with a personal API token and exactly your permissions |
 | 📦 **Migrate** | Import Confluence HTML exports (page tree and order, attachments, panels, expand, status, tasks), Notion, Markdown and HTML; export Markdown plus attachments as a ZIP |
 | 📊 **Admin** | Storage use against a limit, disk space, backup status, activity, largest files |

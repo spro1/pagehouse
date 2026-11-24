@@ -318,9 +318,11 @@ function LoadedPage({ page, live, me, onTitle, onDeleted }: { page: Page; live: 
           </button>
           {menu && (
             <div className="dropdown" role="menu">
+              <div className="menu-label">{t('page.export')}</div>
+              <button role="menuitem" onClick={() => (setMenu(false), savePdf(title))}>{t('page.print')}</button>
               <button role="menuitem" onClick={() => (setMenu(false), exportMarkdown(title, editor))}>{t('page.exportMd')}</button>
-              <button role="menuitem" onClick={() => (setMenu(false), print())}>{t('page.print')}</button>
               <a role="menuitem" className="menu-link" href={`/api/pages/${page.id}/export`} download onClick={() => setMenu(false)}>{t('export.page')}</a>
+              <hr />
               <button role="menuitem" onClick={() => (setMenu(false), setSavingTpl(true))}>{t('tpl.save')}</button>
               {([false, true] as const).map((children) => (
                 <button
@@ -1102,6 +1104,15 @@ function CommentText({ body }: { body: string }) {
 }
 
 // One page as a single .md file. Attachment links point back to this wiki; the ZIP export bundles the files instead.
+/** The browser's print dialog, where "Save as PDF" keeps the page as rendered (diagrams, images, any script).
+ *  The document title becomes the suggested file name. */
+function savePdf(title: string) {
+  const before = document.title
+  document.title = title.replace(/[\\/:*?"<>|]/g, '_') || 'page'
+  addEventListener('afterprint', () => (document.title = before), { once: true })
+  print()
+}
+
 function exportMarkdown(title: string, editor: Editor) {
   const md = toMarkdown(title, editor.getJSON(), (u) => (u.startsWith('/') ? location.origin + u : u))
   const a = document.createElement('a')

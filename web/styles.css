@@ -583,12 +583,22 @@ button.locked:hover { color: var(--danger); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+@page { margin: 18mm 16mm; }
 @media print {
-  .sidebar, .page-bar, .side-col, .comments, .nav-toggle, .bubble { display: none !important; }
-  .layout { display: block; height: auto; }
-  main { overflow: visible; }
+  .sidebar, .page-bar, .side-col, .comments, .nav-toggle, .bubble, .draft-banner, .label-new, .label-add, .label-chip button,
+  .toast, .table-menu, .collaboration-carets__caret, .collaboration-carets__selection, .ProseMirror-gapcursor { display: none !important; }
+  html, body, .layout, main { height: auto !important; overflow: visible !important; background: #fff !important; color: #000; }
+  .layout { display: block; }
   .page-body { display: block; padding: 0; }
-  .doc-col { padding: 0; }
+  .doc-col { padding: 0; max-width: none; }
+  .byline { margin-bottom: 16px; }
+  .inline-comment { background: none !important; border: 0 !important; }
+  .label-chip { background: none; border: 1px solid #ccc; }
+  .doc h1, .doc h2, .doc h3, .doc h4 { break-after: avoid; }
+  .doc pre, .doc table, .doc img, .doc figure, .callout, .mermaid, .doc blockquote { break-inside: avoid; }
+  .doc pre { white-space: pre-wrap; word-break: break-word; }
+  .doc img { max-width: 100%; }
+  .doc a { color: inherit; }
 }
 
 /* The editing surface is the page itself: no focus ring around it. */
@@ -759,7 +769,7 @@ pre.diff { margin: 0; max-height: 60vh; overflow: auto; font-size: 13px; line-he
 .link-card:hover .lc-unwrap { opacity: 1; }
 
 /* Page labels */
-.labels { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0 0; }
+.labels { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -18px 0 28px; }
 .label-chip { display: inline-flex; align-items: center; height: 24px; padding: 0 4px 0 8px; border-radius: 12px; background: var(--accent-soft); font-size: 12.5px; }
 .label-chip a { color: var(--accent); text-decoration: none; padding-right: 4px; }
 .label-chip button { width: 18px; height: 18px; min-height: 0; padding: 0; color: var(--muted); }
@@ -771,3 +781,6 @@ pre.diff { margin: 0; max-height: 60vh; overflow: auto; font-size: 13px; line-he
 .star.starred .icon-svg { fill: currentColor; color: #e0a100; }
 .nav-item.quick { height: 30px; font-size: 13.5px; }
 .nav-item .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+.menu-label { padding: 6px 12px 2px; font-size: 11.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.box-head select { width: auto; flex: none; }
