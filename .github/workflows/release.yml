@@ -68,6 +68,12 @@ jobs:
         arch: [amd64, arm64]
     steps:
       - uses: actions/checkout@v4
+      # Images of a private repository need a login even to pull.
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Pull images for ${{ matrix.arch }}
         run: |
           docker pull --platform linux/${{ matrix.arch }} ${{ needs.meta.outputs.image }}:${{ needs.meta.outputs.version }}
