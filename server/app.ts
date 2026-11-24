@@ -561,7 +561,7 @@ export function createApp(db: Db, dataDir: string) {
     (await guard(c, id(c), 'view')) ??
     c.json(
       await all(
-        `SELECT cm.id, cm.parent_id AS "parentId", cm.body, cm.resolved_at AS "resolvedAt", cm.created_at AS "createdAt",
+        `SELECT cm.id, cm.parent_id AS "parentId", cm.body, cm.quote, cm.resolved_at AS "resolvedAt", cm.created_at AS "createdAt",
            cm.author_id AS "authorId", u.name AS author
          FROM comments cm JOIN users u ON u.id = cm.author_id
          LEFT JOIN comments parent ON parent.id = cm.parent_id
@@ -582,9 +582,9 @@ export function createApp(db: Db, dataDir: string) {
       return fail(c, 400, 'comment_not_found')
     const user = c.get('user')
     const row = await one(
-      `INSERT INTO comments (page_id, parent_id, author_id, body) VALUES ($1, $2, $3, $4)
-       RETURNING id, parent_id AS "parentId", body, resolved_at AS "resolvedAt", created_at AS "createdAt", author_id AS "authorId"`,
-      [id(c), parentId, user.id, body],
+      `INSERT INTO comments (page_id, parent_id, author_id, body, quote) VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, parent_id AS "parentId", body, quote, resolved_at AS "resolvedAt", created_at AS "createdAt", author_id AS "authorId"`,
+      [id(c), parentId, user.id, body, parentId ? null : str(b.quote, 2000)],
     )
     const parentAuthor = parentId ? (await one('SELECT author_id FROM comments WHERE id = $1', [parentId]))?.author_id : null
     const pageCreator = (await one('SELECT created_by FROM pages WHERE id = $1', [id(c)]))?.created_by

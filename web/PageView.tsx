@@ -341,9 +341,12 @@ function LoadedPage({ page, me, onTitle, onDeleted }: { page: Page; me: User; on
           <TextMenu editor={editor} />
           <TableMenu editor={editor} />
           <CodeMenu editor={editor} />
-          <EditorContent editor={editor} className="doc" />
+          <EditorContent editor={editor} className="doc" onClick={(e) => {
+            const id = (e.target as HTMLElement).closest('[data-comment]')?.getAttribute('data-comment')
+            if (id) dispatchEvent(new CustomEvent('ph:show-comment', { detail: id }))
+          }} />
           <input ref={fileInput} type="file" hidden multiple onChange={(e) => (takeFiles(e.target.files), (e.target.value = ''))} />
-          <Comments pageId={page.id} me={me} />
+          <Comments pageId={page.id} me={me} editor={editor} />
         </article>
         {sharing && (
           <RestrictionsModal pageId={page.id} me={me} canEdit={canEdit} onClose={() => setSharing(false)} onSaved={setRestricted} />
@@ -417,6 +420,13 @@ function TextMenu({ editor }: { editor: Editor }) {
               {t('fmt.open')}
             </button>
           )}
+          <button title={t('comments.inline')} aria-label={t('comments.inline')} onMouseDown={(e) => {
+            e.preventDefault()
+            const { from, to } = editor.state.selection
+            dispatchEvent(new CustomEvent('ph:inline-comment', { detail: { from, to, quote: editor.state.doc.textBetween(from, to, ' ').slice(0, 2000) } }))
+          }}>
+            <Icon name="comment" size={14} />
+          </button>
           <span className="sep" />
           {btn('H2', t('fmt.h2'), false, () => c().toggleHeading({ level: 2 }).run())}
           {btn('H3', t('fmt.h3'), false, () => c().toggleHeading({ level: 3 }).run())}
@@ -712,11 +722,40 @@ function History({ pageId, editor, canEdit, onRestore, onClose }: { pageId: numb
   )
 }
 
-type Comment = { id: number; parentId: number | null; body: string; resolvedAt: string | null; createdAt: string; authorId: number; author: string }
+type Comment = { id: number; parentId: number | null; body: string; quote?: string | null; resolvedAt: string | null; createdAt: string; authorId: number; author: string }
 
-function Comments({ pageId, me }: { pageId: number; me: User }) {
+type Pending = { quote: string; from: number; to: number }
+
+function Comments({ pageId, me, editor }: { pageId: number; me: User; editor: Editor }) {
   const [list, setList] = useState<Comment[]>([])
   const [showResolved, setShowResolved] = useState(false)
+  const [pending, setPending] = useState<Pending | null>(null)
+  const ref = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const start = (e: Event) => {
+      setPending((e as CustomEvent<Pending>).detail)
+      setTimeout(() => ref.current?.querySelector<HTMLElement>('.inline-composer textarea')?.focus(), 50)
+      ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+    // Clicking commented text in the page jumps to its thread.
+    const jump = (e: Event) => {
+      const el = document.getElementById(`comment-${(e as CustomEvent<string>).detail}`)
+      if (el) (el.scrollIntoView({ behavior: 'smooth', block: 'center' }), el.classList.add('flash'), setTimeout(() => el.classList.remove('flash'), 1200))
+    }
+    addEventListener('ph:inline-comment', start)
+    addEventListener('ph:show-comment', jump)
+    return () => (removeEventListener('ph:inline-comment', start), removeEventListener('ph:show-comment', jump))
+  }, [])
+  const postInline = async (body: string) => {
+    if (!pending) return
+    const c = await api(`/api/pages/${pageId}/comments`, { json: { body, quote: pending.quote } })
+    // Mark the range if it still holds the quoted text (the page may have changed while typing).
+    const { from, to, quote } = pending
+    if (to <= editor.state.doc.content.size && editor.state.doc.textBetween(from, to, ' ') === quote)
+      editor.chain().setTextSelection({ from, to }).setMark('comment', { id: String(c.id) }).setTextSelection(to).run()
+    setList((l) => [...l, c])
+    setPending(null)
+  }
   useEffect(() => {
     const load = () => api(`/api/pages/${pageId}/comments`).then(setList)
     load()
@@ -731,7 +770,13 @@ function Comments({ pageId, me }: { pageId: number; me: User }) {
   const open = top.filter((c) => !c.resolvedAt)
   const resolved = top.filter((c) => c.resolvedAt)
   const thread = (c: Comment) => (
-    <div key={c.id} className={`comment ${c.resolvedAt ? 'resolved' : ''}`}>
+    <div key={c.id} id={`comment-${c.id}`} className={`comment ${c.resolvedAt ? 'resolved' : ''}`}>
+      {c.quote && (
+        <button className="comment-quote" title={t('comments.showInPage')}
+          onClick={() => document.querySelector(`.doc [data-comment="${c.id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}>
+          {c.quote}
+        </button>
+      )}
       <CommentBody c={c} me={me} onDelete={() => setList((l) => l.filter((x) => x.id !== c.id && x.parentId !== c.id))} />
       {list.filter((r) => r.parentId === c.id).map((r) => (
         <div key={r.id} className="reply">
@@ -753,8 +798,17 @@ function Comments({ pageId, me }: { pageId: number; me: User }) {
     </div>
   )
   return (
-    <section className="comments" aria-label={t('comments.title')}>
+    <section className="comments" aria-label={t('comments.title')} ref={ref}>
+      {/* Only open inline comments are highlighted in the page; resolved and deleted ones fade out. */}
+      <style>{open.filter((c) => c.quote).map((c) => `.doc [data-comment="${c.id}"]`).join(',') + '{background:var(--c-warning);border-bottom:2px solid var(--c-warning-line);cursor:pointer}'}</style>
       <h3>{t('comments.title')} {open.length > 0 && <span className="count">{open.length}</span>}</h3>
+      {pending && (
+        <div className="comment inline-composer">
+          <div className="comment-quote">{pending.quote}</div>
+          <Composer placeholder={t('comments.placeholder')} onSubmit={postInline} />
+          <button className="link small" onClick={() => setPending(null)}>{t('common.cancel')}</button>
+        </div>
+      )}
       {open.map(thread)}
       <Composer placeholder={t('comments.placeholder')} onSubmit={(b) => post(b)} />
       {resolved.length > 0 && (

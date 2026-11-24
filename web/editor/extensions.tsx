@@ -1,4 +1,4 @@
-import { Extension, Node, mergeAttributes, type Editor, type Range } from '@tiptap/core'
+import { Extension, Mark, Node, mergeAttributes, type Editor, type Range } from '@tiptap/core'
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, ReactRenderer, type NodeViewProps } from '@tiptap/react'
 import Suggestion, { type SuggestionProps } from '@tiptap/suggestion'
 import { PluginKey } from '@tiptap/pm/state'
@@ -292,6 +292,16 @@ const Slash = Extension.create({
 const lowlight = createLowlight({ bash, c, cpp, csharp, css, diff, dockerfile, go, ini, java, javascript, json, kotlin, makefile, markdown, nginx, plaintext, properties, python, rust, shell, sql, typescript, xml, yaml })
 lowlight.registerAlias({ xml: ['html', 'svg'], bash: ['sh', 'zsh'], yaml: ['yml'], javascript: ['js', 'jsx'], typescript: ['ts', 'tsx'], ini: ['toml'], dockerfile: ['docker'], python: ['py'] })
 
+/** Text an inline comment points at. Overlaps other comments; the comment list decides which ones are highlighted. */
+export const CommentMark = Mark.create({
+  name: 'comment',
+  inclusive: false,
+  excludes: '',
+  addAttributes: () => ({ id: { default: null, parseHTML: (el) => el.getAttribute('data-comment'), renderHTML: (a) => ({ 'data-comment': a.id }) } }),
+  parseHTML: () => [{ tag: 'span[data-comment]' }],
+  renderHTML: ({ HTMLAttributes }) => ['span', mergeAttributes({ class: 'inline-comment' }, HTMLAttributes), 0],
+})
+
 export function extensions() {
   return [
     StarterKit.configure({ codeBlock: false, link: { openOnClick: false, autolink: true } }),
@@ -301,6 +311,7 @@ export function extensions() {
     TaskList,
     TaskItem.configure({ nested: true }),
     Highlight,
+    CommentMark,
     TextAlign.configure({ types: ['heading', 'paragraph'] }),
     Typography,
     Callout,
