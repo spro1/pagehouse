@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pagehouse · The team wiki you install on your own server</title>
-<meta name="description" content="Pagehouse is an open-source, self-hosted team wiki and Confluence alternative for small companies and teams: live co-editing, Confluence import, SSO and air-gapped installs.">
+<meta name="description" content="Pagehouse is an open-source, self-hosted team wiki and Confluence alternative for small organizations and teams: live co-editing, Confluence import, SSO and air-gapped installs.">
 <meta property="og:title" content="Pagehouse · The team wiki you install on your own server">
 <meta property="og:description" content="An open-source team wiki that keeps your documents inside your network. One server, one command.">
 <link rel="icon" href="images/logo.svg" type="image/svg+xml">
@@ -41,7 +41,7 @@
     <div class="wrap">
       <span class="eyebrow">Open source · Apache-2.0 · No user limits</span>
       <h1>Your team's docs,<br><span class="grad">on your own server</span></h1>
-      <p class="lead">Pagehouse is a team wiki that small companies and teams install on their own server. Keep weekly reports, meeting notes and technical docs in one place, without sending them outside your network.</p>
+      <p class="lead">Pagehouse is a team wiki that small organizations and teams install on their own server. Keep weekly reports, meeting notes and technical docs in one place, without sending them outside your network.</p>
       <div class="cta">
         <a class="btn primary" href="#install">Install</a>
         <a class="btn" href="https://github.com/spro1/pagehouse">View on GitHub</a>
@@ -83,9 +83,15 @@
 
   <section class="block soft">
     <div class="wrap">
-      <div class="screens">
-        <figure><img src="images/screenshot-dark.png" width="1440" height="900" alt="A Pagehouse page in the dark theme" loading="lazy"><figcaption>Dark theme</figcaption></figure>
-        <figure><img src="images/screenshot-search.png" width="1440" height="900" alt="The ⌘K quick search" loading="lazy"><figcaption>⌘K quick search</figcaption></figure>
+      <div class="screens" role="group" aria-label="Screenshots">
+        <input type="radio" name="shot" id="shot-dark" checked>
+        <input type="radio" name="shot" id="shot-search">
+        <div class="screen-tabs">
+          <label for="shot-dark">Dark theme</label>
+          <label for="shot-search">⌘K quick search</label>
+        </div>
+        <img class="screen screen-dark" src="images/screenshot-dark.png" width="1440" height="900" alt="A Pagehouse page in the dark theme" loading="lazy">
+        <img class="screen screen-search" src="images/screenshot-search.png" width="1440" height="900" alt="The ⌘K quick search" loading="lazy">
       </div>
     </div>
   </section>

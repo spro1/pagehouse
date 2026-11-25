@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pagehouse · 우리 서버에 설치하는 팀 위키</title>
-<meta name="description" content="Pagehouse는 작은 회사와 팀이 자기 서버에 설치해 쓰는 오픈소스 팀 위키입니다. 폐쇄망 설치, Confluence 이관, 실시간 공동 편집, SSO를 지원합니다.">
+<meta name="description" content="Pagehouse는 소규모 조직과 팀이 자기 서버에 설치해 쓰는 오픈소스 팀 위키입니다. 폐쇄망 설치, Confluence 이관, 실시간 공동 편집, SSO를 지원합니다.">
 <meta property="og:title" content="Pagehouse · 우리 서버에 설치하는 팀 위키">
 <meta property="og:description" content="문서를 회사 밖으로 내보내지 않는 오픈소스 팀 위키. 서버 한 대, 명령 한 줄로 설치합니다.">
 <link rel="icon" href="images/logo.svg" type="image/svg+xml">
@@ -41,7 +41,7 @@
     <div class="wrap">
       <span class="eyebrow">오픈소스 · Apache-2.0 · 사용자 수 제한 없음</span>
       <h1>팀 문서는<br><span class="grad">우리 서버 안에</span></h1>
-      <p class="lead">Pagehouse는 작은 회사와 팀이 자기 서버에 설치해 쓰는 팀 위키입니다. 주간보고, 회의록, 기술 문서를 망 밖으로 내보내지 않고 한곳에서 관리하세요.</p>
+      <p class="lead">Pagehouse는 소규모 조직과 팀이 자기 서버에 설치해 쓰는 팀 위키입니다. 주간보고, 회의록, 기술 문서를 망 밖으로 내보내지 않고 한곳에서 관리하세요.</p>
       <div class="cta">
         <a class="btn primary" href="#install">설치하기</a>
         <a class="btn" href="https://github.com/spro1/pagehouse">GitHub에서 보기</a>
@@ -83,9 +83,15 @@
 
   <section class="block soft">
     <div class="wrap">
-      <div class="screens">
-        <figure><img src="images/screenshot-dark.png" width="1440" height="900" alt="다크 테마의 Pagehouse 페이지" loading="lazy"><figcaption>다크 테마</figcaption></figure>
-        <figure><img src="images/screenshot-search.png" width="1440" height="900" alt="⌘K 빠른 검색 창" loading="lazy"><figcaption>⌘K 빠른 검색</figcaption></figure>
+      <div class="screens" role="group" aria-label="Screenshots">
+        <input type="radio" name="shot" id="shot-dark" checked>
+        <input type="radio" name="shot" id="shot-search">
+        <div class="screen-tabs">
+          <label for="shot-dark">다크 테마</label>
+          <label for="shot-search">⌘K 빠른 검색</label>
+        </div>
+        <img class="screen screen-dark" src="images/screenshot-dark.png" width="1440" height="900" alt="다크 테마의 Pagehouse 페이지" loading="lazy">
+        <img class="screen screen-search" src="images/screenshot-search.png" width="1440" height="900" alt="⌘K 빠른 검색 창" loading="lazy">
       </div>
     </div>
   </section>
