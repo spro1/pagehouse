@@ -1,6 +1,6 @@
 {
   "name": "pagehouse",
-  "version": "0.2.0-beta.2",
+  "version": "0.2.0-beta.3",
   "description": "Self-hosted team wiki for small teams",
   "license": "Apache-2.0",
   "type": "module",

@@ -6,7 +6,7 @@
 
 | Installed with | Upgrade |
 |---|---|
-| One-line install (Docker, Podman) | In the install folder: `scripts/upgrade.sh <version>`, e.g. `scripts/upgrade.sh 0.2.0-beta.2` |
+| One-line install (Docker, Podman) | In the install folder: `scripts/upgrade.sh <version>`, e.g. `scripts/upgrade.sh 0.2.0-beta.3` |
 | Offline bundle | Extract the new bundle and run `sh pagehouse-<version>/install.sh --dir <install folder>` |
 | Kubernetes (Helm) | `helm upgrade <name> pagehouse-<version>.tgz -n <namespace> --reuse-values` |
 
@@ -30,7 +30,7 @@
 
 ## Notes per version
 
-### 0.2.0-beta.2 → next (unreleased)
+### 0.2.0-beta.2 → 0.2.0-beta.3
 
 - No database or setting changes.
 - **Editor:** the toolbar gains text color, background color, underline, alignment, link and clear-formatting buttons. Markdown export drops colors (Markdown has no way to express them); HTML export keeps them.
