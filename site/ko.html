@@ -19,7 +19,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://spro1.github.io/pagehouse/images/social-preview.png">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Pagehouse","applicationCategory":"BusinessApplication","operatingSystem":"Linux (Docker, Podman, Kubernetes)","license":"https://www.apache.org/licenses/LICENSE-2.0","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"url":"https://spro1.github.io/pagehouse/","downloadUrl":"https://github.com/spro1/pagehouse/releases/latest","codeRepository":"https://github.com/spro1/pagehouse","description":"우리 서버에 설치하는 오픈소스 팀 위키이자 Confluence 대안. 실시간 공동 편집, Confluence 가져오기, SSO, 폐쇄망 설치.","inLanguage":["en","ko"],"screenshot":"https://spro1.github.io/pagehouse/images/screenshot-light.png"}</script>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=__V__">
 </head>
 <body>
 <header class="top">
@@ -83,15 +83,9 @@
 
   <section class="block soft">
     <div class="wrap">
-      <div class="screens" role="group" aria-label="Screenshots">
-        <input type="radio" name="shot" id="shot-dark" checked>
-        <input type="radio" name="shot" id="shot-search">
-        <div class="screen-tabs">
-          <label for="shot-dark">다크 테마</label>
-          <label for="shot-search">⌘K 빠른 검색</label>
-        </div>
-        <img class="screen screen-dark" src="images/screenshot-dark.png" width="1440" height="900" alt="다크 테마의 Pagehouse 페이지" loading="lazy">
-        <img class="screen screen-search" src="images/screenshot-search.png" width="1440" height="900" alt="⌘K 빠른 검색 창" loading="lazy">
+      <div class="screens">
+        <figure><img src="images/screenshot-dark.png" width="1440" height="900" alt="다크 테마의 Pagehouse 페이지" loading="lazy"><figcaption>다크 테마</figcaption></figure>
+        <figure><img src="images/screenshot-search.png" width="1440" height="900" alt="⌘K 빠른 검색 창" loading="lazy"><figcaption>⌘K 빠른 검색</figcaption></figure>
       </div>
     </div>
   </section>
@@ -183,6 +177,6 @@ sh pagehouse-&lt;버전&gt;/install.sh --dir /opt/pagehouse</code></pre>
     </div>
   </div>
 </footer>
-<script src="copy.js"></script>
+<script src="copy.js?v=__V__"></script>
 </body>
 </html>
