@@ -174,7 +174,7 @@ function alertsToCallouts(node: Json): Json {
   return content ? { ...node, content } : node
 }
 
-function fromHtml(html: string): { doc: Json; title: string | null; crumbs: string[] } {
+function fromHtml(html: string): { doc: Json; title: string | null; crumbs: string[]; names: Map<string, string> } {
   const dom = new DOMParser().parseFromString(html, 'text/html')
   // The export writes "Space name : Page title"; the space name is also the first breadcrumb.
   const space = dom.querySelector('#breadcrumbs li:first-child a')?.textContent?.trim()
@@ -201,6 +201,14 @@ function fromHtml(html: string): { doc: Json; title: string | null; crumbs: stri
     code.textContent = pre.textContent
     pre.replaceChildren(code)
   }
+  // Confluence stores attachments under numeric names (attachments/123/456.pdf); the real file name is in the markup.
+  const names = new Map<string, string>()
+  for (const e of dom.querySelectorAll('[data-linked-resource-default-alias]')) {
+    const ref = e.getAttribute('href') ?? e.getAttribute('src') ?? e.getAttribute('data-image-src')
+    if (ref?.startsWith('attachments/')) names.set(ref.split(/[?#]/)[0], e.getAttribute('data-linked-resource-default-alias')!)
+  }
+  for (const a of dom.querySelectorAll('.pageSection.group .greybox a[href^="attachments/"]'))
+    if (a.textContent?.trim()) names.set(a.getAttribute('href')!.split(/[?#]/)[0], a.textContent.trim())
   confluenceMacros(dom, root)
   // Files attached to the page but not shown in it are listed under "Attachments" outside #main-content.
   const shown = new Set([...root.querySelectorAll('img[src], a[href]')].map((e) => e.getAttribute('src') ?? e.getAttribute('href')))
@@ -222,7 +230,7 @@ function fromHtml(html: string): { doc: Json; title: string | null; crumbs: stri
   }
   root.querySelectorAll('script, style, .pageSection.group, #footer, .page-metadata').forEach((e) => e.remove())
   editor().commands.setContent(root.innerHTML, { emitUpdate: false })
-  return { doc: editor().getJSON() as Json, title: title || null, crumbs }
+  return { doc: editor().getJSON() as Json, title: title || null, crumbs, names }
 }
 
 /** Confluence macros that have an equivalent here become it; the rest keep their text. */
@@ -262,11 +270,23 @@ function confluenceMacros(dom: Document, root: Element) {
       if (!li.querySelector(':scope > p')) li.innerHTML = `<p>${li.innerHTML}</p>`
     }
   }
-  // Jira issue macros → a link to the issue.
+  // Jira issue macros → a link to the issue, named by its key (the export only holds a "loading…" placeholder for
+  // the summary and status).
   for (const j of root.querySelectorAll('.jira-issue')) {
     const a = j.querySelector('a[href]')
-    if (a) j.replaceWith(el('a', escapeHtml(j.textContent?.replace(/\s+/g, ' ').trim() ?? ''), { href: a.getAttribute('href')! }))
+    const key = j.getAttribute('data-jira-key') ?? a?.textContent?.trim() ?? ''
+    if (a) j.replaceWith(el('a', escapeHtml(key), { href: a.getAttribute('href')! }))
   }
+  // Attached files shown as a thumbnail card: link to the file itself. The thumbnail lives on the Confluence site,
+  // which won't be there after the move.
+  for (const f of root.querySelectorAll('a.confluence-embedded-file[href]')) {
+    const name = f.getAttribute('data-linked-resource-default-alias') ?? f.getAttribute('href')!.split('/').pop()!
+    f.replaceWith(el('a', `📎 ${escapeHtml(name)}`, { href: f.getAttribute('href')! }))
+  }
+  // Confluence's own UI icons and thumbnails, served from the old site: nothing to keep once it's gone.
+  for (const img of root.querySelectorAll('img.icon, img[src*="/wiki/download/thumbnails/"], img[src*="/wiki/s/"], img[src*="/images/icons/"]')) img.remove()
+  // Links to the space's overview page (index.html) go to the wiki's home.
+  for (const a of root.querySelectorAll('a[href="index.html"]')) a.setAttribute('href', '#/')
 }
 const escapeHtml = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
 
@@ -333,6 +353,8 @@ export function plan(items: Item[]): Plan {
   const indexItem = confluence ? docItems.find((i) => baseName(i.path).toLowerCase() === 'index.html') : undefined
   const tree = indexItem ? confluenceTree(decode(indexItem.data), dirOf(indexItem.path)) : new Map()
   if (confluence && htmlCount > 1) docItems = docItems.filter((i) => baseName(i.path).toLowerCase() !== 'index.html')
+  // In a Confluence export only the HTML files are pages; .txt/.md/.html under attachments/ are files attached to them.
+  if (confluence) docItems = docItems.filter((i) => /\.html?$/i.test(i.path) && !/(^|\/)(attachments|images|styles)\//.test(i.path))
   const notion = docItems.some((i) => /\s[0-9a-f]{32}\.md$/i.test(i.path))
 
   // A single folder wrapping everything (most ZIPs) is not a page of its own.
@@ -347,9 +369,11 @@ export function plan(items: Item[]): Plan {
     let doc: Json
     let title = name
     let parent: string | null = null
+    let fileNames: Map<string, string> | undefined
     if (/\.html?$/i.test(it.path)) {
       const h = fromHtml(text)
       doc = h.doc
+      fileNames = h.names
       title = h.title || name.replace(/_\d+$/, '').replace(/[-_]+/g, ' ')
       const last = h.crumbs.filter((c) => c && !/index\.html?$/i.test(c)).pop()
       if (confluence) parent = tree.get(it.path)?.parent ?? (last ? norm(`${dirOf(it.path)}/${last}`) : null)
@@ -361,7 +385,9 @@ export function plan(items: Item[]): Plan {
       doc = fromMarkdown(fm ? text.slice(fm[0].length) : text)
     }
     ;({ doc, title } = dropTitleHeading(doc, title, /\.(md|markdown)$/i.test(it.path)))
-    docs.push({ key: it.path, path: rel(it.path), title: title.slice(0, 500) || 'Untitled', parent, doc, dir: dirOf(it.path) })
+    // Upload paths are resolved from the document's folder, so key the real file names the same way.
+    const names = fileNames && new Map([...fileNames].map(([ref, n]) => [norm(`${dirOf(it.path)}/${ref}`), n]))
+    docs.push({ key: it.path, path: rel(it.path), title: title.slice(0, 500) || 'Untitled', parent, doc, dir: dirOf(it.path), names })
   }
 
   // Folder hierarchy: "A/B.md" goes under "A.md" if it exists (Notion), otherwise under a page made for folder "A".
@@ -522,6 +548,7 @@ export async function run(p: Plan, spaceId: number, parentId: number | null, onP
   }
 
   const total = p.docs.length
+  const docKeys = new Set(p.docs.map((d) => d.key))
   for (const [i, d] of p.docs.entries()) {
     onProgress({ done: i, total, current: d.title })
     try {
@@ -547,8 +574,10 @@ export async function run(p: Plan, spaceId: number, parentId: number | null, onP
         }
         if (uploaded.has(path)) return uploaded.get(path)!
         const load = p.files.get(path)
+        // A link to another document being imported is fixed up after every page exists; any other file (a .txt
+        // attachment too) is uploaded here.
+        if (docKeys.has(path)) return u
         if (!load) return DOC_EXT.test(path) ? u : (warnings.push({ kind: 'file-missing', page: d.title, pageId: page.id, item: u }), u)
-        if (DOC_EXT.test(path)) return u
         const name = d.names?.get(path) ?? baseName(path)
         try {
           const url = (await uploadFile(page.id, name, await load())).url
