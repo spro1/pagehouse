@@ -47,7 +47,7 @@ function parseRoute(): Route {
   if ((m = h.match(/^\/(invite|reset)\/([a-f0-9]+)/))) return { name: m[1] as 'invite' | 'reset', token: m[2] }
   if ((m = h.match(/^\/search(?:\?(.*))?$/))) return { name: 'search', params: new URLSearchParams(m[1] ?? '') }
   if ((m = h.match(/^\/export\?(.*)$/))) return { name: 'export', params: new URLSearchParams(m[1]) }
-  if (h === '/admin') return { name: 'admin' }
+  if (h === '/admin' || h.startsWith('/admin/')) return { name: 'admin' }
   if (h === '/settings') return { name: 'settings' }
   return { name: 'home' }
 }
@@ -144,7 +144,7 @@ function Auth({ route, onDone }: { route: Route; onDone: (u: User) => void }) {
         <p className="muted">{t(`auth.${which}.sub`)}</p>
         {status.sso && mode === 'login' && !status.needsSetup && (
           <>
-            <a className="btn primary big sso" href="/api/auth/oidc/start">{t('auth.sso.button', { name: status.sso })}</a>
+            <a className="btn primary big sso" href="/api/auth/oidc/start">{/(로그인|sign[ -]?in|log[ -]?in)\s*$/i.test(status.sso) ? status.sso : t('auth.sso.button', { name: status.sso })}</a>
             {status.passwordLogin && <div className="divider muted small">{t('auth.sso.or')}</div>}
           </>
         )}

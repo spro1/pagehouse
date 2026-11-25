@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { tx, type Db } from './db.ts'
 import { registerAdmin, uploadAllowed } from './admin.ts'
 import { registerExport } from './export.ts'
-import { oidcConfig, registerSso } from './sso.ts'
+import { registerSso, registerSsoAdmin, ssoSource } from './sso.ts'
 import { createCollab } from './collab.ts'
 import { relayDownSince } from './cluster.ts'
 import { auditMiddleware, registerAudit } from './audit.ts'
@@ -230,8 +230,9 @@ export function createApp(db: Db, dataDir: string) {
     })
   }
 
-  const sso = oidcConfig()
-  if (sso) registerSso(app, db, sso, startSession)
+  // SSO can be switched on or changed by an admin at any time, so every use reads the current config.
+  const sso = ssoSource(db)
+  registerSso(app, db, sso, startSession)
 
   const liveInvite = (token: unknown) =>
     typeof token === 'string' && token
@@ -242,8 +243,8 @@ export function createApp(db: Db, dataDir: string) {
     c.json({
       needsSetup: !(await one('SELECT 1 FROM users LIMIT 1')),
       signupOpen: process.env.ALLOW_SIGNUP === '1',
-      sso: sso?.label ?? null,
-      passwordLogin: !sso || process.env.PASSWORD_LOGIN !== '0',
+      sso: (await sso.current())?.label ?? null,
+      passwordLogin: (await sso.current())?.passwordLogin ?? true,
       mail: mailEnabled(),
       link: (await liveInvite(c.req.query('token')))?.purpose ?? null,
     }),
@@ -292,7 +293,7 @@ export function createApp(db: Db, dataDir: string) {
       return fail(c, 401, 'bad_credentials')
     }
     if (row.disabled_at) return fail(c, 403, 'account_disabled')
-    if (sso && process.env.PASSWORD_LOGIN === '0' && row.role !== 'admin') return fail(c, 403, 'use_sso')
+    if ((await sso.current())?.passwordLogin === false && row.role !== 'admin') return fail(c, 403, 'use_sso')
     await startSession(c, row.id)
     return c.json({ id: row.id, email: row.email, name: row.name, role: row.role, locale: row.locale, theme: row.theme, avatar: !!row.avatar, mustChangePassword: row.must_change_password })
   })
@@ -1234,6 +1235,7 @@ export function createApp(db: Db, dataDir: string) {
   registerPreview(app, fail)
   registerAdmin(app, { db, filesDir, fail })
   registerAudit(app, db)
+  registerSsoAdmin(app, sso)
   registerPeople(app, { db, fail, visibleFor: (c) => ({ sql: (alias, first) => visible(alias, first, first + 1), params: who(c) }) })
   registerExport(app, {
     db, filesDir, fail, guard,

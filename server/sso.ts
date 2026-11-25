@@ -1,12 +1,19 @@
 // Single sign-on with any OpenID Connect provider (Keycloak, Azure AD / Entra ID, Google Workspace, Okta, Authentik...).
-// Configured by environment variables; see docs/install.md. Accounts are matched by email.
+// Configured by an admin in Admin → SSO (stored in settings), or by environment variables, which then take over and
+// make the screen read-only. Accounts are matched by email.
 import type { Context, Hono } from 'hono'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 import { createHash, randomBytes } from 'node:crypto'
 import type { Db } from './db.ts'
 
-export type OidcConfig = { issuer: string; clientId: string; clientSecret: string; label: string; autoCreate: boolean; publicUrl?: string }
+export type OidcConfig = {
+  issuer: string; clientId: string; clientSecret: string; label: string
+  autoCreate: boolean; trustEmail: boolean; passwordLogin: boolean; publicUrl?: string
+}
+/** What the admin screen edits. The secret is never sent back, only whether there is one. */
+export type SsoSettings = Omit<OidcConfig, 'publicUrl'> & { enabled: boolean }
 
+/** SSO from environment variables, if set there (they win over the admin screen). */
 export function oidcConfig(env = process.env): OidcConfig | null {
   if (!env.OIDC_ISSUER || !env.OIDC_CLIENT_ID) return null
   return {
@@ -15,35 +22,79 @@ export function oidcConfig(env = process.env): OidcConfig | null {
     clientSecret: env.OIDC_CLIENT_SECRET ?? '',
     label: env.OIDC_LABEL || 'SSO',
     autoCreate: env.OIDC_AUTO_CREATE !== '0',
+    trustEmail: env.OIDC_TRUST_EMAIL === '1',
+    passwordLogin: env.PASSWORD_LOGIN !== '0',
     publicUrl: env.PUBLIC_URL?.replace(/\/$/, ''),
   }
 }
 
 const b64url = (b: Buffer) => b.toString('base64url')
+const KEY = 'sso'
 
-export function registerSso(app: Hono<any>, db: Db, cfg: OidcConfig, startSession: (c: Context, userId: number) => Promise<void>) {
-  let discovery: { authorization_endpoint: string; token_endpoint: string; userinfo_endpoint: string } | undefined
-  const discover = async () =>
-    (discovery ??= await fetch(`${cfg.issuer}/.well-known/openid-configuration`, { signal: AbortSignal.timeout(10_000) }).then((r) => {
-      if (!r.ok) throw new Error(`OIDC discovery failed: ${r.status}`)
-      return r.json()
-    }))
-  const origin = (c: Context) => {
-    if (cfg.publicUrl) return cfg.publicUrl
-    const u = new URL(c.req.url)
-    return `${c.req.header('x-forwarded-proto') ?? u.protocol.replace(':', '')}://${c.req.header('x-forwarded-host') ?? u.host}`
+/** The SSO config in force: environment first, else what an admin saved. Cached briefly; saving clears it here. */
+export function ssoSource(db: Db) {
+  let cache: { at: number; cfg: OidcConfig | null } | null = null
+  const fromDb = async (): Promise<SsoSettings | null> => (await db.query('SELECT value FROM settings WHERE key = $1', [KEY])).rows[0]?.value ?? null
+  return {
+    env: () => oidcConfig(),
+    stored: fromDb,
+    async current(): Promise<OidcConfig | null> {
+      const env = oidcConfig()
+      if (env) return env
+      // shortcut: other instances notice a change within 30 seconds; fine for a setting changed once in a while.
+      if (cache && Date.now() - cache.at < 30_000) return cache.cfg
+      const s = await fromDb()
+      const cfg = s?.enabled && s.issuer && s.clientId
+        ? { ...s, issuer: s.issuer.replace(/\/$/, ''), label: s.label || 'SSO', publicUrl: process.env.PUBLIC_URL?.replace(/\/$/, '') }
+        : null
+      cache = { at: Date.now(), cfg }
+      return cfg
+    },
+    async save(s: SsoSettings) {
+      await db.query(
+        `INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+        [KEY, JSON.stringify(s)],
+      )
+      cache = null
+    },
   }
+}
+export type SsoSource = ReturnType<typeof ssoSource>
+
+type Discovery = { issuer?: string; authorization_endpoint: string; token_endpoint: string; userinfo_endpoint: string }
+const discoveries = new Map<string, { at: number; d: Discovery }>()
+/** The provider's endpoints from /.well-known/openid-configuration, cached for an hour per issuer. */
+export async function discover(issuer: string): Promise<Discovery> {
+  const hit = discoveries.get(issuer)
+  if (hit && Date.now() - hit.at < 3600_000) return hit.d
+  const r = await fetch(`${issuer}/.well-known/openid-configuration`, { signal: AbortSignal.timeout(10_000) })
+  if (!r.ok) throw new Error(`discovery answered ${r.status}`)
+  const d = (await r.json()) as Discovery
+  if (!d.authorization_endpoint || !d.token_endpoint || !d.userinfo_endpoint) throw new Error('discovery document is missing endpoints')
+  discoveries.set(issuer, { at: Date.now(), d })
+  return d
+}
+
+export const redirectUri = (c: Context, cfg: { publicUrl?: string }) => {
+  if (cfg.publicUrl) return `${cfg.publicUrl}/api/auth/oidc/callback`
+  const u = new URL(c.req.url)
+  return `${c.req.header('x-forwarded-proto') ?? u.protocol.replace(':', '')}://${c.req.header('x-forwarded-host') ?? u.host}/api/auth/oidc/callback`
+}
+
+export function registerSso(app: Hono<any>, db: Db, source: SsoSource, startSession: (c: Context, userId: number) => Promise<void>) {
   const back = (c: Context, error?: string) => c.redirect(error ? `/?sso_error=${error}` : '/')
 
   app.get('/api/auth/oidc/start', async (c) => {
-    const d = await discover().catch(() => null)
+    const cfg = await source.current()
+    if (!cfg) return back(c, 'unavailable')
+    const d = await discover(cfg.issuer).catch(() => null)
     if (!d) return back(c, 'unavailable')
     const state = b64url(randomBytes(24))
     const verifier = b64url(randomBytes(32))
     // Lax so the cookie comes back on the provider's top-level redirect to the callback.
     setCookie(c, 'oidc', `${state}.${verifier}`, { httpOnly: true, sameSite: 'Lax', path: '/api/auth/oidc', maxAge: 600 })
     const q = new URLSearchParams({
-      response_type: 'code', client_id: cfg.clientId, redirect_uri: `${origin(c)}/api/auth/oidc/callback`,
+      response_type: 'code', client_id: cfg.clientId, redirect_uri: redirectUri(c, cfg),
       scope: 'openid email profile', state,
       code_challenge: b64url(createHash('sha256').update(verifier).digest()), code_challenge_method: 'S256',
     })
@@ -55,14 +106,16 @@ export function registerSso(app: Hono<any>, db: Db, cfg: OidcConfig, startSessio
     deleteCookie(c, 'oidc', { path: '/api/auth/oidc' })
     const code = c.req.query('code')
     if (!state || !verifier || c.req.query('state') !== state || !code) return back(c, 'failed')
+    const cfg = await source.current()
+    if (!cfg) return back(c, 'unavailable')
     try {
-      const d = await discover()
+      const d = await discover(cfg.issuer)
       // The code goes straight to the provider over TLS, so the tokens that come back need no further signature check.
       const tok = await fetch(d.token_endpoint, {
         method: 'POST',
         headers: { 'content-type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
-          grant_type: 'authorization_code', code, redirect_uri: `${origin(c)}/api/auth/oidc/callback`,
+          grant_type: 'authorization_code', code, redirect_uri: redirectUri(c, cfg),
           client_id: cfg.clientId, client_secret: cfg.clientSecret, code_verifier: verifier,
         }),
         signal: AbortSignal.timeout(10_000),
@@ -73,8 +126,8 @@ export function registerSso(app: Hono<any>, db: Db, cfg: OidcConfig, startSessio
       const email = typeof info?.email === 'string' ? info.email.toLowerCase() : ''
       // Accounts are matched by email, so the provider must vouch for it: otherwise anyone able to set an email at the
       // provider could sign in as that person here. Providers that never send the claim (some Entra ID setups)
-      // can be trusted explicitly with OIDC_TRUST_EMAIL=1.
-      const verified = info?.email_verified === true || info?.email_verified === 'true' || (process.env.OIDC_TRUST_EMAIL === '1' && info?.email_verified !== false)
+      // can be trusted explicitly.
+      const verified = info?.email_verified === true || info?.email_verified === 'true' || (cfg.trustEmail && info?.email_verified !== false)
       if (!email || !verified) return back(c, 'no_email')
       let user = (await db.query('SELECT id, disabled_at FROM users WHERE email = $1', [email])).rows[0]
       if (!user) {
@@ -89,6 +142,69 @@ export function registerSso(app: Hono<any>, db: Db, cfg: OidcConfig, startSessio
       return back(c)
     } catch {
       return back(c, 'failed')
+    }
+  })
+}
+
+/** Admin → SSO. Registered behind the session check, so only admins reach it. */
+export function registerSsoAdmin(app: Hono<any>, source: SsoSource) {
+  const view = async (c: Context) => {
+    const env = source.env()
+    const s = env ? { ...env, enabled: true } : await source.stored()
+    return {
+      source: env ? 'env' : 'admin',
+      enabled: !!s?.enabled,
+      issuer: s?.issuer ?? '', clientId: s?.clientId ?? '', hasSecret: !!s?.clientSecret,
+      label: s?.label ?? '', autoCreate: s?.autoCreate ?? true, trustEmail: s?.trustEmail ?? false, passwordLogin: s?.passwordLogin ?? true,
+      redirectUri: redirectUri(c, { publicUrl: process.env.PUBLIC_URL?.replace(/\/$/, '') }),
+    }
+  }
+  const httpUrl = (v: unknown) => {
+    try {
+      const u = new URL(String(v))
+      return /^https?:$/.test(u.protocol) && !u.username && !u.password ? u.toString().replace(/\/$/, '') : null
+    } catch {
+      return null
+    }
+  }
+  app.get('/api/admin/sso', async (c) => c.json(await view(c)))
+  app.put('/api/admin/sso', async (c) => {
+    if (source.env()) return c.json({ error: 'SSO is set by environment variables.', code: 'sso_env' }, 409)
+    const b = await c.req.json().catch(() => ({}))
+    const old = await source.stored()
+    const issuer = b.issuer ? httpUrl(b.issuer) : ''
+    if (issuer === null) return c.json({ error: 'The issuer must be an http(s) URL.', code: 'sso_issuer' }, 400)
+    const s: SsoSettings = {
+      enabled: b.enabled === true,
+      issuer: issuer ?? '',
+      clientId: String(b.clientId ?? '').trim().slice(0, 300),
+      // Left empty, the stored secret stays: the screen never receives it to send back.
+      clientSecret: typeof b.clientSecret === 'string' && b.clientSecret ? b.clientSecret.slice(0, 1000) : old?.clientSecret ?? '',
+      label: String(b.label ?? '').trim().slice(0, 60),
+      autoCreate: b.autoCreate !== false,
+      trustEmail: b.trustEmail === true,
+      passwordLogin: b.passwordLogin !== false,
+    }
+    if (s.enabled && (!s.issuer || !s.clientId)) return c.json({ error: 'Turning SSO on needs an issuer and a client ID.', code: 'sso_incomplete' }, 400)
+    if (s.enabled) {
+      // Refuse to switch on something that can't work, rather than leaving everyone with a broken sign-in button.
+      const ok = await discover(s.issuer).then(() => true, () => false)
+      if (!ok) return c.json({ error: 'The issuer did not answer with an OpenID configuration.', code: 'sso_discovery' }, 400)
+    }
+    await source.save(s)
+    return c.json(await view(c))
+  })
+  // Checks an issuer before saving: admins only, and only http(s) URLs.
+  app.post('/api/admin/sso/test', async (c) => {
+    const b = await c.req.json().catch(() => ({}))
+    const issuer = httpUrl(b.issuer)
+    if (!issuer) return c.json({ ok: false, error: 'The issuer must be an http(s) URL.' })
+    discoveries.delete(issuer)
+    try {
+      const d = await discover(issuer)
+      return c.json({ ok: true, issuer: d.issuer ?? issuer, authorization: d.authorization_endpoint })
+    } catch (e) {
+      return c.json({ ok: false, error: (e as Error).message })
     }
   })
 }

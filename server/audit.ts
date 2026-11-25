@@ -20,6 +20,8 @@ const RULES: [string, RegExp, string, boolean][] = [
   ['POST', /^\/api\/auth\/forgot$/, 'auth.forgot', false],
   ['POST', /^\/api\/admin\/invites$/, 'user.invite', true],
   ['PUT', /^\/api\/admin\/settings$/, 'settings.update', true],
+  // The body holds the client secret: record that SSO changed, not the values.
+  ['PUT', /^\/api\/admin\/sso$/, 'settings.sso', false],
   ['POST', /^\/api\/admin\/groups$/, 'group.create', true],
   ['PUT', /^\/api\/admin\/groups\/(\d+)$/, 'group.update', true],
   ['DELETE', /^\/api\/admin\/groups\/(\d+)$/, 'group.delete', false],
@@ -43,7 +45,9 @@ export function auditMiddleware(db: Db, clientIp: (c: Context) => string): Middl
     const [, re, action, keepBody] = rule
     const json = keepBody || action === 'auth.login' ? await c.req.raw.clone().json().catch(() => null) : null
     await next()
-    const ok = c.res.status < 400
+    // SSO answers with a redirect either way; a refusal carries ?sso_error=… in it.
+    const ssoError = action === 'auth.sso' ? c.res.headers.get('location')?.match(/sso_error=(\w+)/)?.[1] : undefined
+    const ok = c.res.status < 400 && !ssoError
     // Before sign-in there's no user yet; the session cookie the response sets tells who signed in.
     let actor: number | null = (c.get('user') as { id: number } | undefined)?.id ?? null
     const sid = c.res.headers.getSetCookie().find((h) => h.startsWith('sid='))?.slice(4).split(';')[0]
@@ -52,6 +56,7 @@ export function auditMiddleware(db: Db, clientIp: (c: Context) => string): Middl
     if (keepBody && json) detail.body = json
     if (action === 'auth.login' && json) detail.email = String(json.email ?? '').slice(0, 200)
     if (!ok) detail.status = c.res.status
+    if (ssoError) detail.error = ssoError
     const text = JSON.stringify(detail)
     await db.query('INSERT INTO audit_log (actor_id, action, target_id, ok, ip, detail) VALUES ($1, $2, $3, $4, $5, $6)', [
       actor, action, Number(c.req.path.match(re)?.[1]) || null, ok, clientIp(c),

@@ -110,7 +110,7 @@ docker compose up -d --build
 | `BIND_ADDRESS` | `0.0.0.0` | 같은 서버의 리버스 프록시로만 받으려면 `127.0.0.1`(이때 `TRUST_PROXY=1`도) |
 | `ALLOW_SIGNUP` | `0` | `1`이면 접속 가능한 누구나 가입 |
 | `PUBLIC_URL` | (요청에서 추정) | 사용자가 접속하는 주소. 예: `https://wiki.example.com`. SSO 리디렉션과 메일 링크에 쓰임 |
-| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | 비어 있음 | OpenID Connect SSO(Keycloak, Entra ID, Google Workspace, Okta 등). 리디렉션 URI: `<PUBLIC_URL>/api/auth/oidc/callback` |
+| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | 비어 있음 | **보통은 관리 → SSO 화면에서 설정하면 됩니다.** 여기에 넣으면 화면 설정보다 우선하고 화면은 읽기 전용이 됩니다. OpenID Connect SSO(Keycloak, Entra ID, Google Workspace, Okta 등). 리디렉션 URI: `<PUBLIC_URL>/api/auth/oidc/callback` |
 | `OIDC_LABEL` | `SSO` | 로그인 버튼 문구 |
 | `OIDC_AUTO_CREATE` | `1` | `0`이면 같은 이메일 계정이 이미 있는 사람만 로그인 |
 | `PASSWORD_LOGIN` | `1` | SSO를 켠 상태에서 `0`이면 관리자만 비밀번호 로그인 가능 |

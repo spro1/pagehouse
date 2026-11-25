@@ -236,7 +236,7 @@ Keep in mind:
 
 ## For administrators
 
-**Admin** in the sidebar has four tabs.
+**Admin** in the sidebar has five tabs (Overview, People, Groups, SSO, Audit log).
 
 **Overview:**
 - storage use against the disk and an optional **storage limit**
@@ -252,6 +252,13 @@ At the limit new uploads are refused, but text always saves.
 | Change a role | The role column |
 | Block access | **Disable**: signs them out at once. **Enable** lets them back in |
 | Reset a password | A **reset link** (once, within a day) or a **temporary password** (sign in right away; choose a new password at first sign-in). Both sign the person out everywhere |
+
+**SSO:** let people sign in with a company account (Keycloak, Entra ID, Google Workspace, Okta or any OpenID Connect provider).
+1. Register the **redirect URI** shown on the screen with the provider.
+2. Enter the issuer URL, client ID and client secret, and click **Test connection**.
+3. Click **Turn on SSO**. It applies as soon as it's saved, and the sign-in page gets the button.
+
+This is also where you choose whether first sign-ins create accounts and whether password sign-in stays allowed. If the server's `.env` sets `OIDC_ISSUER`, that wins and the screen is read-only.
 
 **Groups:** group people, then grant space roles and page restrictions to the group. A group still used in permissions can't be deleted.
 
