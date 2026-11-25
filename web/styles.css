@@ -890,3 +890,17 @@ pre.diff { margin: 0; max-height: 60vh; overflow: auto; font-size: 13px; line-he
 .clear-fmt sub { font-size: 9px; }
 /* Highlights carry their own color; the default stays the theme's highlight. */
 .doc mark[data-color] { color: inherit; }
+
+/* Admin → SSO */
+.box.sso { display: flex; flex-direction: column; gap: 14px; }
+.sso-field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; }
+.sso-field small { font-weight: 400; }
+.sso-field .row { display: flex; gap: 8px; }
+.sso-field .row input { flex: 1; }
+.sso-redirect { padding: 10px 12px; border: 1px dashed var(--line-strong); border-radius: var(--r-lg); display: flex; flex-direction: column; gap: 4px; }
+.sso-redirect .row { display: flex; align-items: center; gap: 8px; }
+.sso-redirect code { word-break: break-all; }
+.sso-check { display: flex; gap: 10px; align-items: flex-start; }
+.sso-check input { margin-top: 3px; width: auto; }
+.sso-check span { display: flex; flex-direction: column; gap: 2px; font-size: 13.5px; }
+.tag.muted-tag { background: var(--bg-hover); color: var(--muted); }

@@ -527,12 +527,24 @@ test('OIDC single sign-on creates and signs in an account by email', async () =>
     res.end()
   })
   await new Promise<void>((r) => idp.listen(0, '127.0.0.1', r))
-  process.env.OIDC_ISSUER = `http://127.0.0.1:${(idp.address() as any).port}`
-  process.env.OIDC_CLIENT_ID = 'wiki'
+  const issuer = `http://127.0.0.1:${(idp.address() as any).port}`
   const sapp = createApp(db, mkdtempSync(join(tmpdir(), 'pagehouse-')))
-  delete process.env.OIDC_ISSUER
+  const admin = client()
+  await admin.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  const put = (body: unknown) => sapp.request('/api/admin/sso', { method: 'PUT', headers: { cookie: admin.cookie, 'content-type': 'application/json' }, body: JSON.stringify(body) })
   try {
+    // An admin turns it on from the screen; an issuer that doesn't answer is refused instead of saved.
+    assert.equal((await (await sapp.request('/api/auth/status')).json()).sso, null)
+    assert.equal((await put({ enabled: true, issuer: 'http://127.0.0.1:1', clientId: 'wiki' })).status, 400)
+    const saved = await (await put({ enabled: true, issuer, clientId: 'wiki', clientSecret: 's3cret-value', label: 'SSO' })).json()
+    assert.equal(saved.enabled, true)
+    assert.equal(saved.hasSecret, true)
+    assert.ok(!JSON.stringify(saved).includes('s3cret-value'), 'the secret never comes back')
+    // Saving again without a secret keeps the stored one.
+    assert.equal((await (await put({ ...saved, clientSecret: '' })).json()).hasSecret, true)
     assert.equal((await (await sapp.request('/api/auth/status')).json()).sso, 'SSO')
+    const audit = await (await sapp.request('/api/admin/audit?action=settings.sso', { headers: { cookie: admin.cookie } })).json()
+    assert.ok(audit.length >= 1 && !JSON.stringify(audit).includes('s3cret-value'))
     const start = await sapp.request('/api/auth/oidc/start')
     const loc = new URL(start.headers.get('location')!)
     const state = loc.searchParams.get('state')!
@@ -547,7 +559,16 @@ test('OIDC single sign-on creates and signs in an account by email', async () =>
     assert.equal(me.email, 'sso@corp.co')
     // The SSO account has no password, so password sign-in can't be used to get in.
     assert.equal((await sapp.request('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'sso@corp.co', password: '' }) })).status, 401)
+    // Environment variables take over, and the screen becomes read-only.
+    process.env.OIDC_ISSUER = issuer
+    process.env.OIDC_CLIENT_ID = 'from-env'
+    const env = await (await sapp.request('/api/admin/sso', { headers: { cookie: admin.cookie } })).json()
+    assert.deepEqual([env.source, env.clientId], ['env', 'from-env'])
+    assert.equal((await put({ enabled: false })).status, 409)
   } finally {
+    delete process.env.OIDC_ISSUER
+    delete process.env.OIDC_CLIENT_ID
+    await put({ enabled: false })
     idp.close()
   }
 })

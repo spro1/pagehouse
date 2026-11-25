@@ -30,6 +30,12 @@
 
 ## Notes per version
 
+### 0.2.0-beta.3 → next (unreleased)
+
+- No database changes (the settings go into the existing `settings` table).
+- **SSO can be set up in Admin → SSO.** Saving applies it at once, without a restart.
+- If you already set SSO in `.env`, it keeps working: environment variables win over the screen, which shows them read-only. To manage it on the screen, remove the `OIDC_*` lines from `.env` and enter the same values there.
+
 ### 0.2.0-beta.2 → 0.2.0-beta.3
 
 - No database or setting changes.
