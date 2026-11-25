@@ -520,7 +520,7 @@ test('OIDC single sign-on creates and signs in an account by email', async () =>
       return res.end(JSON.stringify({ authorization_endpoint: `${base}/auth`, token_endpoint: `${base}/token`, userinfo_endpoint: `${base}/me`, end_session_endpoint: `${base}/logout` }))
     if (u.pathname === '/token') {
       verifier = new URLSearchParams(body).get('code_verifier') ?? ''
-      return res.end(JSON.stringify(new URLSearchParams(body).get('code') === 'good' ? { access_token: 'at', id_token: 'idt' } : {}))
+      return res.end(JSON.stringify(new URLSearchParams(body).get('code') === 'good' && new URLSearchParams(body).get('client_secret') === 's3cret-value' ? { access_token: 'at', id_token: 'idt' } : {}))
     }
     if (u.pathname === '/me') return res.end(JSON.stringify({ email: 'SSO@Corp.co', email_verified: true, name: 'Sso User' }))
     res.statusCode = 404
@@ -531,6 +531,7 @@ test('OIDC single sign-on creates and signs in an account by email', async () =>
   const sapp = createApp(db, mkdtempSync(join(tmpdir(), 'pagehouse-')))
   const admin = client()
   await admin.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  process.env.SECRET_KEY = 'test-secret-key'
   const put = (body: unknown) => sapp.request('/api/admin/sso', { method: 'PUT', headers: { cookie: admin.cookie, 'content-type': 'application/json' }, body: JSON.stringify(body) })
   try {
     // An admin turns it on from the screen; an issuer that doesn't answer is refused instead of saved.
@@ -540,6 +541,10 @@ test('OIDC single sign-on creates and signs in an account by email', async () =>
     assert.equal(saved.enabled, true)
     assert.equal(saved.hasSecret, true)
     assert.ok(!JSON.stringify(saved).includes('s3cret-value'), 'the secret never comes back')
+    // Stored encrypted with SECRET_KEY, so a database dump or backup doesn't reveal it.
+    const raw = (await db.query(`SELECT value->>'clientSecret' AS s FROM settings WHERE key = 'sso'`)).rows[0].s
+    assert.match(raw, /^enc:v1:/)
+    assert.ok(!raw.includes('s3cret-value'))
     // Saving again without a secret keeps the stored one.
     assert.equal((await (await put({ ...saved, clientSecret: '' })).json()).hasSecret, true)
     assert.equal((await (await sapp.request('/api/auth/status')).json()).sso, 'SSO')
@@ -575,6 +580,7 @@ test('OIDC single sign-on creates and signs in an account by email', async () =>
     delete process.env.OIDC_CLIENT_ID
     await put({ enabled: false })
     idp.close()
+    delete process.env.SECRET_KEY
   }
 })
 

@@ -55,7 +55,7 @@ In **Admin → SSO**:
 
 Then sign out and try the button on the sign-in page, ideally in a private window.
 
-The client secret stays on the server: the screen never shows it again, and leaving the field empty keeps the saved one. Changes are recorded in the audit log (without the secret).
+The client secret stays on the server, encrypted with `SECRET_KEY` from `.env` (so database backups don't reveal it): the screen never shows it again, and leaving the field empty keeps the saved one. Changes are recorded in the audit log (without the secret).
 
 ### Passwords and SSO accounts
 

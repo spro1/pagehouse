@@ -3,7 +3,7 @@
 // make the screen read-only. Accounts are matched by email.
 import type { Context, Hono } from 'hono'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
-import { createHash, randomBytes } from 'node:crypto'
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto'
 import type { Db } from './db.ts'
 
 export type OidcConfig = {
@@ -31,10 +31,49 @@ export function oidcConfig(env = process.env): OidcConfig | null {
 const b64url = (b: Buffer) => b.toString('base64url')
 const KEY = 'sso'
 
+// The client secret is encrypted with SECRET_KEY from .env, which is not in the database or the backups, so a leaked
+// dump or backup doesn't leak the secret. Without SECRET_KEY it is stored as before (plain) and the screen says so.
+const ENC = 'enc:v1:'
+const secretKey = () => (process.env.SECRET_KEY ? createHash('sha256').update(process.env.SECRET_KEY).digest() : null)
+export function sealSecret(plain: string): string {
+  const key = secretKey()
+  if (!plain || !key) return plain
+  const iv = randomBytes(12)
+  const c = createCipheriv('aes-256-gcm', key, iv)
+  const ct = Buffer.concat([c.update(plain, 'utf8'), c.final()])
+  return ENC + [iv, c.getAuthTag(), ct].map(b64url).join('.')
+}
+export function openSecret(stored: string): string {
+  if (!stored.startsWith(ENC)) return stored
+  const key = secretKey()
+  if (!key) throw new Error('The SSO client secret is encrypted but SECRET_KEY is not set.')
+  const [iv, tag, ct] = stored.slice(ENC.length).split('.').map((s) => Buffer.from(s, 'base64url'))
+  const d = createDecipheriv('aes-256-gcm', key, iv)
+  d.setAuthTag(tag)
+  return Buffer.concat([d.update(ct), d.final()]).toString('utf8')
+}
+
 /** The SSO config in force: environment first, else what an admin saved. Cached briefly; saving clears it here. */
 export function ssoSource(db: Db) {
   let cache: { at: number; cfg: OidcConfig | null } | null = null
-  const fromDb = async (): Promise<SsoSettings | null> => (await db.query('SELECT value FROM settings WHERE key = $1', [KEY])).rows[0]?.value ?? null
+  const raw = async (): Promise<SsoSettings | null> => (await db.query('SELECT value FROM settings WHERE key = $1', [KEY])).rows[0]?.value ?? null
+  const write = (s: SsoSettings) => db.query(
+    `INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+    [KEY, JSON.stringify({ ...s, clientSecret: sealSecret(s.clientSecret) })],
+  )
+  const fromDb = async (): Promise<SsoSettings | null> => {
+    const s = await raw()
+    if (!s) return null
+    // Saved before SECRET_KEY was set (or before this version): encrypt it now.
+    if (s.clientSecret && !s.clientSecret.startsWith(ENC) && secretKey()) await write(s)
+    try {
+      return { ...s, clientSecret: openSecret(s.clientSecret ?? '') }
+    } catch (e) {
+      // Wrong or missing SECRET_KEY: carry on without the secret (sign-in fails) so an admin can enter it again.
+      console.error('sso:', (e as Error).message)
+      return { ...s, clientSecret: '' }
+    }
+  }
   return {
     env: () => oidcConfig(),
     stored: fromDb,
@@ -51,10 +90,7 @@ export function ssoSource(db: Db) {
       return cfg
     },
     async save(s: SsoSettings) {
-      await db.query(
-        `INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
-        [KEY, JSON.stringify(s)],
-      )
+      await write(s)
       cache = null
     },
   }
@@ -172,6 +208,7 @@ export function registerSsoAdmin(app: Hono<any>, source: SsoSource) {
       issuer: s?.issuer ?? '', clientId: s?.clientId ?? '', hasSecret: !!s?.clientSecret,
       label: s?.label ?? '', autoCreate: s?.autoCreate ?? true, trustEmail: s?.trustEmail ?? false, passwordLogin: s?.passwordLogin ?? true,
       redirectUri: redirectUri(c, { publicUrl: process.env.PUBLIC_URL?.replace(/\/$/, '') }),
+      encrypted: !!process.env.SECRET_KEY,
     }
   }
   const httpUrl = (v: unknown) => {

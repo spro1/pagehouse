@@ -87,12 +87,16 @@ mkdir -p "$DIR/backups"
 # 6. Settings. A new install gets a random database password; an upgrade only moves the version.
 if ! $existing; then
   pw=$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')
+  sk=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
   sed -e "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$pw/" \
+      -e "s/^SECRET_KEY=.*/SECRET_KEY=$sk/" \
       -e "s/^PORT=.*/PORT=$PORT_NEW/" \
       -e "s/^PAGEHOUSE_VERSION=.*/PAGEHOUSE_VERSION=$BUNDLE_VERSION/" "$DIR/.env.example" > "$DIR/.env"
   chmod 600 "$DIR/.env"
   say "Created $DIR/.env with a random database password"
 else
+  # Older installs have no SECRET_KEY (encrypts stored secrets such as the SSO client secret).
+  grep -q '^SECRET_KEY=.' "$DIR/.env" || { sed -i.bak '/^SECRET_KEY=/d' "$DIR/.env" && rm -f "$DIR/.env.bak"; echo "SECRET_KEY=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')" >> "$DIR/.env"; say "Added SECRET_KEY to $DIR/.env"; }
   grep -q '^PAGEHOUSE_VERSION=' "$DIR/.env" || echo "PAGEHOUSE_VERSION=$BUNDLE_VERSION" >> "$DIR/.env"
   sed -i.bak "s/^PAGEHOUSE_VERSION=.*/PAGEHOUSE_VERSION=$BUNDLE_VERSION/" "$DIR/.env" && rm -f "$DIR/.env.bak"
 fi
