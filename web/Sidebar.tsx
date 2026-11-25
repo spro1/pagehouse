@@ -29,20 +29,22 @@ export function Sidebar(p: Props) {
         <div className="space-switch" ref={menuRef}>
           <button className="space-btn" onClick={() => setSpaceMenu(!spaceMenu)} aria-expanded={spaceMenu} aria-haspopup="menu">
             <span className="space-badge">{space?.name.slice(0, 1) ?? '?'}</span>
-            <span className="space-name">{space?.name ?? t('space.fallback')}</span>
+            <span className="space-name" title={space?.name}>{space?.name ?? t('space.fallback')}</span>
             {space?.defaultAccess === 'none' && <span className="space-lock" title={t('space.private')}><Icon name="lock" size={13} /></span>}
             <Icon name="down" size={14} />
           </button>
           {spaceMenu && (
             <div className="dropdown wide" role="menu">
+              <div className="space-list">
               {p.spaces.map((s) => (
-                <button key={s.id} role="menuitem" className={s.id === p.spaceId ? 'on' : ''} onClick={() => (p.onSpace(s.id), setSpaceMenu(false))}>
+                <button key={s.id} role="menuitem" title={`${s.name} (${s.key})`} className={s.id === p.spaceId ? 'on' : ''} onClick={() => (p.onSpace(s.id), setSpaceMenu(false))}>
                   <span className="space-badge sm">{s.name.slice(0, 1)}</span>
-                  <span className="grow">{s.name}</span>
+                  <span className="grow ellipsis">{s.name}</span>
                   {s.defaultAccess === 'none' && <span className="space-lock" title={t('space.private')}><Icon name="lock" size={12} /></span>}
                   <span className="muted small">{s.key}</span>
                 </button>
               ))}
+              </div>
               <hr />
               {p.spaceId && (
                 <>

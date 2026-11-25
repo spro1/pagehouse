@@ -216,11 +216,11 @@ input[type='radio'], input[type='checkbox'] { width: auto; height: auto; accent-
 .lang-select select { width: auto; height: 30px; font-size: 13.5px; background: transparent; }
 
 /* ───────────── Layout & sidebar ───────────── */
-.layout { display: grid; grid-template-columns: 268px 1fr; height: 100vh; }
+.layout { display: grid; grid-template-columns: 268px minmax(0, 1fr); height: 100vh; }
 main { overflow: auto; min-width: 0; }
 .nav-toggle { display: none; }
 
-.sidebar { display: flex; flex-direction: column; gap: 1px; padding: 10px 10px 8px; background: var(--bg-soft); border-right: 1px solid var(--line); overflow-y: auto; }
+.sidebar { display: flex; flex-direction: column; gap: 1px; min-width: 0; padding: 10px 10px 8px; background: var(--bg-soft); border-right: 1px solid var(--line); overflow-y: auto; }
 .sidebar-top { display: flex; align-items: center; gap: 4px; margin-bottom: 8px; }
 .space-switch { position: relative; flex: 1; min-width: 0; }
 .space-btn { width: 100%; height: 40px; justify-content: flex-start; gap: 10px; padding: 0 8px; border: 0; background: none; font-weight: 650; }
@@ -784,3 +784,9 @@ pre.diff { margin: 0; max-height: 60vh; overflow: auto; font-size: 13px; line-he
 
 .menu-label { padding: 6px 12px 2px; font-size: 11.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
 .box-head select { width: auto; flex: none; }
+
+/* Menu rows are one line high: long text ends in "…" instead of wrapping over the next row. */
+.dropdown button, .dropdown .menu-link { white-space: nowrap; min-width: 0; }
+.dropdown .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.dropdown button > :not(.ellipsis) { flex: none; }
+.space-list { max-height: min(360px, 50vh); overflow-y: auto; }
