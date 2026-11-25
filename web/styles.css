@@ -843,3 +843,11 @@ pre.diff { margin: 0; max-height: 60vh; overflow: auto; font-size: 13px; line-he
 
 /* Lists of pages (favorites, recent) stay compact; the fixed menu items above them get room to breathe. */
 .nav-item.quick { margin-bottom: 0; }
+
+/* Copy button on code blocks: top-right corner, shown while hovering the block. */
+.code-copy-anchor { position: relative; height: 0; z-index: 2; }
+.code-copy { position: absolute; top: 8px; right: 8px; height: 26px; padding: 0 9px; font-size: 12px; opacity: 0; transition: opacity 0.12s; }
+.code-copy-anchor:has(+ pre:hover) .code-copy, .code-copy:hover, .code-copy:focus-visible { opacity: 1; }
+@media (hover: none) { .code-copy { opacity: 1; } }
+@media print { .code-copy-anchor { display: none; } }
+.row-inline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }

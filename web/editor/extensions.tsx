@@ -16,6 +16,7 @@ import { createLowlight } from 'lowlight'
 import { Collaboration } from '@tiptap/extension-collaboration'
 import { CollaborationCaret } from '@tiptap/extension-collaboration-caret'
 import type * as Y from 'yjs'
+import { copyText } from '../ui.tsx'
 // The languages a team wiki actually sees (infra, backend, frontend), instead of lowlight's general-purpose set.
 import bash from 'highlight.js/lib/languages/bash'
 import c from 'highlight.js/lib/languages/c'
@@ -420,6 +421,41 @@ const MermaidPreview = Extension.create({
   ],
 })
 
+// A copy button on every code block, for readers as much as editors (shown on hover). It sits in a widget just
+// before the block, so it never becomes part of the code, and copies whatever the block holds at click time.
+const CodeCopy = Extension.create({
+  name: 'codeCopy',
+  addProseMirrorPlugins: () => [
+    new Plugin({
+      key: new PluginKey('codeCopy'),
+      props: {
+        decorations(state) {
+          const decos: Decoration[] = []
+          state.doc.descendants((node, pos) => {
+            if (node.type.name !== 'codeBlock') return
+            decos.push(Decoration.widget(pos, () => {
+              const anchor = document.createElement('div')
+              anchor.className = 'code-copy-anchor'
+              anchor.contentEditable = 'false'
+              const b = document.createElement('button')
+              b.type = 'button'
+              b.className = 'code-copy'
+              b.textContent = t('common.copy')
+              b.setAttribute('aria-label', t('code.copy'))
+              b.addEventListener('mousedown', (e) => e.preventDefault())
+              b.addEventListener('click', () => copyText(anchor.nextElementSibling?.textContent ?? '', t('common.copied')))
+              anchor.append(b)
+              return anchor
+            }, { key: 'code-copy', side: -1, ignoreSelection: true }))
+            return false
+          })
+          return DecorationSet.create(state.doc, decos)
+        },
+      },
+    }),
+  ],
+})
+
 export type Live = { doc: Y.Doc; provider: { awareness: unknown } & Record<string, any>; user: { name: string; color: string } }
 
 /** With `live`, the editor is bound to a shared Yjs document (co-editing): undo then follows only your own edits. */
@@ -435,6 +471,7 @@ export function extensions(live?: Live) {
     Highlight,
     CommentMark,
     MermaidPreview,
+    CodeCopy,
     LinkCard,
     TextAlign.configure({ types: ['heading', 'paragraph'] }),
     Typography,

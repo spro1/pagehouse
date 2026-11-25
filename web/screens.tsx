@@ -424,7 +424,10 @@ function Tokens() {
           <CopyBox label={t('tokens.claude')} url={`claude mcp add --transport http pagehouse ${url} --header "Authorization: Bearer ${fresh}"`} />
         </>
       )}
-      <p className="muted small">{t('tokens.endpoint')} <code>{url}</code></p>
+      <p className="muted small row-inline">
+        {t('tokens.endpoint')} <code>{url}</code>
+        <button className="link small" onClick={() => copyText(url, t('common.copied'))}>{t('common.copy')}</button>
+      </p>
       <ul className="people">
         {list.map((k) => (
           <li key={k.id}>

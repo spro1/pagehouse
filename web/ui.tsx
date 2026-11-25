@@ -93,13 +93,18 @@ export async function copyText(text: string, done: string) {
   area.value = text
   area.setAttribute('readonly', '')
   area.style.cssText = 'position:fixed;top:0;left:0;opacity:0'
+  // The copy command copies the focused selection, so focus the scratch field, then give focus back
+  // (inside the editor the cursor stays where it was).
+  const back = document.activeElement as HTMLElement | null
   document.body.append(area)
+  area.focus()
   area.select()
   let ok = false
   try {
     ok = document.execCommand('copy')
   } catch {}
   area.remove()
+  back?.focus?.({ preventScroll: true })
   toast(ok ? done : t('common.copyFailed'))
 }
 
