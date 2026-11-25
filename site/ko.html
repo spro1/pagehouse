@@ -83,9 +83,15 @@
 
   <section class="block soft">
     <div class="wrap">
-      <div class="screens">
-        <figure><img src="images/screenshot-dark.png" width="1440" height="900" alt="다크 테마의 Pagehouse 페이지" loading="lazy"><figcaption>다크 테마</figcaption></figure>
-        <figure><img src="images/screenshot-search.png" width="1440" height="900" alt="⌘K 빠른 검색 창" loading="lazy"><figcaption>⌘K 빠른 검색</figcaption></figure>
+      <div class="screens" role="group" aria-label="Screenshots">
+        <input type="radio" name="shot" id="shot-dark" checked>
+        <input type="radio" name="shot" id="shot-search">
+        <div class="screen-tabs">
+          <label for="shot-dark">다크 테마</label>
+          <label for="shot-search">⌘K 빠른 검색</label>
+        </div>
+        <img class="screen screen-dark" src="images/screenshot-dark.png" width="1440" height="900" alt="다크 테마의 Pagehouse 페이지" loading="lazy">
+        <img class="screen screen-search" src="images/screenshot-search.png" width="1440" height="900" alt="⌘K 빠른 검색 창" loading="lazy">
       </div>
     </div>
   </section>
