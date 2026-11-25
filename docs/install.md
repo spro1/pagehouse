@@ -226,6 +226,7 @@ PostgreSQL 14+ with the `pg_trgm` extension available. The first start runs `CRE
 |---|---|
 | Page does not load | `docker compose ps` shows the containers `healthy`; `docker compose logs app` |
 | `POSTGRES_PASSWORD` error | Run compose from the install folder, where `.env` is |
+| Installer stops: "a database volume from an earlier install … still exists" | A previous install in a folder of the same name left its data behind, and its `.env` is gone. Put the old `.env` back to keep that data, or delete the volumes the message names to start over |
 | Port already in use | Change `PORT` in `.env` |
 | Signed in, then sent back to sign-in | HTTPS without `X-Forwarded-Proto` from the proxy, or the site opened under two host names |
 | Large uploads fail | Raise the proxy body limit (nginx `client_max_body_size`) |

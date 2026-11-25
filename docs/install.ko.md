@@ -226,6 +226,7 @@ scripts/upgrade.sh 0.2.0      # 특정 버전
 |---|---|
 | 페이지가 안 열림 | `docker compose ps`에서 컨테이너가 `healthy`인지, `docker compose logs app` |
 | `POSTGRES_PASSWORD` 오류 | `.env`가 있는 설치 폴더에서 compose를 실행했는지 |
+| 설치가 "a database volume from an earlier install … still exists"로 멈춤 | 같은 이름의 폴더에 했던 예전 설치의 데이터가 남아 있고 그 `.env`는 없는 상태입니다. 그 데이터를 살리려면 예전 `.env`를 되돌려 놓고, 새로 시작하려면 메시지에 나온 볼륨을 지운 뒤 다시 실행하세요 |
 | 포트가 이미 사용 중 | `.env`의 `PORT`를 바꾸세요 |
 | 로그인해도 다시 로그인 화면 | HTTPS인데 프록시가 `X-Forwarded-Proto`를 안 넘기거나, 두 주소로 번갈아 접속 |
 | 큰 파일 업로드 실패 | 프록시 업로드 크기 제한(nginx `client_max_body_size`)을 올리세요 |
