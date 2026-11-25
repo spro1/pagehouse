@@ -195,7 +195,7 @@ No. Installing (from the offline bundle), using and upgrading all work without i
 There is no seat limit. A single-server setup is aimed at a few hundred people; on Kubernetes the app can scale out.
 
 **Can people sign in with company accounts (SSO)?**
-Yes, with any OpenID Connect provider. Turn it on in **Admin → SSO** with the issuer URL, client ID and secret (or set `OIDC_*` in `.env`; see the [install guide](docs/install.md)). Accounts are matched by email.
+Yes, with any OpenID Connect provider. Turn it on in **Admin → SSO** with the issuer URL, client ID and secret (or set `OIDC_*` in `.env`). Step-by-step setup for Keycloak, Entra ID, Google and Okta: [SSO guide](docs/sso.md). Accounts are matched by email.
 
 **I forgot my password.**
 With email set up, use "Forgot your password?" on the sign-in page. Otherwise an admin creates a reset link or a temporary password in **Admin → People**; signing in with a temporary password asks you to choose your own straight away.

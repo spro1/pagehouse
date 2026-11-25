@@ -258,7 +258,7 @@ At the limit new uploads are refused, but text always saves.
 2. Enter the issuer URL, client ID and client secret, and click **Test connection**.
 3. Click **Turn on SSO**. It applies as soon as it's saved, and the sign-in page gets the button.
 
-This is also where you choose whether first sign-ins create accounts and whether password sign-in stays allowed. If the server's `.env` sets `OIDC_ISSUER`, that wins and the screen is read-only.
+This is also where you choose whether first sign-ins create accounts and whether password sign-in stays allowed. If the server's `.env` sets `OIDC_ISSUER`, that wins and the screen is read-only. Signing out of the wiki also signs out of the provider. Provider-side steps: [SSO guide](sso.md).
 
 **Groups:** group people, then grant space roles and page restrictions to the group. A group still used in permissions can't be deleted.
 
