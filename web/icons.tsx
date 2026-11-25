@@ -19,6 +19,7 @@ const paths = {
   history: 'M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2',
   more: 'M5 12h.01M12 12h.01M19 12h.01',
   chevron: 'm9 6 6 6-6 6',
+  sidebar: 'M4 5h16v14H4zM9 5v14',
   down: 'm6 9 6 6 6-6',
   x: 'M18 6 6 18M6 6l12 12',
   menu: 'M4 6h16M4 12h16M4 18h16',

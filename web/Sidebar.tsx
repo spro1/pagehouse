@@ -9,7 +9,7 @@ import { applyTheme, theme as currentTheme, type Theme } from './theme.ts'
 type Props = {
   me: User; spaces: Space[]; spaceId?: number; pages: PageNode[]; current: number | null; route: string
   onSpace: (id: number) => void; onNewSpace: () => void; onNewPage: (parentId: number | null) => void
-  onSearch: () => void; onMoved: () => void; onLogout: () => void; onClose: () => void; onSpaceSettings: () => void
+  onSearch: () => void; onMoved: () => void; onLogout: () => void; onClose: () => void; onSpaceSettings: () => void; onCollapse: () => void
 }
 
 export function Sidebar(p: Props) {
@@ -68,6 +68,9 @@ export function Sidebar(p: Props) {
           )}
         </div>
         <Bell />
+        <button className="ghost icon collapse-nav" title={`${t('nav.collapse')} (${/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'}\\)`} aria-label={t('nav.collapse')} onClick={p.onCollapse}>
+          <Icon name="sidebar" />
+        </button>
         <button className="ghost icon close-nav" aria-label={t('nav.closeMenu')} onClick={p.onClose}>
           <Icon name="x" />
         </button>

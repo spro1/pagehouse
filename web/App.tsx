@@ -222,6 +222,29 @@ function Workspace({ me, route, onLogout }: { me: User; route: Route; onLogout: 
   const [palette, setPalette] = useState(false)
   const [newSpace, setNewSpace] = useState(false)
   const [navOpen, setNavOpen] = useState(false)
+  // Desktop: the sidebar can be folded away; remembered per browser.
+  const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('ph.nav.collapsed') === '1' } catch { return false } })
+  const fold = (v: boolean) => {
+    setCollapsed(v)
+    try { localStorage.setItem('ph.nav.collapsed', v ? '1' : '0') } catch { /* private mode: not remembered */ }
+  }
+  const collapsedNow = useRef(collapsed)
+  collapsedNow.current = collapsed
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === '\\') (e.preventDefault(), fold(!collapsedNow.current))
+    }
+    addEventListener('keydown', key)
+    return () => removeEventListener('keydown', key)
+  }, [])
+  // Scrollbars show while scrolling only (see .scrolling in styles.css).
+  const scrollTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const onMainScroll = (e: React.UIEvent<HTMLElement>) => {
+    const el = e.currentTarget
+    el.classList.add('scrolling')
+    clearTimeout(scrollTimer.current)
+    scrollTimer.current = setTimeout(() => el.classList.remove('scrolling'), 900)
+  }
   const [spaceSettings, setSpaceSettings] = useState(false)
   const reloadSpaces = () =>
     api('/api/spaces').then((s: Space[]) => {
@@ -303,10 +326,15 @@ function Workspace({ me, route, onLogout }: { me: User; route: Route; onLogout: 
   else main = <Home me={me} spaceId={spaceId} onCreate={(tpl) => createPage(null, tpl)} />
 
   return (
-    <div className={`layout ${navOpen ? 'nav-open' : ''}`}>
+    <div className={`layout ${navOpen ? 'nav-open' : ''} ${collapsed ? 'nav-collapsed' : ''}`}>
       <button className="nav-toggle ghost icon" aria-label={t('nav.menu')} aria-expanded={navOpen} onClick={() => setNavOpen(true)}>
         <Icon name="menu" size={18} />
       </button>
+      {collapsed && (
+        <button className="nav-expand ghost icon" title={t('nav.expand')} aria-label={t('nav.expand')} onClick={() => fold(false)}>
+          <Icon name="sidebar" size={18} />
+        </button>
+      )}
       {navOpen && <div className="nav-backdrop" onClick={() => setNavOpen(false)} />}
       <Sidebar
         me={me}
@@ -323,8 +351,9 @@ function Workspace({ me, route, onLogout }: { me: User; route: Route; onLogout: 
         onLogout={() => api<{ redirect?: string | null }>('/api/auth/logout', { method: 'POST' }).then((r) => (r.redirect ? location.assign(r.redirect) : onLogout()))}
         onClose={() => setNavOpen(false)}
         onSpaceSettings={() => setSpaceSettings(true)}
+        onCollapse={() => fold(true)}
       />
-      <main>
+      <main onScroll={onMainScroll}>
         <Crash key={location.hash}><Suspense fallback={<div className="loading" />}>{main}</Suspense></Crash>
       </main>
       {palette && <Palette onClose={() => setPalette(false)} />}
