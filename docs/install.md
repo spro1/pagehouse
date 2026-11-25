@@ -110,7 +110,7 @@ Restart after changing it: `docker compose up -d`.
 | `BIND_ADDRESS` | `0.0.0.0` | `127.0.0.1` to accept connections only from a reverse proxy on the same machine |
 | `ALLOW_SIGNUP` | `0` | `1` lets anyone who can reach the site create an account |
 | `PUBLIC_URL` | (from the request) | Address people use, e.g. `https://wiki.example.com`. Used for sign-on redirects and links in email |
-| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | empty | **Usually set in Admin → SSO instead.** Set here, they win over the screen, which becomes read-only. Single sign-on with any OpenID Connect provider. Redirect URI: `<PUBLIC_URL>/api/auth/oidc/callback` |
+| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | empty | **Usually set in Admin → SSO instead** (see the [SSO guide](sso.md)). Set here, they win over the screen, which becomes read-only. Single sign-on with any OpenID Connect provider. Redirect URI: `<PUBLIC_URL>/api/auth/oidc/callback` |
 | `OIDC_LABEL` | `SSO` | Text on the sign-in button |
 | `OIDC_AUTO_CREATE` | `1` | `0` lets in only people who already have an account with that email |
 | `PASSWORD_LOGIN` | `1` | `0` with SSO on: only administrators can still sign in with a password |

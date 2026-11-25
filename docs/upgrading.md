@@ -35,6 +35,7 @@
 - No database changes (the settings go into the existing `settings` table).
 - **SSO can be set up in Admin → SSO.** Saving applies it at once, without a restart.
 - If you already set SSO in `.env`, it keeps working: environment variables win over the screen, which shows them read-only. To manage it on the screen, remove the `OIDC_*` lines from `.env` and enter the same values there.
+- **Signing out also signs out of the SSO provider.** Allow the wiki address ending in `/` as a post-logout redirect URI at the provider (Keycloak: *Valid post logout redirect URIs*), or the provider will refuse the return. People signed in before the upgrade need to sign in once more. See the [SSO guide](sso.md).
 
 ### 0.2.0-beta.2 → 0.2.0-beta.3
 
