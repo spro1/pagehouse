@@ -45,6 +45,7 @@ export function Monitor() {
   return (
     <div className="monitor">
       {warn && <div className="banner warn"><Icon name="settings" /> {t('mon.warn', { pct: Math.round(pct) })}</div>}
+      <Health />
 
       <section className="box">
         <div className="box-head">
@@ -206,5 +207,71 @@ function BackupPolicyForm({ policy, onSaved }: { policy: Policy; onSaved: () => 
       <p className="muted small">{t('mon.policy.hint')}</p>
       <div className="actions"><button className="primary">{t('common.save')}</button></div>
     </form>
+  )
+}
+
+type HealthData = {
+  db: { latencyMs: number; connections: number | null; waiting: number | null }
+  process: { uptimeSeconds: number; rssBytes: number; heapUsedBytes: number; loopDelayP99Ms: number }
+  recent: { minutes: number; requests: number; serverErrors: number; slow: number; errors: { at: string; method: string; path: string; status: number; message: string }[] }
+  collab: { rooms: number; connections: number }
+  backlog: { mail: number; webhooks: number }
+  webhooksFailing: number
+  mailFailed: number
+  backup: { lastAt: string | null; overdue: boolean } | null
+}
+
+/** This instance's health: problems first, then the numbers behind them. Refreshes every 30 seconds. */
+function Health() {
+  const [h, setH] = useState<HealthData>()
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    const load = () => api<HealthData>('/api/admin/health').then(setH, () => {})
+    load()
+    const id = setInterval(load, 30_000)
+    return () => clearInterval(id)
+  }, [])
+  if (!h) return null
+  const problems: string[] = []
+  if (h.db.latencyMs > 200) problems.push(t('health.p.db', { ms: h.db.latencyMs }))
+  if (h.db.waiting) problems.push(t('health.p.pool', { n: h.db.waiting }))
+  if (h.process.loopDelayP99Ms > 200) problems.push(t('health.p.loop', { ms: h.process.loopDelayP99Ms }))
+  if (h.recent.serverErrors) problems.push(t('health.p.errors', { n: h.recent.serverErrors, m: h.recent.minutes }))
+  if (h.backup?.overdue) problems.push(t('health.p.backup'))
+  if (h.backlog.mail) problems.push(t('health.p.mail', { n: h.backlog.mail }))
+  if (h.backlog.webhooks) problems.push(t('health.p.hooks', { n: h.backlog.webhooks }))
+  if (h.webhooksFailing) problems.push(t('health.p.hookFail', { n: h.webhooksFailing }))
+  const tile = (label: string, value: string, bad = false) => (
+    <div className={`health-tile${bad ? ' bad' : ''}`}><span className="muted small">{label}</span><b>{value}</b></div>
+  )
+  return (
+    <section className="box health">
+      <div className="box-head">
+        <h3>{t('health.title')}</h3>
+        <span className={`tag ${problems.length ? 'warn-tag' : ''}`}>{problems.length ? t('health.issues', { n: problems.length }) : t('health.ok')}</span>
+      </div>
+      {problems.length > 0 && <ul className="health-problems">{problems.map((p) => <li key={p}>{p}</li>)}</ul>}
+      <div className="health-grid">
+        {tile(t('health.db'), `${h.db.latencyMs} ms`, h.db.latencyMs > 200)}
+        {tile(t('health.memory'), bytes(h.process.rssBytes))}
+        {tile(t('health.loop'), `${h.process.loopDelayP99Ms} ms`, h.process.loopDelayP99Ms > 200)}
+        {tile(t('health.requests', { m: h.recent.minutes }), `${h.recent.requests}`)}
+        {tile(t('health.errors'), `${h.recent.serverErrors}`, h.recent.serverErrors > 0)}
+        {tile(t('health.slow'), `${h.recent.slow}`)}
+        {tile(t('health.live'), t('health.liveValue', { rooms: h.collab.rooms, conns: h.collab.connections }))}
+        {tile(t('health.backlog'), `${h.backlog.mail} / ${h.backlog.webhooks}`, h.backlog.mail + h.backlog.webhooks > 0)}
+      </div>
+      <p className="muted small">{t('health.note', { up: duration(h.process.uptimeSeconds) })}</p>
+      {h.recent.errors.length > 0 && (
+        <details open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+          <summary className="small">{t('health.recentErrors', { n: h.recent.errors.length })}</summary>
+          <ul className="health-errors">
+            {h.recent.errors.map((e, i) => (
+              <li key={i}><span className="muted" title={fullDate(e.at)}>{ago(e.at)}</span> <code>{e.method} {e.path}</code> {e.message}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </section>
   )
 }

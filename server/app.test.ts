@@ -1161,3 +1161,34 @@ test('webhooks: signed page and comment events, none for restricted pages; perso
     rx.close()
   }
 })
+
+test('monitoring: /metrics needs METRICS_TOKEN, admin health, and server errors are counted', async () => {
+  assert.equal((await app.request('/metrics')).status, 404, 'off by default')
+  process.env.METRICS_TOKEN = 'scrape-me'
+  try {
+    assert.equal((await app.request('/metrics')).status, 401)
+    assert.equal((await app.request('/metrics', { headers: { authorization: 'Bearer nope' } })).status, 401)
+    await app.request('/healthz')
+    const text = await (await app.request('/metrics', { headers: { authorization: 'Bearer scrape-me' } })).text()
+    for (const m of ['pagehouse_info{version=', 'pagehouse_http_requests_total{method="GET",route="/healthz",status="200"}', 'pagehouse_http_request_duration_seconds_bucket{route="/healthz",le="+Inf"}',
+      'pagehouse_db_latency_seconds', 'pagehouse_storage_bytes{kind="files"}', 'pagehouse_notification_backlog{channel="mail"}', 'pagehouse_server_errors_total'])
+      assert.ok(text.includes(m), `metrics include ${m}`)
+    assert.ok(!/route="[^"]*\/\d+/.test(text), 'ids never become labels')
+  } finally {
+    delete process.env.METRICS_TOKEN
+  }
+  const admin = client()
+  await admin.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  const h = await admin.json('GET', '/api/admin/health')
+  assert.equal(typeof h.db.latencyMs, 'number')
+  assert.equal(typeof h.process.rssBytes, 'number')
+  assert.equal(typeof h.recent.requests, 'number')
+  const member = client()
+  await member.call('POST', '/api/auth/login', { email: 'insider@sp.co', password: 'password1' })
+  assert.equal((await member.call('GET', '/api/admin/health')).status, 403)
+
+  // An unexpected error answers 500 as JSON and shows up for admins.
+  const { recordError, recentStats } = await import('./metrics.ts')
+  recordError('GET', '/api/boom', 500, 'kaboom')
+  assert.equal(recentStats().errors[0].message, 'kaboom')
+})

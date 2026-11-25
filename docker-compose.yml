@@ -42,6 +42,7 @@ services:
       LINK_PREVIEW: ${LINK_PREVIEW:-1}
       LINK_PREVIEW_ALLOW: ${LINK_PREVIEW_ALLOW:-}
       WEBHOOK_ALLOW: ${WEBHOOK_ALLOW:-}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
       TRUST_PROXY: ${TRUST_PROXY:-0}
       BACKUP_DIR: /backups
     volumes:
