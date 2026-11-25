@@ -76,3 +76,47 @@ jobs:
           image-ref: pagehouse-postgres:ci
           ignore-unfixed: true
           exit-code: "1"
+
+  # Install the latest release, upgrade it to this commit the way users do (curl | sh), check the data,
+  # then drive the upgraded app in a browser. This is the path the unit tests can't see.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: ghcr.io/${{ github.repository }}:0.0.0-ci
+          build-args: VERSION=0.0.0-ci
+          cache-from: type=gha
+      - uses: docker/build-push-action@v7
+        with:
+          context: docker/postgres
+          load: true
+          tags: ghcr.io/${{ github.repository }}-postgres:17
+      - name: Install the latest release, upgrade to this build, check
+        run: sh e2e/upgrade.sh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - run: npx playwright install --with-deps chromium
+      - name: Browser tests against the upgraded install
+        run: npx playwright test -c e2e/playwright.config.ts
+      - name: Logs
+        if: failure()
+        run: cd "$RUNNER_TEMP/pagehouse-e2e/up" && docker compose logs --tail 200 || true
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7

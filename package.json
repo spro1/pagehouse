@@ -13,7 +13,8 @@
     "start": "node server/index.ts",
     "test": "tsx --test server/*.test.ts web/*.test.ts",
     "typecheck": "tsc",
-    "release": "sh scripts/make-release.sh"
+    "release": "sh scripts/make-release.sh",
+    "e2e": "playwright test -c e2e/playwright.config.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.11",
@@ -28,6 +29,7 @@
     "yjs": "^13.6.33"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@tiptap/extension-code-block-lowlight": "^3.35.0",
     "@tiptap/extension-collaboration": "^3.35.0",
     "@tiptap/extension-collaboration-caret": "^3.35.0",
