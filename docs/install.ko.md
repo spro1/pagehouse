@@ -29,7 +29,7 @@ Pagehouse는 앱, PostgreSQL, 백업 작업, 이렇게 컨테이너 세 개로 �
 | 소프트웨어 | 지원 | 비고 |
 |---|---|---|
 | 컨테이너 런타임 | Docker 24 이상과 Compose v2, 또는 Podman 4 이상과 `podman compose` | Podman 6.0에서 확인 |
-| 쿠버네티스 | 1.25 이상, Helm 3 | 여러 대로 늘리려면 ReadWriteMany 스토리지 |
+| 쿠버네티스 | 1.21 이상(차트가 쓰는 `batch/v1` CronJob 기준), Helm 3 | 여러 대로 늘리려면 ReadWriteMany 스토리지 |
 | 외부 PostgreSQL | 14 이상, `pg_trgm` 확장 | 선택 |
 | 브라우저 | 최신 Chrome, Edge, Firefox, Safari | 수백 MB짜리 내보내기 파일을 가져올 때는 브라우저에 1~2GB 여유 메모리가 필요합니다(압축을 풀고 폴더를 선택하면 덜 씁니다) |
 

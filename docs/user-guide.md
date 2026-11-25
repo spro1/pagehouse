@@ -124,7 +124,7 @@ Selecting text opens a formatting menu: bold, italic, strikethrough, code, highl
 
 ## Comments
 
-- **Page comments** are at the bottom of the page. Reply to them, and mark finished threads **Resolved**. Resolved threads stay folded until you open them.
+- **Page comments** are at the bottom of the page. Reply to them, and click **Resolve** on finished threads. Resolved threads stay folded until you open them.
 - **Inline comments**: select text and click 💬 to comment on that passage. The passage is highlighted; click it to jump to its thread.
 - **Resolving** a thread is up to whoever started it or anyone who can edit the page.
 - **Deleted comments** can be brought back with **Undo** right after.
@@ -157,7 +157,7 @@ Each space has a default for people who aren't members.
 ## Who can see a page
 
 1. Click **Access** at the top.
-2. Choose **Selected people**.
+2. Choose **Only selected people**.
 3. Add people or groups, each with **View** or **Edit**.
 
 Rules:
@@ -248,7 +248,7 @@ At the limit new uploads are refused, but text always saves.
 
 | To | Do this |
 |---|---|
-| Invite | Create a **member** or **admin invite link** and pass it on. It works once, within 7 days |
+| Invite | Create a **Member invite link** or **Admin invite link** and pass it on. It works once, within 7 days |
 | Change a role | The role column |
 | Block access | **Disable**: signs them out at once. **Enable** lets them back in |
 | Reset a password | A **reset link** (once, within a day) or a **temporary password** (sign in right away; choose a new password at first sign-in). Both sign the person out everywhere |
