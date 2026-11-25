@@ -177,7 +177,8 @@ input[type='radio'], input[type='checkbox'] { width: auto; height: auto; accent-
 .modal-head h2 { flex: 1; margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
 .modal-body { padding: 16px 24px 20px; overflow-y: auto; }
 .modal-body > p:first-child { margin-top: 0; }
-.modal-foot { display: flex; align-items: center; gap: 8px; padding: 14px 20px 14px 24px; border-top: 1px solid var(--line); background: var(--bg-soft); border-radius: 0 0 var(--r-xl) var(--r-xl); }
+.modal-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 20px 14px 24px; border-top: 1px solid var(--line); background: var(--bg-soft); border-radius: 0 0 var(--r-xl) var(--r-xl); }
+.modal-foot button { min-width: 76px; }
 .modal-foot .note-text { flex: 1; min-width: 0; font-size: 12.5px; color: var(--muted); line-height: 1.4; }
 @keyframes fade { from { opacity: 0; } }
 @keyframes pop { from { opacity: 0; transform: translateY(-6px) scale(0.985); } }
@@ -314,6 +315,10 @@ button.locked:hover { color: var(--danger); }
 .history-list { position: relative; margin: 8px 0 0; padding: 0; list-style: none; }
 .history-list::before { content: ''; position: absolute; left: 5px; top: 8px; bottom: 8px; width: 1px; background: var(--line); }
 .version { position: relative; padding: 0 0 18px 22px; font-size: 14px; }
+.version > div:first-child { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
+.version > div:first-child b { font-size: 13.5px; }
+.version .tag { margin-left: 0; }
+.version button.link + button.link { margin-left: 12px; }
 .version::before { content: ''; position: absolute; left: 1px; top: 6px; width: 9px; height: 9px; border-radius: 50%; background: var(--bg); border: 2px solid var(--line-strong); }
 .version.current::before { border-color: var(--accent); background: var(--accent); }
 .version button.link { margin-top: 4px; font-size: 13px; }
@@ -773,7 +778,11 @@ pre.diff { margin: 0; max-height: 60vh; overflow: auto; font-size: 13px; line-he
 .label-chip { display: inline-flex; align-items: center; height: 24px; padding: 0 4px 0 8px; border-radius: 12px; background: var(--accent-soft); font-size: 12.5px; }
 .label-chip a { color: var(--accent); text-decoration: none; padding-right: 4px; }
 .label-chip button { width: 18px; height: 18px; min-height: 0; padding: 0; color: var(--muted); }
-.label-new { height: 24px; min-height: 0; padding: 0 8px; font-size: 12.5px; color: var(--muted); }
+.label-new { height: 24px; min-height: 0; padding: 0 8px; margin-left: -8px; font-size: 12.5px; color: var(--muted); }
+/* With no labels yet, the add button shows on hover only, like the icon button. */
+.labels.empty .label-new { opacity: 0; transition: opacity 0.15s; }
+.doc-col:hover .labels.empty .label-new, .labels.empty .label-new:focus-visible { opacity: 1; }
+.labels.empty { margin-top: -22px; margin-bottom: 18px; }
 .label-add input { height: 24px; width: 140px; padding: 0 8px; font-size: 12.5px; border-radius: 12px; }
 
 /* Favorites */
@@ -798,7 +807,7 @@ pre.diff { margin: 0; max-height: 60vh; overflow: auto; font-size: 13px; line-he
 .toolbar > button:hover:not(:disabled), .toolbar-insert > button:hover { background: var(--bg-hover); }
 .toolbar > button.on { background: var(--bg-active); color: var(--text); }
 .toolbar > button:disabled { opacity: 0.35; }
-.toolbar select { width: auto; height: 30px; border: 0; background-color: transparent; font-size: 13.5px; }
+.toolbar select { width: auto; max-width: 110px; padding-left: 6px; height: 30px; border: 0; background-color: transparent; font-size: 13.5px; }
 .toolbar .sep { width: 1px; height: 18px; margin: 0 4px; background: var(--line); }
 .toolbar-insert { position: relative; }
 .toolbar-insert .dropdown { width: 240px; max-height: 60vh; overflow-y: auto; }

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react'
 import { BubbleMenu } from '@tiptap/react/menus'
 import { CellSelection } from '@tiptap/pm/tables'
-import { ApiError, api, ago, fullDate, listPeople, listPrincipals, pkey, toast, type Person, type Principal, type User } from './api.ts'
+import { ApiError, api, ago, fullDate, listPeople, listPrincipals, pkey, toast, type Person, type Principal, type User, shortDate } from './api.ts'
 import { PrincipalLabel } from './SpaceSettings.tsx'
 import { t } from './i18n.ts'
 import { Icon } from './icons.tsx'
@@ -831,7 +831,7 @@ function History({ pageId, editor, canEdit, onRestore, onClose }: { pageId: numb
       {versions?.map((v, i) => (
         <li key={v.id} className={`version ${i === 0 ? 'current' : ''}`}>
           <div>
-            <b>{fullDate(v.createdAt)}</b>
+            <b title={fullDate(v.createdAt)}>{shortDate(v.createdAt)}</b>
             {i === 0 && <span className="tag">{t('history.current')}</span>}
           </div>
           <div className="muted small">{v.author} · {v.title}</div>

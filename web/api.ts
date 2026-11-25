@@ -39,6 +39,12 @@ export function ago(iso: string | number) {
 export const fullDate = (iso: string | number) =>
   new Date(iso).toLocaleString(locale, { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 
+/** "Nov 25, 10:00 AM"; the year only when it isn't this year. For tight lists; pair with fullDate as a tooltip. */
+export const shortDate = (iso: string | number) => {
+  const d = new Date(iso)
+  return d.toLocaleString(locale, { ...(d.getFullYear() !== new Date().getFullYear() && { year: 'numeric' }), month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
 export { toast } from './ui.tsx'
 
 export type Person = { id: number; name: string; email: string }

@@ -52,7 +52,7 @@ export function SearchPage({ initial }: { initial: URLSearchParams }) {
   useEffect(() => {
     const qs = new URLSearchParams()
     for (const k of KEYS) if (f[k]) qs.set(k, f[k])
-    history.replaceState(null, '', `#/search?${qs}`)
+    history.replaceState(null, '', qs.size ? `#/search?${qs}` : '#/search')
     if (!f.q.trim() && !f.label) return setData(null)
     let live = true
     setBusy(true)

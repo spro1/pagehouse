@@ -20,7 +20,7 @@ export function Labels({ pageId, initial, canEdit }: { pageId: number; initial: 
   const add = (l: string) => (l.trim() && save([...labels, l]), setInput(''))
   if (!labels.length && !canEdit) return null
   return (
-    <div className="labels">
+    <div className={`labels ${labels.length ? '' : 'empty'}`}>
       {labels.map((l) => (
         <span key={l} className="label-chip">
           <a href={`#/search?label=${encodeURIComponent(l)}`}>#{l}</a>

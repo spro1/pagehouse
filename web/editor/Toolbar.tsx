@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useEditorState, type Editor } from '@tiptap/react'
 import { t } from '../i18n.ts'
 import { SLASH_ITEMS } from './extensions.tsx'
+import { Icon } from '../icons.tsx'
 
 /** A fixed toolbar above the page, like Confluence's: the formatting the selection menu has, the block types, and
  *  everything the "/" menu can insert, so nothing needs a shortcut or a slash to find. */
@@ -35,8 +36,8 @@ export function Toolbar({ editor }: { editor: Editor }) {
   const here = () => ({ from: editor.state.selection.from, to: editor.state.selection.from })
   return (
     <div className="toolbar" role="toolbar" aria-label={t('toolbar.label')}>
-      {btn('↶', `${t('toolbar.undo')} (${mod}Z)`, false, () => c().undo().run(), !st.undo)}
-      {btn('↷', `${t('toolbar.redo')} (${mod}⇧Z)`, false, () => c().redo().run(), !st.redo)}
+      {btn(<Icon name="undo" size={15} />, `${t('toolbar.undo')} (${mod}Z)`, false, () => c().undo().run(), !st.undo)}
+      {btn(<Icon name="redo" size={15} />, `${t('toolbar.redo')} (${mod}⇧Z)`, false, () => c().redo().run(), !st.redo)}
       <span className="sep" />
       <select value={st.block} aria-label={t('toolbar.block')} onChange={(e) => {
         const v = e.target.value
