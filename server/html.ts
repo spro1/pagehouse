@@ -39,7 +39,7 @@ const CALLOUT_ICON: Record<string, string> = { info: 'ℹ️', warning: '⚠️'
 
 function block(n: Node, url: UrlMap): string {
   const kids = () => (n.content ?? []).map((c) => block(c, url)).join('\n')
-  const span = (c: Node) => `${(c.attrs?.colspan ?? 1) > 1 ? ` colspan="${c.attrs!.colspan}"` : ''}${(c.attrs?.rowspan ?? 1) > 1 ? ` rowspan="${c.attrs!.rowspan}"` : ''}`
+  const span = (c: Node) => `${(c.attrs?.colspan ?? 1) > 1 ? ` colspan="${c.attrs!.colspan}"` : ''}${(c.attrs?.rowspan ?? 1) > 1 ? ` rowspan="${c.attrs!.rowspan}"` : ''}${safeColor(c.attrs?.background) ? ` style="background:${safeColor(c.attrs?.background)}"` : ''}`
   switch (n.type) {
     case 'doc': return kids()
     case 'paragraph': return `<p${align(n)}>${inline(n.content, url)}</p>`
@@ -62,7 +62,11 @@ function block(n: Node, url: UrlMap): string {
       const href = escapeHtml(safeUrl(url(n.attrs?.href ?? '')))
       return `<p class="link-card"><a href="${href}">${escapeHtml(n.attrs?.title || n.attrs?.href || '')}</a>${n.attrs?.description ? `<br><small>${escapeHtml(n.attrs.description)}</small>` : ''}</p>`
     }
-    case 'image': return `<p><img src="${escapeHtml(safeUrl(url(n.attrs?.src ?? '')))}" alt="${escapeHtml(n.attrs?.alt ?? '')}"></p>`
+    case 'image': {
+      const w = Number(n.attrs?.width) > 0 ? ` style="width:${Math.round(Number(n.attrs!.width))}px"` : ''
+      const img = `<img src="${escapeHtml(safeUrl(url(n.attrs?.src ?? '')))}" alt="${escapeHtml(n.attrs?.alt || n.attrs?.caption || '')}"${w}>`
+      return n.attrs?.caption ? `<figure>${img}<figcaption>${escapeHtml(n.attrs.caption)}</figcaption></figure>` : `<p>${img}</p>`
+    }
     case 'bulletList': return `<ul>${kids()}</ul>`
     case 'orderedList': return `<ol${(n.attrs?.start ?? 1) !== 1 ? ` start="${Number(n.attrs!.start)}"` : ''}>${kids()}</ol>`
     case 'listItem': return `<li>${kids()}</li>`
@@ -111,7 +115,7 @@ blockquote{margin:0;padding:2px 16px;border-left:3px solid #d0d7de;color:#57606a
 .callout.info{background:#eef4ff;border-color:#c9dafc}.callout.warning{background:#fff8e6;border-color:#f3dc9b}.callout.success{background:#ecf9f0;border-color:#b9e6c6}.callout.danger{background:#fdeeee;border-color:#f3c2c2}
 .table{overflow:auto}table{border-collapse:collapse;margin:12px 0;font-size:14px}th,td{border:1px solid #d0d7de;padding:6px 10px;vertical-align:top}th{background:#f6f8fa}td>p:first-child,th>p:first-child{margin-top:0}td>p:last-child,th>p:last-child{margin-bottom:0}
 ul.tasks{list-style:none;padding-left:4px}ul.tasks li{display:flex;gap:6px}ul.tasks li>div>p{margin:0}
-mark{background:#fff3a3}.mention{color:#2f6feb}.link-card{border:1px solid #e5e7eb;border-radius:8px;padding:10px 14px}
+figure{margin:12px 0}figure img{max-width:100%}figcaption{color:#57606a;font-size:13px;text-align:center;margin-top:4px}mark{background:#fff3a3}.mention{color:#2f6feb}.link-card{border:1px solid #e5e7eb;border-radius:8px;padding:10px 14px}
 hr{border:0;border-top:1px solid #e5e7eb;margin:24px 0}
 @media (max-width:800px){body{display:block}.side{position:static;width:auto;height:auto;border-right:0;border-bottom:1px solid #e5e7eb}main{padding:20px 16px}}
 @media print{.side{display:none}main{max-width:none;padding:0}}`

@@ -1,5 +1,5 @@
 import { Labels } from './Labels.tsx'
-import { Toolbar } from './editor/Toolbar.tsx'
+import { BG_COLORS, Toolbar } from './editor/Toolbar.tsx'
 import { PageIcon } from './PageIcon.tsx'
 import { useEffect, useRef, useState } from 'react'
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react'
@@ -609,6 +609,15 @@ function TableMenu({ editor }: { editor: Editor }) {
       <span className="sep" />
       {btn(t('table.mergeCells'), () => c().mergeCells().run(), { disabled: !can.merge, title: can.merge ? undefined : t('table.mergeHint') })}
       {can.split && btn(t('table.splitCell'), () => c().splitCell().run())}
+      <span className="sep" />
+      <span className="cell-colors" role="group" aria-label={t('table.color')}>
+        {[null, ...BG_COLORS.map(([, v]) => v)].map((v) => (
+          <button key={v ?? 'none'} type="button" className="swatch" title={v ? t('table.color') : t('color.none')} aria-label={v ? t('table.color') : t('color.none')}
+            onMouseDown={(e) => (e.preventDefault(), c().setCellAttribute('background', v).run())}>
+            <span style={{ background: v ?? undefined }} />
+          </button>
+        ))}
+      </span>
       <span className="sep" />
       {btn(t('table.delRow'), () => c().deleteRow().run())}
       {btn(t('table.delCol'), () => c().deleteColumn().run())}

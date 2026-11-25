@@ -51,7 +51,8 @@ function block(n: Node, url: UrlMap): string {
     }
     case 'horizontalRule': return '---'
     case 'linkCard': return `[${escapeText(n.attrs?.title || n.attrs?.href || '')}](${url(n.attrs?.href ?? '')})`
-    case 'image': return `![${n.attrs?.alt ?? ''}](${url(n.attrs?.src ?? '')})`
+    // A caption becomes the image title: ![alt](src "caption").
+    case 'image': return `![${n.attrs?.alt ?? ''}](${url(n.attrs?.src ?? '')}${n.attrs?.caption ? ` "${String(n.attrs.caption).replace(/"/g, '\\"')}"` : ''})`
     case 'bulletList':
     case 'orderedList':
     case 'taskList':
