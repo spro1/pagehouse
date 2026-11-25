@@ -5,7 +5,8 @@
 # Pagehouse
 
 **작은 회사와 팀이 자기 서버에 설치해 쓰는 온프레미스 팀 위키**<br>
-주간보고, 회의록, 기술 문서를 우리 망 안에서 한곳에 관리합니다.
+주간보고, 회의록, 기술 문서를 우리 망 안에서 한곳에 관리합니다.<br>
+오픈소스로 직접 설치하는 Confluence 대안입니다. **[소개 페이지](https://spro1.github.io/pagehouse/ko.html)**
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![CI](https://github.com/spro1/pagehouse/actions/workflows/ci.yml/badge.svg)](https://github.com/spro1/pagehouse/actions/workflows/ci.yml)
@@ -240,3 +241,5 @@ DATABASE_URL=postgres://pagehouse:pagehouse@localhost:55432/pagehouse_test npm r
 ## 라이선스
 
 [Apache-2.0](LICENSE). 회사 내부 사용, 수정, 재배포 모두 자유롭습니다.
+
+Confluence는 Atlassian의 상표입니다. Pagehouse는 Atlassian과 제휴하거나 보증받은 프로젝트가 아닙니다.
