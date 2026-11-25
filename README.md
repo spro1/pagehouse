@@ -5,7 +5,8 @@
 # Pagehouse
 
 **An on-premises team wiki that small companies and teams run on their own servers.**<br>
-Weekly reports, meeting notes and technical docs in one place, inside your own network.
+Weekly reports, meeting notes and technical docs in one place, inside your own network.<br>
+An open-source, self-hosted alternative to Confluence. **[pagehouse website](https://spro1.github.io/pagehouse/)**
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![CI](https://github.com/spro1/pagehouse/actions/workflows/ci.yml/badge.svg)](https://github.com/spro1/pagehouse/actions/workflows/ci.yml)
@@ -244,3 +245,5 @@ Layout:
 ## License
 
 [Apache-2.0](LICENSE): free to use inside your company, modify and redistribute.
+
+Confluence is a trademark of Atlassian. Pagehouse is not affiliated with or endorsed by Atlassian.
