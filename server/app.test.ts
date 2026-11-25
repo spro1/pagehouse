@@ -875,6 +875,19 @@ test('HTML export: a browsable folder with the page tree, relative links and esc
   assert.match(html, /a &lt; b &amp;&amp; c/)
   assert.match(html, new RegExp(`href="${encodeURI('HTML 부모/자식 _script_.html').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`))
   assert.ok(!html.includes('javascript:'), 'unsafe link dropped')
+  // Colors and alignment survive; anything that isn't a plain color never reaches a style attribute.
+  const { toHtmlPage } = await import('./html.ts')
+  const styled = toHtmlPage({ title: 't', space: 's', css: 'c', home: 'h', crumbs: [], nav: [], url: (u) => u, doc: { type: 'doc', content: [
+    { type: 'paragraph', attrs: { textAlign: 'center' }, content: [
+      { type: 'text', text: 'red', marks: [{ type: 'textStyle', attrs: { color: '#dc2626' } }] },
+      { type: 'text', text: 'hl', marks: [{ type: 'highlight', attrs: { color: 'rgba(250, 204, 21, 0.35)' } }] },
+      { type: 'text', text: 'evil', marks: [{ type: 'textStyle', attrs: { color: 'red;background:url(https://x)' } }, { type: 'underline' }] },
+    ] },
+  ] } })
+  assert.match(styled, /<p style="text-align:center">/)
+  assert.match(styled, /<span style="color:#dc2626">red<\/span>/)
+  assert.match(styled, /<mark style="background:rgba\(250, 204, 21, 0.35\)">hl<\/mark>/)
+  assert.ok(!styled.includes('url(https://x)') && styled.includes('<u>evil</u>'))
   assert.ok(html.includes('자식 &lt;script&gt;'), 'nav titles escaped')
   assert.match(new TextDecoder().decode(files['HTML 부모/index.html']), /href="HTML%20%EB%B6%80%EB%AA%A8\.html"/)
   // Markdown stays the default.

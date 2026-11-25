@@ -6,6 +6,10 @@ type Node = { type: string; attrs?: Record<string, any>; content?: Node[]; text?
 
 export const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
 // Only web, mail and relative links survive; javascript: and friends never reach the exported page.
+// Colors come from the editor (or pasted HTML), so only plain color values reach a style attribute.
+const safeColor = (c: unknown) =>
+  typeof c === 'string' && /^(#[0-9a-f]{3,8}|rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*(,\s*(0|1|0?\.\d+)\s*)?\))$/i.test(c.trim()) ? c.trim() : null
+const align = (n: Node) => (['center', 'right', 'justify'].includes(n.attrs?.textAlign) ? ` style="text-align:${n.attrs!.textAlign}"` : '')
 const safeUrl = (u: string) => (/^(https?:|mailto:|#|\.{0,2}\/|[^:]*$)/i.test(u) ? u : '#')
 
 function inline(nodes: Node[] = [], url: UrlMap): string {
@@ -21,7 +25,8 @@ function inline(nodes: Node[] = [], url: UrlMap): string {
         else if (m.type === 'italic') t = `<em>${t}</em>`
         else if (m.type === 'strike') t = `<s>${t}</s>`
         else if (m.type === 'code') t = `<code>${t}</code>`
-        else if (m.type === 'highlight') t = `<mark>${t}</mark>`
+        else if (m.type === 'highlight') t = safeColor(m.attrs?.color) ? `<mark style="background:${safeColor(m.attrs?.color)}">${t}</mark>` : `<mark>${t}</mark>`
+        else if (m.type === 'textStyle' && safeColor(m.attrs?.color)) t = `<span style="color:${safeColor(m.attrs?.color)}">${t}</span>`
         else if (m.type === 'underline') t = `<u>${t}</u>`
         else if (m.type === 'link') t = `<a href="${escapeHtml(safeUrl(url(m.attrs?.href ?? '')))}">${t}</a>`
       }
@@ -37,10 +42,10 @@ function block(n: Node, url: UrlMap): string {
   const span = (c: Node) => `${(c.attrs?.colspan ?? 1) > 1 ? ` colspan="${c.attrs!.colspan}"` : ''}${(c.attrs?.rowspan ?? 1) > 1 ? ` rowspan="${c.attrs!.rowspan}"` : ''}`
   switch (n.type) {
     case 'doc': return kids()
-    case 'paragraph': return `<p>${inline(n.content, url)}</p>`
+    case 'paragraph': return `<p${align(n)}>${inline(n.content, url)}</p>`
     case 'heading': {
       const l = Math.min(6, Math.max(1, n.attrs?.level ?? 1))
-      return `<h${l}>${inline(n.content, url)}</h${l}>`
+      return `<h${l}${align(n)}>${inline(n.content, url)}</h${l}>`
     }
     case 'blockquote': return `<blockquote>${kids()}</blockquote>`
     case 'callout': {

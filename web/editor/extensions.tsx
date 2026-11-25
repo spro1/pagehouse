@@ -9,6 +9,7 @@ import { TableKit } from '@tiptap/extension-table'
 import { TaskItem, TaskList } from '@tiptap/extension-list'
 import { Placeholder } from '@tiptap/extensions'
 import { Highlight } from '@tiptap/extension-highlight'
+import { Color, TextStyle } from '@tiptap/extension-text-style'
 import { TextAlign } from '@tiptap/extension-text-align'
 import { Typography } from '@tiptap/extension-typography'
 import { CodeBlockLowlight } from '@tiptap/extension-code-block-lowlight'
@@ -468,7 +469,10 @@ export function extensions(live?: Live) {
     TableKit.configure({ table: { resizable: true } }),
     TaskList,
     TaskItem.configure({ nested: true }),
-    Highlight,
+    // Several highlight colors; a plain toggle still gives the default yellow.
+    Highlight.configure({ multicolor: true }),
+    TextStyle,
+    Color,
     CommentMark,
     MermaidPreview,
     CodeCopy,

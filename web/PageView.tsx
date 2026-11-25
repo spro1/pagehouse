@@ -499,7 +499,7 @@ function TextMenu({ editor }: { editor: Editor }) {
   const st = useEditorState({
     editor,
     selector: ({ editor: e }) => ({
-      bold: e.isActive('bold'), italic: e.isActive('italic'), strike: e.isActive('strike'), code: e.isActive('code'),
+      bold: e.isActive('bold'), italic: e.isActive('italic'), underline: e.isActive('underline'), strike: e.isActive('strike'), code: e.isActive('code'),
       highlight: e.isActive('highlight'), link: e.isActive('link'),
     }),
   })
@@ -543,6 +543,7 @@ function TextMenu({ editor }: { editor: Editor }) {
         <>
           {btn('B', `${t('fmt.bold')} (${mod}B)`, st.bold, () => c().toggleBold().run())}
           {btn('I', `${t('fmt.italic')} (${mod}I)`, st.italic, () => c().toggleItalic().run())}
+          {btn('U', `${t('fmt.underline')} (${mod}U)`, st.underline, () => c().toggleUnderline().run())}
           {btn('S', t('fmt.strike'), st.strike, () => c().toggleStrike().run())}
           {btn('</>', t('fmt.code'), st.code, () => c().toggleCode().run())}
           {btn('🖍', t('fmt.highlight'), st.highlight, () => c().toggleHighlight().run())}

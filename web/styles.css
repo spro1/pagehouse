@@ -870,3 +870,23 @@ pre.diff { margin: 0; max-height: 60vh; overflow: auto; font-size: 13px; line-he
 .export-option input { margin-top: 3px; width: auto; }
 .export-option span { display: flex; flex-direction: column; gap: 2px; }
 .export-busy { display: inline-flex; align-items: center; gap: 8px; margin-right: auto; }
+
+/* Toolbar popovers: colors and link */
+.toolbar-pop { position: relative; }
+.toolbar-pop > button { min-width: 30px; height: 30px; padding: 0 7px; border: 0; background: none; color: var(--text-2); }
+.toolbar-pop > button:hover, .toolbar-pop > button.on { background: var(--bg-hover); }
+.pop-panel { width: auto; min-width: 240px; padding: 8px; }
+.pop-label { font-size: 11.5px; font-weight: 700; color: var(--muted); margin: 2px 2px 6px; }
+.swatches { display: grid; grid-template-columns: repeat(9, 26px); gap: 4px; margin-bottom: 8px; }
+.dropdown .swatch { width: 26px; height: 26px; min-width: 0; padding: 0; border: 1px solid var(--line); border-radius: 6px; justify-content: center; }
+.swatch span { display: grid; place-items: center; width: 100%; height: 100%; border-radius: 5px; font-weight: 700; }
+.dropdown .swatch.on { box-shadow: 0 0 0 2px var(--accent); }
+.color-btn { display: inline-flex; flex-direction: column; align-items: center; line-height: 1; font-weight: 700; }
+.color-btn i { display: block; width: 14px; height: 3px; margin-top: 2px; border-radius: 2px; }
+.pop-panel .link-edit { display: flex; gap: 6px; }
+.pop-panel .link-edit input { min-width: 220px; height: 30px; }
+.on-text { color: var(--accent); }
+.clear-fmt { font-weight: 600; }
+.clear-fmt sub { font-size: 9px; }
+/* Highlights carry their own color; the default stays the theme's highlight. */
+.doc mark[data-color] { color: inherit; }
