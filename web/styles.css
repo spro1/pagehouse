@@ -220,7 +220,7 @@ input[type='radio'], input[type='checkbox'] { width: auto; height: auto; accent-
 .lang-select select { width: auto; height: 30px; font-size: 13.5px; background: transparent; }
 
 /* ───────────── Layout & sidebar ───────────── */
-.layout { display: grid; grid-template-columns: 268px minmax(0, 1fr); height: 100vh; }
+.layout { position: relative; display: grid; grid-template-columns: var(--nav-w, 268px) minmax(0, 1fr); height: 100vh; }
 main { overflow: auto; min-width: 0; }
 .nav-toggle { display: none; }
 
@@ -975,3 +975,10 @@ pre.diff { margin: 0; max-height: 60vh; overflow: auto; font-size: 13px; line-he
 .sidebar::-webkit-scrollbar-thumb, main::-webkit-scrollbar-thumb { background: transparent; border-radius: 4px; }
 .sidebar:hover::-webkit-scrollbar-thumb, main.scrolling::-webkit-scrollbar-thumb { background: var(--scroll-thumb); }
 .sidebar::-webkit-scrollbar-track, main::-webkit-scrollbar-track { background: transparent; }
+
+/* Sidebar resize handle: on the sidebar's right edge. Out of the grid flow so the columns stay sidebar | page. */
+.nav-resize { position: absolute; top: 0; bottom: 0; left: calc(var(--nav-w, 268px) - 3px); width: 6px; z-index: 25; cursor: col-resize; }
+.nav-resize::after { content: ''; position: absolute; top: 0; bottom: 0; left: 2px; width: 2px; background: transparent; transition: background 0.15s; }
+.nav-resize:hover::after, .nav-resize:focus-visible::after, body.resizing .nav-resize::after { background: var(--accent); }
+body.resizing { cursor: col-resize; user-select: none; }
+@media (max-width: 760px) { .nav-resize { display: none; } }

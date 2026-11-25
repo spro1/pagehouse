@@ -237,6 +237,37 @@ function Workspace({ me, route, onLogout }: { me: User; route: Route; onLogout: 
     addEventListener('keydown', key)
     return () => removeEventListener('keydown', key)
   }, [])
+  // Sidebar width: drag its edge. At most 40% of the window, and never so wide that the page gets narrower than 720 px.
+  const NAV_DEFAULT = 268
+  const navMax = () => Math.max(220, Math.min(window.innerWidth * 0.4, window.innerWidth - 720))
+  const [navW, setNavW] = useState(() => {
+    try { return Number(localStorage.getItem('ph.nav.width')) || NAV_DEFAULT } catch { return NAV_DEFAULT }
+  })
+  const saveNavW = (w: number) => {
+    setNavW(w)
+    try { localStorage.setItem('ph.nav.width', String(w)) } catch { /* not remembered */ }
+  }
+  const startResize = (e: React.PointerEvent) => {
+    e.preventDefault()
+    const move = (ev: PointerEvent) => setNavW(Math.round(Math.min(navMax(), Math.max(220, ev.clientX))))
+    const up = (ev: PointerEvent) => {
+      removeEventListener('pointermove', move)
+      removeEventListener('pointerup', up)
+      document.body.classList.remove('resizing')
+      saveNavW(Math.round(Math.min(navMax(), Math.max(220, ev.clientX))))
+    }
+    document.body.classList.add('resizing')
+    addEventListener('pointermove', move)
+    addEventListener('pointerup', up)
+  }
+  // A width saved on a big screen is clamped on a smaller one, also when the window shrinks.
+  const [, setWinW] = useState(window.innerWidth)
+  useEffect(() => {
+    const on = () => setWinW(window.innerWidth)
+    addEventListener('resize', on)
+    return () => removeEventListener('resize', on)
+  }, [])
+  const shownNavW = Math.min(navW, navMax())
   // Scrollbars show while scrolling only (see .scrolling in styles.css).
   const scrollTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const onMainScroll = (e: React.UIEvent<HTMLElement>) => {
@@ -326,7 +357,7 @@ function Workspace({ me, route, onLogout }: { me: User; route: Route; onLogout: 
   else main = <Home me={me} spaceId={spaceId} onCreate={(tpl) => createPage(null, tpl)} />
 
   return (
-    <div className={`layout ${navOpen ? 'nav-open' : ''} ${collapsed ? 'nav-collapsed' : ''}`}>
+    <div className={`layout ${navOpen ? 'nav-open' : ''} ${collapsed ? 'nav-collapsed' : ''}`} style={{ '--nav-w': `${shownNavW}px` } as React.CSSProperties}>
       <button className="nav-toggle ghost icon" aria-label={t('nav.menu')} aria-expanded={navOpen} onClick={() => setNavOpen(true)}>
         <Icon name="menu" size={18} />
       </button>
@@ -353,6 +384,15 @@ function Workspace({ me, route, onLogout }: { me: User; route: Route; onLogout: 
         onSpaceSettings={() => setSpaceSettings(true)}
         onCollapse={() => fold(true)}
       />
+      {!collapsed && (
+        <div className="nav-resize" role="separator" aria-orientation="vertical" aria-label={t('nav.resize')} title={t('nav.resize')}
+          aria-valuenow={shownNavW} aria-valuemin={220} aria-valuemax={Math.round(navMax())} tabIndex={0}
+          onPointerDown={startResize} onDoubleClick={() => saveNavW(NAV_DEFAULT)}
+          onKeyDown={(e) => {
+            const step = e.key === 'ArrowLeft' ? -16 : e.key === 'ArrowRight' ? 16 : 0
+            if (step) (e.preventDefault(), saveNavW(Math.min(navMax(), Math.max(220, shownNavW + step))))
+          }} />
+      )}
       <main onScroll={onMainScroll}>
         <Crash key={location.hash}><Suspense fallback={<div className="loading" />}>{main}</Suspense></Crash>
       </main>
