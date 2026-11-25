@@ -1,6 +1,9 @@
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync } from 'node:fs'
+import { createServer } from 'node:http'
+import { createHmac } from 'node:crypto'
+import { startPersonalHooks } from './webhooks.ts'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createApp } from './app.ts'
@@ -1092,4 +1095,69 @@ test('link previews: metadata parsing, and no fetching of internal addresses', a
   assert.ok(!privateAddress('::ffff:808:808'))
   for (const u of ['http://127.0.0.1:55432/', 'http://localhost:3000/', 'http://[::1]/', 'file:///etc/passwd', 'http://[::ffff:127.0.0.1]:55432/'])
     assert.ok([400, 404].includes((await a.call('GET', `/api/link-preview?url=${encodeURIComponent(u)}`)).status), u)
+})
+
+test('webhooks: signed page and comment events, none for restricted pages; personal notification webhooks', async () => {
+  const got: { headers: Record<string, any>; raw: string; body: any }[] = []
+  const rx = createServer((req, res) => {
+    let b = ''
+    req.on('data', (d) => (b += d))
+    req.on('end', () => (got.push({ headers: req.headers, raw: b, body: JSON.parse(b) }), res.end('ok')))
+  })
+  await new Promise<void>((r) => rx.listen(0, '127.0.0.1', r))
+  const url = `http://127.0.0.1:${(rx.address() as any).port}/hook`
+  const until = async (ok: () => boolean) => { for (let i = 0; i < 150 && !ok(); i++) await new Promise((r) => setTimeout(r, 20)) }
+  const admin = client()
+  await admin.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  const [general] = await admin.json('GET', '/api/spaces')
+  const me = client()
+  const u = await me.json('POST', '/api/auth/login', { email: 'insider@sp.co', password: 'password1' })
+  let hookId = 0
+  try {
+    assert.equal((await admin.call('POST', '/api/admin/webhooks', { name: 'x', url: 'ftp://x', events: ['page.created'] })).status, 400)
+    assert.equal((await me.call('GET', '/api/admin/webhooks')).status, 403)
+    const hook = await admin.json('POST', '/api/admin/webhooks', { name: 'CI', url, events: ['page.created', 'comment.created'], spaceId: general.id })
+    hookId = hook.id
+    assert.match(hook.secret, /^whsec_/)
+    assert.ok(!JSON.stringify(await admin.json('GET', '/api/admin/webhooks')).includes(hook.secret), 'secret shown once')
+
+    const pg = await admin.json('POST', '/api/pages', { spaceId: general.id, title: 'Hooked' })
+    await until(() => got.length >= 1)
+    assert.equal(got[0].body.event, 'page.created')
+    assert.equal(got[0].body.page.title, 'Hooked')
+    assert.equal(got[0].headers['x-pagehouse-signature'], `sha256=${createHmac('sha256', hook.secret).update(got[0].raw).digest('hex')}`)
+    await admin.json('POST', `/api/pages/${pg.id}/comments`, { body: 'hi' })
+    await until(() => got.length >= 2)
+    assert.equal(got[1].body.event, 'comment.created')
+    assert.equal(got[1].body.comment.body, 'hi')
+    // Restricted pages never leave the wiki.
+    await admin.call('PUT', `/api/pages/${pg.id}/restrictions`, { entries: [{ userId: 1, level: 'edit' }] })
+    await admin.json('POST', `/api/pages/${pg.id}/comments`, { body: 'secret' })
+    await new Promise((r) => setTimeout(r, 200))
+    assert.equal(got.length, 2)
+    assert.equal((await admin.json('POST', `/api/admin/webhooks/${hook.id}/test`)).status, 200)
+    assert.equal(got[2].body.event, 'ping')
+
+    // Personal webhook: the private network is off limits unless WEBHOOK_ALLOW lists the host.
+    assert.equal((await me.json('POST', '/api/me/webhook/test', { url })).error, 'private address')
+    process.env.WEBHOOK_ALLOW = '127.0.0.1'
+    assert.equal((await me.json('POST', '/api/me/webhook/test', { url })).status, 200)
+    assert.equal((await me.json('PATCH', '/api/me', { webhookUrl: url })).webhookUrl, url)
+    assert.equal((await me.json('GET', '/api/me')).webhookUrl, url)
+    const [visible] = await me.json('GET', '/api/spaces')
+    const pg2 = await admin.json('POST', '/api/pages', { spaceId: visible.id, title: 'Ping me' })
+    await admin.json('POST', `/api/pages/${pg2.id}/comments`, { body: `hey <@${u.id}>` })
+    const hooks = startPersonalHooks(db)
+    await hooks.tick()
+    hooks.stop()
+    const mine = got.find((g) => g.body.kind === 'comment_mention')
+    assert.ok(mine, 'notification posted')
+    assert.equal(mine.body.page.title, 'Ping me')
+    assert.match(mine.body.text, /Ping me/)
+  } finally {
+    delete process.env.WEBHOOK_ALLOW
+    await me.call('PATCH', '/api/me', { webhookUrl: '' })
+    if (hookId) await admin.call('DELETE', `/api/admin/webhooks/${hookId}`)
+    rx.close()
+  }
 })
