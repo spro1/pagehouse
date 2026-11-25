@@ -939,3 +939,13 @@ pre.diff { margin: 0; max-height: 60vh; overflow: auto; font-size: 13px; line-he
 .hook-me { flex-wrap: wrap; gap: 8px; }
 .hook-me input { flex: 1; min-width: 220px; }
 .webhooks .banner code { word-break: break-all; }
+
+/* Server health */
+.health-problems { margin: 4px 0 12px; padding-left: 18px; color: var(--danger); font-size: 14px; }
+.health-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); margin-bottom: 8px; }
+.health-tile { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r); }
+.health-tile b { font-size: 16px; }
+.health-tile.bad { border-color: var(--danger); background: var(--danger-soft); }
+.tag.warn-tag { background: var(--danger-soft); color: var(--danger); }
+.health-errors { list-style: none; padding: 0; margin: 8px 0 0; font-size: 13px; display: grid; gap: 6px; }
+.health-errors code { font-size: 12px; }

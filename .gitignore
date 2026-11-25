@@ -4,3 +4,6 @@ data
 backups
 .env
 release
+site/images/
+test-results/
+playwright-report/

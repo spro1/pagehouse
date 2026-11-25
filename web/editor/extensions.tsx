@@ -228,7 +228,8 @@ const People = Mention.configure({
 const SlashMenu = forwardRef<MenuHandle, SuggestionProps<SlashItem>>(function SlashMenu({ items, command }, ref) {
   const [sel, setSel] = useState(0)
   useEffect(() => setSel(0), [items])
-  useEffect(() => document.querySelector('.slash-menu .active')?.scrollIntoView({ block: 'nearest' }), [sel])
+  // Braces matter: newer browsers return a Promise from scrollIntoView, and an effect must not return one.
+  useEffect(() => { document.querySelector('.slash-menu .active')?.scrollIntoView({ block: 'nearest' }) }, [sel])
   useImperativeHandle(ref, () => ({
     onKeyDown: (e) => {
       if (!items.length) return false

@@ -241,6 +241,7 @@ Keep in mind:
 **Admin** in the sidebar has six tabs (Overview, People, Groups, SSO, Webhooks, Audit log).
 
 **Overview:**
+- **server health**: database response, memory, server delay, recent requests and server errors, live editing, waiting notifications, with warnings at the top ([monitoring](monitoring.md))
 - storage use against the disk and an optional **storage limit**
 - the last automatic backup, content counts, edits per day and the largest files
 - the **backup policy**: how often to back up, how many backups to keep, and after how many days to delete old ones ([details](install.md#backup-and-restore))

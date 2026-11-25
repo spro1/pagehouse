@@ -24,7 +24,7 @@ out=release
 stage=$out/pagehouse-$VERSION
 mkdir -p "$stage/scripts" "$stage/docs"
 cp LICENSE README.md README.ko.md .env.example "$stage/"
-cp docs/install.md docs/install.ko.md docs/user-guide.md docs/user-guide.ko.md docs/upgrading.md docs/upgrading.ko.md docs/sso.md docs/sso.ko.md "$stage/docs/"
+cp docs/install.md docs/install.ko.md docs/user-guide.md docs/user-guide.ko.md docs/upgrading.md docs/upgrading.ko.md docs/sso.md docs/sso.ko.md docs/monitoring.md docs/monitoring.ko.md "$stage/docs/"
 cp scripts/backup.sh scripts/restore.sh scripts/compose.sh scripts/upgrade.sh "$stage/scripts/"
 echo "$VERSION" > "$stage/VERSION"
 # Stamp the published image and repository into the user-facing files.

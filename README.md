@@ -42,8 +42,8 @@ Weekly reports, meeting notes and technical docs in one place, inside your own n
 
 | | |
 |---|---|
-| ✍️ **Editor** | A formatting toolbar and `/` block menu, Markdown shortcuts, tables with merge and split, code highlighting for 25 languages (with a copy button), Mermaid diagrams, info and warning panels, to-dos, link cards, images and files by paste or drop, `@` mentions, an emoji per page |
-| 🏠 **Home and notifications** | A landing page with recently viewed pages, new pages, and docs and comments that mention you; watch pages for edits; unread notifications by email (SMTP) |
+| ✍️ **Editor** | A formatting toolbar and `/` block menu, Markdown shortcuts, text colors, tables with merged, split and colored cells, images you resize and caption, code highlighting for 45 languages (with a copy button), Mermaid diagrams, info and warning panels, to-dos, link cards, images and files by paste or drop, `@` mentions, an emoji per page |
+| 🏠 **Home and notifications** | A landing page with recently viewed pages, new pages, and docs and comments that mention you; watch pages for edits; unread notifications by email (SMTP) or to a Slack, Mattermost or Teams webhook |
 | 🗂️ **Organize** | Spaces, nested pages with drag and drop (`⋯` and `+` on every page in the tree), copying with subpages, labels, favorites and recently viewed, built-in templates plus your own, trash with undo |
 | 🔎 **Search** | ⌘K quick search and a full search page: every word must match (Korean particles handled), comments and attachment names included, filters by space, author and date |
 | 🔒 **Permissions** | Per-space access (everyone edits, everyone views, private) for people or groups, plus per-page view/edit restrictions. What you can't see never appears in search, files or history |
@@ -52,7 +52,7 @@ Weekly reports, meeting notes and technical docs in one place, inside your own n
 | 👤 **Accounts** | Change your name and profile photo, reset a forgotten password by email (with SMTP), or get a temporary password from an admin that must be changed at first sign-in |
 | 🤖 **AI agents** | Built-in MCP server: agents search, read and write pages with a personal API token and exactly your permissions |
 | 📦 **Migrate** | Import Confluence CSV and HTML exports (page tree and order, folders, attachments, labels; code, panels, Jira, drawio and other macros), Notion, Markdown and HTML; export Markdown or HTML ZIPs and pages as PDF |
-| 📊 **Admin** | Storage use against a limit, disk space, backup status, activity, largest files |
+| 📊 **Admin** | Storage use against a limit, disk space, backup status and retention policy, activity, largest files; SSO set up on a screen; webhooks that send signed page and comment events |
 | 🌐 **Interface** | English and Korean, light and dark themes, set per account |
 
 <table>
@@ -88,10 +88,10 @@ Requires Docker 24+ or Podman 4+. Pick the option that matches your environment.
 curl -fsSL https://github.com/spro1/pagehouse/releases/latest/download/install.sh | sh -s -- --dir /opt/pagehouse
 ```
 
-During the beta, pin the version:
+To install a specific version:
 
 ```sh
-curl -fsSL https://github.com/spro1/pagehouse/releases/download/v0.2.0-beta.5/install.sh | sh -s -- --dir /opt/pagehouse --version 0.2.0-beta.5
+curl -fsSL https://github.com/spro1/pagehouse/releases/download/v0.3.0/install.sh | sh -s -- --dir /opt/pagehouse --version 0.3.0
 ```
 
 The installer:

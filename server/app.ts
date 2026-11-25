@@ -8,13 +8,14 @@ import { compress } from 'hono/compress'
 import { secureHeaders } from 'hono/secure-headers'
 import { join } from 'node:path'
 import { tx, type Db } from './db.ts'
-import { registerAdmin, uploadAllowed } from './admin.ts'
+import { metricsText, registerAdmin, uploadAllowed } from './admin.ts'
 import { registerExport } from './export.ts'
 import { registerSso, registerSsoAdmin, ssoLogoutUrl, ssoSource } from './sso.ts'
 import { createCollab } from './collab.ts'
 import { relayDownSince } from './cluster.ts'
 import { auditMiddleware, registerAudit } from './audit.ts'
 import { createWebhooks, httpUrl } from './webhooks.ts'
+import { metricsMiddleware, onServerError } from './metrics.ts'
 import { mailEnabled, sendMail } from './mail.ts'
 import { registerMcp } from './mcp.ts'
 import { registerPreview } from './preview.ts'
@@ -159,6 +160,18 @@ export function createApp(db: Db, dataDir: string) {
     })
   // Attachments send their own, stricter policy (sandbox); don't overwrite it.
   app.use('*', (c, next) => (c.req.path.startsWith('/api/files/') ? next() : hardening(c, next)))
+
+  app.use('*', metricsMiddleware)
+  app.onError(onServerError)
+
+  // Prometheus scrape endpoint, off unless METRICS_TOKEN is set; scrapers send it as a bearer token.
+  app.get('/metrics', async (c) => {
+    const want = process.env.METRICS_TOKEN
+    if (!want) return c.text('Not found', 404)
+    const got = c.req.header('authorization')?.replace(/^Bearer\s+/i, '') ?? ''
+    if (sha256(got) !== sha256(want)) return c.text('Unauthorized', 401, { 'WWW-Authenticate': 'Bearer' })
+    return c.text(await metricsText(db, collab), 200, { 'Content-Type': 'text/plain; version=0.0.4; charset=utf-8' })
+  })
 
   app.get('/healthz', async (c) => {
     try {
@@ -1244,7 +1257,7 @@ export function createApp(db: Db, dataDir: string) {
 
   registerMcp(app)
   registerPreview(app, fail)
-  registerAdmin(app, { db, filesDir, fail })
+  registerAdmin(app, { db, filesDir, fail, collab })
   registerAudit(app, db)
   registerSsoAdmin(app, sso)
   hooks.register(app, fail)

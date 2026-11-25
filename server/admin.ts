@@ -3,6 +3,7 @@ import type { Hono, Context } from 'hono'
 import { existsSync, readdirSync, statSync, statfsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Db } from './db.ts'
+import { processStats, recentStats, prometheus, counter } from './metrics.ts'
 
 type Deps = {
   db: Db
@@ -65,6 +66,62 @@ function backups(dir: string | undefined) {
 
 const started = Date.now()
 
+type Rooms = { rooms: Map<number, { conns: Map<unknown, unknown> }> }
+
+/** What an operator wants to know at a glance; shared by Admin → Overview and /metrics. */
+export async function health(db: Db, collab: Rooms) {
+  const t = performance.now()
+  await db.query('SELECT 1')
+  const dbLatencyMs = Math.round((performance.now() - t) * 10) / 10
+  const pool = db as unknown as { totalCount?: number; idleCount?: number; waitingCount?: number }
+  const q = (await db.query(
+    `SELECT (SELECT count(*) FROM notifications WHERE emailed_at IS NULL AND read_at IS NULL AND created_at < now() - interval '15 minutes')::int AS "mailBacklog",
+            (SELECT count(*) FROM notifications WHERE hooked_at IS NULL AND created_at < now() - interval '5 minutes')::int AS "hookBacklog",
+            (SELECT count(*) FROM webhooks WHERE enabled AND last_error IS NOT NULL)::int AS "webhooksFailing",
+            (SELECT count(*) FROM users WHERE disabled_at IS NULL)::int AS users,
+            (SELECT count(*) FROM pages WHERE deleted_at IS NULL)::int AS pages`,
+  )).rows[0]
+  const bk = backups(process.env.BACKUP_DIR)
+  const policy = await backupPolicy(db)
+  const lastBackupAt = bk?.latestAuto ? new Date(bk.latestAuto).getTime() : null
+  return {
+    db: { latencyMs: dbLatencyMs, connections: pool.totalCount ?? null, idle: pool.idleCount ?? null, waiting: pool.waitingCount ?? null },
+    process: processStats(),
+    recent: recentStats(),
+    collab: { rooms: collab.rooms.size, connections: [...collab.rooms.values()].reduce((s, r) => s + r.conns.size, 0) },
+    backlog: { mail: q.mailBacklog, webhooks: q.hookBacklog },
+    webhooksFailing: q.webhooksFailing,
+    mailFailed: counter('pagehouse_mail_sent_total{result="failed"}'),
+    backup: bk ? { lastAt: bk.latestAuto, overdue: !lastBackupAt || Date.now() - lastBackupAt > policy.intervalHours * 1.5 * 3600_000 } : null,
+    counts: { users: q.users, pages: q.pages },
+  }
+}
+
+/** Prometheus text for /metrics: the request metrics plus gauges read now. */
+export async function metricsText(db: Db, collab: Rooms) {
+  const h = await health(db, collab)
+  const used = await usedBytes(db)
+  const limit = await storageLimit(db)
+  const g: [string, string, number, Record<string, string>?][] = [
+    ['pagehouse_info', 'Running version.', 1, { version: process.env.APP_VERSION ?? 'dev' }],
+    ['pagehouse_db_latency_seconds', 'Time for a trivial database query.', h.db.latencyMs / 1000],
+    ['pagehouse_db_pool_connections', 'Database connections held by this instance.', h.db.connections ?? 0],
+    ['pagehouse_db_pool_waiting', 'Queries waiting for a database connection.', h.db.waiting ?? 0],
+    ['pagehouse_collab_rooms', 'Pages open for live editing on this instance.', h.collab.rooms],
+    ['pagehouse_collab_connections', 'Live editing connections on this instance.', h.collab.connections],
+    ['pagehouse_storage_bytes', 'Storage used.', used.db, { kind: 'database' }],
+    ['pagehouse_storage_bytes', 'Storage used.', used.files, { kind: 'files' }],
+    ['pagehouse_storage_limit_bytes', 'Storage limit set by an admin (0 = none).', limit ?? 0],
+    ['pagehouse_backup_last_success_timestamp_seconds', 'When the last automatic backup was written (0 = never or not visible).', h.backup?.lastAt ? Math.round(new Date(h.backup.lastAt).getTime() / 1000) : 0],
+    ['pagehouse_notification_backlog', 'Notifications waiting longer than expected to be sent.', h.backlog.mail, { channel: 'mail' }],
+    ['pagehouse_notification_backlog', 'Notifications waiting longer than expected to be sent.', h.backlog.webhooks, { channel: 'webhook' }],
+    ['pagehouse_webhooks_failing', 'Enabled admin webhooks whose last delivery failed.', h.webhooksFailing],
+    ['pagehouse_users', 'Active accounts.', h.counts.users],
+    ['pagehouse_pages', 'Pages not in the trash.', h.counts.pages],
+  ]
+  return prometheus(g)
+}
+
 /** How long backups are kept. Saved by an admin; read by the backup container on every run. Env gives the defaults. */
 export type BackupPolicy = { intervalHours: number; keep: number; maxAgeDays: number; manualMaxAgeDays: number }
 export async function backupPolicy(db: Db): Promise<BackupPolicy> {
@@ -77,7 +134,8 @@ export async function backupPolicy(db: Db): Promise<BackupPolicy> {
   }
 }
 
-export function registerAdmin(app: Hono<any>, { db, filesDir, fail }: Deps) {
+export function registerAdmin(app: Hono<any>, { db, filesDir, fail, collab }: Deps & { collab: Rooms }) {
+  app.get('/api/admin/health', async (c) => c.json(await health(db, collab)))
   const one = async (sql: string, params: unknown[] = []) => (await db.query(sql, params)).rows[0]
   const all = async (sql: string, params: unknown[] = []) => (await db.query(sql, params)).rows
 

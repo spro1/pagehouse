@@ -10,7 +10,7 @@ Branches: features and fixes for the next version are merged (by pull request) i
    ```
 
 2. Before releasing, in a pull request to the release branch: set `version` in `package.json` (CI refuses a tag
-   that doesn't match it), `charts/pagehouse/Chart.yaml` and the install commands in the READMEs, and turn the
+   that doesn't match it), `charts/pagehouse/Chart.yaml` and the pinned-version install commands in the READMEs, and turn the
    "next (unreleased)" section of `docs/upgrading.md` / `docs/upgrading.ko.md` into this version's notes.
 3. Open a pull request from `release/0.2.0` to `main` and merge it once CI passes.
 4. Tag the merge commit on `main` and push the tag:
@@ -20,6 +20,8 @@ Branches: features and fixes for the next version are merged (by pull request) i
    ```
 
 5. Start the next cycle with a new `release/<next version>` branch from `main`, and delete the old one.
+
+Merging into `main` also republishes the product page (`site/`) to GitHub Pages (`.github/workflows/pages.yml`).
 
 Pushing the tag runs `.github/workflows/release.yml`, which:
    - builds `linux/amd64` and `linux/arm64` images and pushes `ghcr.io/<owner>/pagehouse:0.2.0` and `:latest`
