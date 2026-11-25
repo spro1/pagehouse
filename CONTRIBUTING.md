@@ -18,6 +18,24 @@ DATABASE_URL=postgres://pagehouse:pagehouse@localhost:55432/pagehouse_test npm r
 
 (`docker` works the same as `podman`.)
 
+## How changes get in
+
+`main` only changes through pull requests:
+
+1. Fork the repository (or create a branch, if you're a maintainer) and open a pull request against `main`.
+2. CI (`test` and `image`) must pass, and the branch must be up to date with `main`.
+3. A code owner (see `.github/CODEOWNERS`) reviews and approves. New pushes dismiss earlier approvals, and every
+   review thread must be resolved.
+4. It's merged as one squashed commit. Direct pushes, force pushes and deleting `main` are refused, and only
+   maintainers create release tags (`v*`).
+
+The rules are kept in `.github/rulesets/`. A maintainer applies them with:
+
+```sh
+gh api -X POST repos/spro1/pagehouse/rulesets --input .github/rulesets/main.json
+gh api -X POST repos/spro1/pagehouse/rulesets --input .github/rulesets/tags.json
+```
+
 ## Pull requests
 
 - `npm run typecheck` and `npm test` must pass. Add a test for server changes.

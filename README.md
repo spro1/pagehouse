@@ -68,13 +68,15 @@ Weekly reports, meeting notes and technical docs in one place, inside your own n
 
 ## Server sizing
 
-| Team size | CPU / memory | Disk |
-|---|---|---|
-| up to ~50 | 1 vCPU / 1 GB | 10 GB + attachments |
-| up to ~200 | 2 vCPU / 4 GB | 20 GB + attachments |
+| | CPU | Memory | Disk |
+|---|---|---|---|
+| **Minimum** (trial, ~20 people) | 1 vCPU | 1 GB | 5 GB + attachments × 15 |
+| **Recommended** (~50 people) | 2 vCPU | 2 GB | 20 GB SSD + attachments × 15 |
+| **Recommended** (~200 people) | 2–4 vCPU | 4 GB | 50 GB SSD + attachments × 15 |
+| **Larger organizations** | Several app instances on Kubernetes | 1–2 GB per instance | External PostgreSQL + shared storage |
 
 - Each backup is a full copy and 14 are kept by default, so plan for about `(database + attachments) × 15`.
-- These figures are guidelines. With 3,000 pages, the page tree answers in 6 ms and search in 3 ms.
+- These figures are guidelines. Idle, the app and database use about 50 MB of memory each; with 3,000 pages, the page tree answers in 6 ms and search in 3 ms. Details in the [installation guide](docs/install.md#requirements).
 
 ## Install
 

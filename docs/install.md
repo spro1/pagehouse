@@ -15,12 +15,23 @@ In the commands below, `spro1/pagehouse` is the GitHub repository Pagehouse is p
 
 ## Requirements
 
-| | Minimum | Notes |
+| Size | CPU | Memory | Disk | Notes |
+|---|---|---|---|---|
+| **Minimum** (trial, ~20 people) | 1 vCPU | 1 GB | 5 GB + attachments × 15 | HDD is fine |
+| **Recommended** (~50 people) | 2 vCPU | 2 GB | 20 GB SSD + attachments × 15 | |
+| **Recommended** (~200 people) | 2–4 vCPU | 4 GB | 50 GB SSD + attachments × 15 | Teams that co-edit and import a lot |
+| **Larger organizations** | Several app instances | 1–2 GB per instance | External PostgreSQL + shared storage | Kubernetes `replicaCount`, ReadWriteMany volume |
+
+- **Measured:** idle, the app uses about 50 MB of memory and the database about 50 MB; the images are about 190 MB (app) and 300 MB (database). The rest of the memory goes to PostgreSQL's cache and to exports and imports. At 3,000 pages the page tree answered in 6 ms and search in 3 ms.
+- **Disk:** each backup is a full copy (database + attachments) and 14 are kept by default, so plan for `(database + attachments) × 15`. Less if you move backups off the server.
+- **CPU architectures:** amd64 (x86_64) and arm64
+
+| Software | Supported | Notes |
 |---|---|---|
 | Container runtime | Docker 24+ with Compose v2, or Podman 4+ with `podman compose` | Tested on Podman 6.0 |
-| CPU / memory | 1 vCPU, 1 GB RAM | Enough for a team of ~50 |
-| Disk | 2 GB + attachments + backups | Each backup is a full copy; 14 are kept by default |
-| Browser | Current Chrome, Edge, Firefox, Safari | |
+| Kubernetes | 1.25+, Helm 3 | ReadWriteMany storage to run several instances |
+| External PostgreSQL | 14+, with the `pg_trgm` extension | Optional |
+| Browser | Current Chrome, Edge, Firefox, Safari | Importing an export of hundreds of MB needs 1–2 GB of free browser memory (less if you unzip it and choose the folder) |
 
 ## 1. One-line install
 
