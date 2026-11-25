@@ -27,7 +27,8 @@ export function Monitor() {
   const cap = s.limitBytes ?? (s.disk ? s.usedBytes + s.disk.free : s.usedBytes)
   const pct = cap ? Math.min(100, (s.usedBytes / cap) * 100) : 0
   const warn = s.limitBytes ? pct >= 80 : !!s.disk && s.disk.free / s.disk.total < 0.1
-  const stale = !d.backups?.latestAuto || Date.now() - new Date(d.backups.latestAuto).getTime() > 36 * 3600 * 1000
+  const every = d.backups?.policy?.intervalHours ?? 24
+  const stale = !d.backups?.latestAuto || Date.now() - new Date(d.backups.latestAuto).getTime() > every * 1.5 * 3600 * 1000
   const maxEdits = Math.max(1, ...d.activity.map((a: any) => a.edits))
   const c = d.counts
 
@@ -98,6 +99,7 @@ export function Monitor() {
               </p>
               <p className="muted small">{t('mon.backups.count', { n: d.backups.count, size: bytes(d.backups.bytes) })}</p>
               {stale && <p className="error small">{t('mon.backups.stale')}</p>}
+              <BackupPolicyForm policy={d.backups.policy} onSaved={load} />
             </>
           )}
         </section>
@@ -167,5 +169,42 @@ export function Monitor() {
         </section>
       )}
     </div>
+  )
+}
+
+type Policy = { intervalHours: number; keep: number; maxAgeDays: number; manualMaxAgeDays: number }
+
+/** How often backups run and how long they're kept. The backup container reads it before each run. */
+function BackupPolicyForm({ policy, onSaved }: { policy: Policy; onSaved: () => void }) {
+  const [p, setP] = useState(policy)
+  const num = (k: keyof Policy, min: number, max: number, unit: string) => (
+    <label className="policy-field">
+      <span>{t(`mon.policy.${k}`)}</span>
+      <span className="row">
+        <input type="number" min={min} max={max} step={1} value={p[k]} onChange={(e) => setP({ ...p, [k]: Math.trunc(Number(e.target.value)) })} />
+        <span className="muted small">{unit}</span>
+      </span>
+    </label>
+  )
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      await api('/api/admin/backup-policy', { method: 'PUT', json: p })
+      toast(t('mon.policy.saved'))
+      onSaved()
+    } catch (err: any) {
+      toast(err.message)
+    }
+  }
+  return (
+    <form className="backup-policy" onSubmit={save}>
+      <h4>{t('mon.policy')}</h4>
+      {num('intervalHours', 1, 168, t('mon.policy.hours'))}
+      {num('keep', 1, 365, t('mon.policy.count'))}
+      {num('maxAgeDays', 0, 3650, t('mon.policy.days'))}
+      {num('manualMaxAgeDays', 0, 3650, t('mon.policy.days'))}
+      <p className="muted small">{t('mon.policy.hint')}</p>
+      <div className="actions"><button className="primary">{t('common.save')}</button></div>
+    </form>
   )
 }

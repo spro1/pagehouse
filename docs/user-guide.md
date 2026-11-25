@@ -241,6 +241,7 @@ Keep in mind:
 **Overview:**
 - storage use against the disk and an optional **storage limit**
 - the last automatic backup, content counts, edits per day and the largest files
+- the **backup policy**: how often to back up, how many backups to keep, and after how many days to delete old ones ([details](install.md#backup-and-restore))
 
 At the limit new uploads are refused, but text always saves.
 

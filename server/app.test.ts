@@ -359,6 +359,14 @@ test('admin stats, storage limit blocks uploads but never text, ZIP export respe
   const now = await admin.json('GET', `/api/pages/${child.id}`)
   assert.equal((await admin.call('PUT', `/api/pages/${child.id}`, { title: 'On/boarding', version: now.version, doc: para('text still saves') })).status, 200)
   await admin.json('PUT', '/api/admin/settings', { storageLimitGb: null })
+
+  // Backup policy: validated, saved, and what the backup container reads back.
+  assert.equal((await admin.call('PUT', '/api/admin/backup-policy', { intervalHours: 0, keep: 14, maxAgeDays: 0, manualMaxAgeDays: 0 })).status, 400)
+  assert.equal((await admin.call('PUT', '/api/admin/backup-policy', { intervalHours: 6, keep: 7, maxAgeDays: 30, manualMaxAgeDays: 90 })).status, 200)
+  const pol = (await db.query(`SELECT coalesce((v->>'intervalHours')::int, 24) || ' ' || coalesce((v->>'keep')::int, 14) || ' ' || coalesce((v->>'maxAgeDays')::int, 0) || ' ' || coalesce((v->>'manualMaxAgeDays')::int, 0) AS p
+    FROM (SELECT (SELECT value FROM settings WHERE key = 'backup') AS v) s`)).rows[0].p
+  assert.equal(pol, '6 7 30 90')
+  await db.query(`DELETE FROM settings WHERE key = 'backup'`)
   assert.equal((await upload(admin.cookie, child.id, 1000)).status, 200)
 
   const files = (buf: ArrayBuffer) => unzipSync(new Uint8Array(buf))

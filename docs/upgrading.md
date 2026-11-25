@@ -37,6 +37,7 @@
 - If you already set SSO in `.env`, it keeps working: environment variables win over the screen, which shows them read-only. To manage it on the screen, remove the `OIDC_*` lines from `.env` and enter the same values there.
 - **Signing out also signs out of the SSO provider.** Allow the wiki address ending in `/` as a post-logout redirect URI at the provider (Keycloak: *Valid post logout redirect URIs*), or the provider will refuse the return. People signed in before the upgrade need to sign in once more. See the [SSO guide](sso.md).
 - **New `SECRET_KEY` in `.env`**, added automatically by the upgrade. It encrypts the SSO client secret in the database; a secret saved earlier is encrypted the next time it's read. Keep a copy of `.env`: backups don't contain the key. Manual or Helm installs: set `SECRET_KEY` to a long random value yourself (e.g. `openssl rand -hex 32`).
+- **Backup policy in Admin → Overview**: interval, how many automatic backups to keep, and optional age limits, including for manual and pre-upgrade backups. `BACKUP_INTERVAL_HOURS` / `BACKUP_KEEP` stay as defaults. The compose file changed, so the upgrade recreates the backup container (it takes a backup right away).
 
 ### 0.2.0-beta.2 → 0.2.0-beta.3
 

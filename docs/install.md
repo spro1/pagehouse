@@ -120,7 +120,7 @@ Restart after changing it: `docker compose up -d`.
 | `SMTP_URL`, `SMTP_FROM` | empty | Notification emails and "Forgot your password?" reset links. For example `smtp://user:pass@mail.example.com:587`. Links in mail need `PUBLIC_URL` |
 | `LINK_PREVIEW` / `LINK_PREVIEW_ALLOW` | `1` / empty | Link cards fetch a pasted link's title and image from the server. Private and loopback addresses are refused unless listed, e.g. `jira.corp.local,.gitlab.corp.local` |
 | `PAGEHOUSE_VERSION` | set by the installer | Image version. Upgrades change it |
-| `BACKUP_INTERVAL_HOURS` / `BACKUP_KEEP` | `24` / `14` | Automatic backup timing and retention |
+| `BACKUP_INTERVAL_HOURS` / `BACKUP_KEEP` | `24` / `14` | Defaults for automatic backup timing and retention. **Admin → Overview → Backup policy** overrides them without a restart |
 
 ## HTTPS
 
@@ -175,6 +175,8 @@ Pagehouse is built so that nothing you write is lost without you asking for it:
 ## Backup and restore
 
 Automatic backups need nothing from you: one when the stack starts, then every `BACKUP_INTERVAL_HOURS`. Files are named `backups/pagehouse-auto-<time>.tar.gz` (time in UTC). Copy them off the server regularly, for example with a nightly `rsync` to a NAS.
+
+**Backup policy** (Admin → Overview): how often automatic backups run, how many to keep, and optionally deleting automatic backups or manual and pre-upgrade backups (`backups/pagehouse-<time>.tar.gz`, `backups/before-upgrade/`) older than a number of days. Manual backups are kept forever unless you set that. Old backups are deleted only after a new backup succeeds. Other files in `backups/` are never touched. On Kubernetes the schedule comes from `backup.schedule` in the Helm values; the retention settings apply there too.
 
 Take a backup by hand at any time:
 
