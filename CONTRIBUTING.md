@@ -42,6 +42,13 @@ gh api -X POST repos/spro1/pagehouse/rulesets --input .github/rulesets/release.j
 gh api -X POST repos/spro1/pagehouse/rulesets --input .github/rulesets/tags.json
 ```
 
+## AI tools
+
+You may use AI coding tools. Whoever opens the pull request is responsible for it: understand every line,
+test it, and make sure nothing in it comes from code you aren't allowed to use. If a tool wrote a meaningful part
+of a commit, say so with a trailer such as `Co-Authored-By: Claude <noreply@anthropic.com>`; no other label is
+needed in the pull request.
+
 ## Pull requests
 
 - `npm run typecheck` and `npm test` must pass. Add a test for server changes.
