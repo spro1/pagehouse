@@ -20,7 +20,7 @@ body {
 }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
-img { max-width: 100%; display: block; }
+img { max-width: 100%; height: auto; display: block; }
 code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
 
@@ -76,11 +76,15 @@ h2 { font-size: clamp(26px, 3.4vw, 36px); letter-spacing: -0.015em; line-height:
 .facts td { color: var(--text-2); }
 @media (max-width: 640px) { .facts th { white-space: normal; width: 34%; } .facts th, .facts td { padding: 12px; } }
 
-/* Screens */
-.screens { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); }
-.screens figure { margin: 0; }
-.screens img { border-radius: 12px; border: 1px solid var(--line); box-shadow: var(--shadow); }
-.screens figcaption { text-align: center; color: var(--muted); font-size: 14px; margin-top: 10px; }
+/* Screens: one screenshot at a time, switched by tabs (CSS only), so the section stays one image tall. */
+.screens { position: relative; max-width: 900px; margin: 0 auto; }
+.screens input { position: absolute; top: 0; left: 0; opacity: 0; pointer-events: none; }
+.screen-tabs { display: flex; justify-content: center; gap: 6px; margin-bottom: 16px; }
+.screen-tabs label { cursor: pointer; padding: 7px 16px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; color: var(--text-2); background: var(--card); }
+#shot-dark:checked ~ .screen-tabs label[for="shot-dark"], #shot-search:checked ~ .screen-tabs label[for="shot-search"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+#shot-dark:focus-visible ~ .screen-tabs label[for="shot-dark"], #shot-search:focus-visible ~ .screen-tabs label[for="shot-search"] { outline: 2px solid var(--accent); outline-offset: 2px; }
+.screen { display: none; width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--line); box-shadow: var(--shadow); }
+#shot-dark:checked ~ .screen-dark, #shot-search:checked ~ .screen-search { display: block; }
 
 /* Install */
 .tabs { display: grid; gap: 16px; grid-template-columns: 1fr; }

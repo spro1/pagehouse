@@ -83,9 +83,15 @@
 
   <section class="block soft">
     <div class="wrap">
-      <div class="screens">
-        <figure><img src="images/screenshot-dark.png" width="1440" height="900" alt="A Pagehouse page in the dark theme" loading="lazy"><figcaption>Dark theme</figcaption></figure>
-        <figure><img src="images/screenshot-search.png" width="1440" height="900" alt="The ⌘K quick search" loading="lazy"><figcaption>⌘K quick search</figcaption></figure>
+      <div class="screens" role="group" aria-label="Screenshots">
+        <input type="radio" name="shot" id="shot-dark" checked>
+        <input type="radio" name="shot" id="shot-search">
+        <div class="screen-tabs">
+          <label for="shot-dark">Dark theme</label>
+          <label for="shot-search">⌘K quick search</label>
+        </div>
+        <img class="screen screen-dark" src="images/screenshot-dark.png" width="1440" height="900" alt="A Pagehouse page in the dark theme" loading="lazy">
+        <img class="screen screen-search" src="images/screenshot-search.png" width="1440" height="900" alt="The ⌘K quick search" loading="lazy">
       </div>
     </div>
   </section>
