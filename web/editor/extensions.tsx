@@ -5,7 +5,7 @@ import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import StarterKit from '@tiptap/starter-kit'
 import { Image } from '@tiptap/extension-image'
-import { TableKit } from '@tiptap/extension-table'
+import { TableCell, TableHeader, TableKit } from '@tiptap/extension-table'
 import { TaskItem, TaskList } from '@tiptap/extension-list'
 import { Placeholder } from '@tiptap/extensions'
 import { Highlight } from '@tiptap/extension-highlight'
@@ -44,7 +44,26 @@ import sql from 'highlight.js/lib/languages/sql'
 import typescript from 'highlight.js/lib/languages/typescript'
 import xml from 'highlight.js/lib/languages/xml'
 import yaml from 'highlight.js/lib/languages/yaml'
-import { forwardRef, useEffect, useImperativeHandle, useState } from 'react'
+import dart from 'highlight.js/lib/languages/dart'
+import elixir from 'highlight.js/lib/languages/elixir'
+import erlang from 'highlight.js/lib/languages/erlang'
+import graphql from 'highlight.js/lib/languages/graphql'
+import groovy from 'highlight.js/lib/languages/groovy'
+import haskell from 'highlight.js/lib/languages/haskell'
+import less from 'highlight.js/lib/languages/less'
+import lua from 'highlight.js/lib/languages/lua'
+import objectivec from 'highlight.js/lib/languages/objectivec'
+import perl from 'highlight.js/lib/languages/perl'
+import php from 'highlight.js/lib/languages/php'
+import powershell from 'highlight.js/lib/languages/powershell'
+import protobuf from 'highlight.js/lib/languages/protobuf'
+import r from 'highlight.js/lib/languages/r'
+import ruby from 'highlight.js/lib/languages/ruby'
+import scala from 'highlight.js/lib/languages/scala'
+import scss from 'highlight.js/lib/languages/scss'
+import swift from 'highlight.js/lib/languages/swift'
+import vbnet from 'highlight.js/lib/languages/vbnet'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { t } from '../i18n.ts'
 import { Mention } from '@tiptap/extension-mention'
 import { api, listPeople, type Person } from '../api.ts'
@@ -299,8 +318,65 @@ const Slash = Extension.create({
   },
 })
 
-const lowlight = createLowlight({ bash, c, cpp, csharp, css, diff, dockerfile, go, ini, java, javascript, json, kotlin, makefile, markdown, nginx, plaintext, properties, python, rust, shell, sql, typescript, xml, yaml })
-lowlight.registerAlias({ xml: ['html', 'svg'], bash: ['sh', 'zsh'], yaml: ['yml'], javascript: ['js', 'jsx'], typescript: ['ts', 'tsx'], ini: ['toml'], dockerfile: ['docker'], python: ['py'] })
+const lowlight = createLowlight({ bash, c, cpp, csharp, css, diff, dockerfile, go, ini, java, javascript, json, kotlin, makefile, markdown, nginx, plaintext, properties, python, rust, shell, sql, typescript, xml, yaml,
+  dart, elixir, erlang, graphql, groovy, haskell, less, lua, objectivec, perl, php, powershell, protobuf, r, ruby, scala, scss, swift, vbnet })
+lowlight.registerAlias({ xml: ['html', 'svg'], bash: ['sh', 'zsh'], yaml: ['yml'], javascript: ['js', 'jsx'], typescript: ['ts', 'tsx'], ini: ['toml'], dockerfile: ['docker'], python: ['py'], ruby: ['rb'], powershell: ['ps1', 'pwsh'], protobuf: ['proto'], graphql: ['gql'], objectivec: ['objc'], perl: ['pl'], haskell: ['hs'], elixir: ['ex', 'exs'] })
+
+// ---------- Table cells with a background color ----------
+const cellBackground = {
+  background: {
+    default: null,
+    // Imported HTML (Confluence) carries it as an inline style.
+    parseHTML: (el: HTMLElement) => el.getAttribute('data-bg') || el.style.backgroundColor || null,
+    renderHTML: (a: { background?: string | null }) => (a.background ? { 'data-bg': a.background, style: `background-color: ${a.background}` } : {}),
+  },
+}
+const ColorCell = TableCell.extend({ addAttributes() { return { ...this.parent?.(), ...cellBackground } } })
+const ColorHeader = TableHeader.extend({ addAttributes() { return { ...this.parent?.(), ...cellBackground } } })
+
+// ---------- Images: drag the corner to resize, type a caption under it ----------
+function ImageView({ node, updateAttributes, editor, selected }: NodeViewProps) {
+  const { src, alt, width, caption } = node.attrs
+  const img = useRef<HTMLImageElement>(null)
+  const resize = (e: React.PointerEvent) => {
+    e.preventDefault()
+    const el = img.current!
+    const startX = e.clientX
+    const startW = el.getBoundingClientRect().width
+    const max = (el.closest('.ProseMirror') as HTMLElement | null)?.clientWidth ?? startW * 4
+    const move = (ev: PointerEvent) => (el.style.width = `${Math.round(Math.min(max, Math.max(48, startW + ev.clientX - startX)))}px`)
+    const up = () => {
+      removeEventListener('pointermove', move)
+      removeEventListener('pointerup', up)
+      updateAttributes({ width: parseInt(el.style.width) || null })
+    }
+    addEventListener('pointermove', move)
+    addEventListener('pointerup', up)
+  }
+  return (
+    <NodeViewWrapper as="figure" className={`image-figure${selected ? ' selected' : ''}`} data-drag-handle>
+      <span className="image-frame">
+        <img ref={img} src={src} alt={alt || caption || ''} style={width ? { width } : undefined} draggable={false} />
+        {editor.isEditable && <span className="image-resize" title={t('image.resize')} onPointerDown={resize} onDoubleClick={() => updateAttributes({ width: null })} />}
+      </span>
+      {editor.isEditable
+        ? <input className="image-caption" value={caption ?? ''} placeholder={t('image.caption')} aria-label={t('image.caption')} maxLength={300}
+            onChange={(e) => updateAttributes({ caption: e.target.value || null })} />
+        : caption && <figcaption>{caption}</figcaption>}
+    </NodeViewWrapper>
+  )
+}
+const FigureImage = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      width: { default: null, parseHTML: (el) => Number(el.getAttribute('width')) || null, renderHTML: (a) => (a.width ? { width: a.width } : {}) },
+      caption: { default: null, parseHTML: (el) => el.getAttribute('data-caption'), renderHTML: (a) => (a.caption ? { 'data-caption': a.caption } : {}) },
+    }
+  },
+  // Keys typed into the caption box belong to it, not to the editor.
+  addNodeView: () => ReactNodeViewRenderer(ImageView, { stopEvent: ({ event }) => (event.target as HTMLElement).tagName === 'INPUT' }),
+})
 
 /** Text an inline comment points at. Overlaps other comments; the comment list decides which ones are highlighted. */
 export const CommentMark = Mark.create({
@@ -465,8 +541,10 @@ export function extensions(live?: Live) {
     StarterKit.configure({ codeBlock: false, link: { openOnClick: false, autolink: true }, ...(live && { undoRedo: false }) }),
     ...(live ? [Collaboration.configure({ document: live.doc }), CollaborationCaret.configure({ provider: live.provider, user: live.user })] : []),
     CodeBlockLowlight.configure({ lowlight, defaultLanguage: null }),
-    Image,
-    TableKit.configure({ table: { resizable: true } }),
+    FigureImage,
+    TableKit.configure({ table: { resizable: true }, tableCell: false, tableHeader: false }),
+    ColorCell,
+    ColorHeader,
     TaskList,
     TaskItem.configure({ nested: true }),
     // Several highlight colors; a plain toggle still gives the default yellow.

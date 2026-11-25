@@ -19,3 +19,8 @@ test('markdown in: blocks and inline marks, and a round trip through our own exp
   // Our export reads back to the same document.
   assert.deepEqual(fromMarkdown(toMarkdown('T', doc).replace(/^# T\n\n/, '')), doc)
 })
+
+test('markdown out: an image caption becomes the title', () => {
+  const md = toMarkdown('T', { type: 'doc', content: [{ type: 'image', attrs: { src: 'a.png', alt: 'x', caption: 'say "hi"' } }] })
+  assert.ok(md.includes('![x](a.png "say \\"hi\\"")'), md)
+})

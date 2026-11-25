@@ -82,12 +82,12 @@ Type `/` on an empty line for the same block menu. Keep typing to filter (`/tabl
 |---|---|
 | Headings 1–3 | Appear in the **Contents** on the right |
 | Bullet, numbered and to-do lists | Tab / Shift+Tab to indent |
-| Table | Click inside for a menu: add or delete rows and columns, header row, merge cells (select by dragging or Shift+click) and split them |
+| Table | Click inside for a menu: add or delete rows and columns, header row, merge cells (select by dragging or Shift+click) and split them, cell background color |
 | Info, warning, success and danger panels | Click the panel icon to change the kind |
-| Code block | Pick the language in the menu above it. Hover for a **Copy** button, top right |
+| Code block | Pick the language in the menu above it (about 45, from Bash, Python, Go and Java to PHP, Ruby, Swift and PowerShell). Hover for a **Copy** button, top right |
 | Diagram | Write Mermaid syntax and the diagram draws below it |
 | Link card | Paste a URL on an empty line to get a card with title, description and image |
-| Image or file | Paste or drop it, too. Images show in the page; other files become download links. Up to 50 MB each |
+| Image or file | Paste or drop it, too. Images show in the page; drag an image's bottom-right corner to resize it (double-click it for the original size) and type a caption under it. Other files become download links. Up to 50 MB each |
 
 Selecting text opens a formatting menu: bold, italic, strikethrough, code, highlight, **link**, **comment**, headings.
 

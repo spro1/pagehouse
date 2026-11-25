@@ -910,3 +910,21 @@ pre.diff { margin: 0; max-height: 60vh; overflow: auto; font-size: 13px; line-he
 .backup-policy .policy-field { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 13px; }
 .backup-policy .policy-field input { width: 80px; }
 .backup-policy .actions { display: flex; justify-content: flex-end; }
+
+/* Table cell colors in the table menu */
+.cell-colors { display: inline-flex; gap: 3px; align-items: center; }
+.cell-colors .swatch { width: 20px; height: 20px; min-width: 0; padding: 0; border: 1px solid var(--line); border-radius: 5px; }
+.cell-colors .swatch:first-child span { background: linear-gradient(to top right, transparent 45%, var(--danger, #dc2626) 47% 53%, transparent 55%); }
+
+/* Images: resizable, with a caption */
+.doc .image-figure { margin: 12px 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.doc .image-frame { position: relative; display: inline-block; max-width: 100%; line-height: 0; }
+.doc .image-frame img { max-width: 100%; height: auto; border-radius: 4px; }
+.doc .image-figure.selected .image-frame img { outline: 2px solid var(--accent); outline-offset: 2px; }
+.doc .image-resize { position: absolute; right: -5px; bottom: -5px; width: 12px; height: 12px; border-radius: 3px; background: var(--accent); border: 2px solid var(--bg, #fff); cursor: nwse-resize; opacity: 0; transition: opacity .1s; }
+.doc .image-frame:hover .image-resize, .doc .image-figure.selected .image-resize { opacity: 1; }
+.doc .image-caption { border: none; background: transparent; padding: 2px 0; font-size: 13px; color: var(--muted); width: 100%; outline: none; }
+.doc .image-caption:focus { color: var(--text); }
+.doc .image-caption:placeholder-shown { opacity: 0; }
+.doc .image-figure:hover .image-caption:placeholder-shown, .doc .image-figure.selected .image-caption:placeholder-shown, .doc .image-caption:focus { opacity: 1; }
+.doc figcaption { font-size: 13px; color: var(--muted); }

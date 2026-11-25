@@ -928,6 +928,17 @@ test('HTML export: a browsable folder with the page tree, relative links and esc
   assert.match(styled, /<span style="color:#dc2626">red<\/span>/)
   assert.match(styled, /<mark style="background:rgba\(250, 204, 21, 0.35\)">hl<\/mark>/)
   assert.ok(!styled.includes('url(https://x)') && styled.includes('<u>evil</u>'))
+  // Image width and caption, cell colors; a hostile color never reaches the style attribute.
+  const fig = toHtmlPage({ title: 't', space: 's', css: 'c', home: 'h', crumbs: [], nav: [], url: (u) => u, doc: { type: 'doc', content: [
+    { type: 'image', attrs: { src: 'a.png', alt: '', width: 240.4, caption: 'cap <b>' } },
+    { type: 'table', content: [{ type: 'tableRow', content: [
+      { type: 'tableCell', attrs: { background: 'rgba(59, 130, 246, 0.25)' }, content: [{ type: 'paragraph' }] },
+      { type: 'tableCell', attrs: { background: 'red;x:url(y)' }, content: [{ type: 'paragraph' }] },
+    ] }] },
+  ] } })
+  assert.match(fig, /<figure><img src="a.png" alt="cap &lt;b&gt;" style="width:240px"><figcaption>cap &lt;b&gt;<\/figcaption><\/figure>/)
+  assert.match(fig, /<td style="background:rgba\(59, 130, 246, 0.25\)">/)
+  assert.ok(!fig.includes('url(y)'))
   assert.ok(html.includes('자식 &lt;script&gt;'), 'nav titles escaped')
   assert.match(new TextDecoder().decode(files['HTML 부모/index.html']), /href="HTML%20%EB%B6%80%EB%AA%A8\.html"/)
   // Markdown stays the default.
