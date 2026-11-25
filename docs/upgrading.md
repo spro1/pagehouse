@@ -6,7 +6,7 @@
 
 | Installed with | Upgrade |
 |---|---|
-| One-line install (Docker, Podman) | In the install folder: `scripts/upgrade.sh <version>`, e.g. `scripts/upgrade.sh 0.2.0-beta.3` |
+| One-line install (Docker, Podman) | In the install folder: `scripts/upgrade.sh <version>`, e.g. `scripts/upgrade.sh 0.2.0-beta.4` |
 | Offline bundle | Extract the new bundle and run `sh pagehouse-<version>/install.sh --dir <install folder>` |
 | Kubernetes (Helm) | `helm upgrade <name> pagehouse-<version>.tgz -n <namespace> --reuse-values` |
 
@@ -30,7 +30,7 @@
 
 ## Notes per version
 
-### 0.2.0-beta.3 → next (unreleased)
+### 0.2.0-beta.3 → 0.2.0-beta.4
 
 - Database: migration `023` (webhooks) runs automatically at start. Other settings go into the existing `settings` table.
 - **SSO can be set up in Admin → SSO.** Saving applies it at once, without a restart.

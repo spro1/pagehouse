@@ -20,20 +20,25 @@ DATABASE_URL=postgres://pagehouse:pagehouse@localhost:55432/pagehouse_test npm r
 
 ## How changes get in
 
-`main` only changes through pull requests:
+Work for the next version collects on a release branch, `release/<version>` (e.g. `release/0.2.0`), and `main`
+only moves when a version is released, so `main` always matches the latest release.
 
-1. Fork the repository (or create a branch, if you're a maintainer) and open a pull request against `main`.
-2. CI (`test` and `image`) must pass, and the branch must be up to date with `main`.
+1. Fork the repository (or create a branch, if you're a maintainer) and open a pull request against the current
+   `release/*` branch. Fixes that must go out on their own get a new release branch for a patch version.
+2. CI (`test` and `image`) must pass, and the branch must be up to date with its target.
 3. A maintainer (see `.github/CODEOWNERS`) reviews it, and every review thread must be resolved. Approvals aren't
    enforced yet because there is one maintainer; raise `required_approving_review_count` in the ruleset when
    there are more.
-4. It's merged as one squashed commit. Direct pushes, force pushes and deleting `main` are refused, and only
-   maintainers create release tags (`v*`).
+4. It's merged as one squashed commit. Direct pushes and force pushes to `main` and `release/*` are refused,
+   `main` can't be deleted, and only maintainers create release tags (`v*`).
+5. To release, a maintainer opens a pull request from `release/<version>` to `main`; see
+   [docs/releasing.md](docs/releasing.md).
 
 The rules are kept in `.github/rulesets/`. A maintainer applies them with:
 
 ```sh
 gh api -X POST repos/spro1/pagehouse/rulesets --input .github/rulesets/main.json
+gh api -X POST repos/spro1/pagehouse/rulesets --input .github/rulesets/release.json
 gh api -X POST repos/spro1/pagehouse/rulesets --input .github/rulesets/tags.json
 ```
 
