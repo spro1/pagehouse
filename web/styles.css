@@ -510,7 +510,7 @@ button.locked:hover { color: var(--danger); }
 .search-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
 .search-box input { height: 50px; padding: 0; border: 0; background: none; box-shadow: none !important; font-size: 16px; color: var(--text); }
 .search-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0 20px; }
-.search-filters select { width: auto; height: 32px; font-size: 13.5px; }
+.search-filters select { width: auto; max-width: 200px; height: 32px; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .search-count { display: flex; align-items: center; gap: 12px; height: 28px; margin-bottom: 8px; font-size: 13px; color: var(--muted); }
 .search-results { list-style: none; margin: 0; padding: 0; }
 .search-results li + li { border-top: 1px solid var(--line); }
