@@ -825,6 +825,22 @@ test('favorites and recently viewed: per person, only pages they can still see',
   assert.ok(!(await x.json('GET', '/api/me/quick')).starred.some((p: any) => p.id === fav.id))
 })
 
+test('page icon: one emoji, shown in the tree, removable, editors only', async () => {
+  const x = client()
+  await x.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  const [space] = await x.json('GET', '/api/spaces')
+  const page = await x.json('POST', '/api/pages', { spaceId: space.id, title: 'Iconic' })
+  for (const icon of ['🚀', '👩‍💻', '🇰🇷', '👍🏽', '❤️']) assert.deepEqual(await x.json('PUT', `/api/pages/${page.id}/icon`, { icon }), { icon }, icon)
+  for (const icon of ['abc', '12', '<b>', '🚀'.repeat(9), 5]) assert.equal((await x.call('PUT', `/api/pages/${page.id}/icon`, { icon })).status, 400, String(icon))
+  assert.equal((await x.json('GET', `/api/pages/${page.id}`)).icon, '❤️')
+  assert.equal((await x.json('GET', `/api/spaces/${space.id}/pages`)).find((p: any) => p.id === page.id).icon, '❤️')
+  assert.deepEqual(await x.json('PUT', `/api/pages/${page.id}/icon`, { icon: null }), { icon: null })
+  await x.call('PUT', `/api/pages/${page.id}/restrictions`, { entries: [{ userId: (await x.json('GET', '/api/me')).id, level: 'edit' }] })
+  const bob = client()
+  await bob.call('POST', '/api/auth/login', { email: 'bob@b.co', password: 'newpassword' })
+  assert.equal((await bob.call('PUT', `/api/pages/${page.id}/icon`, { icon: '🔥' })).status, 404)
+})
+
 test('templates: saved from a page, per space or global, removable', async () => {
   const admin = client()
   await admin.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })

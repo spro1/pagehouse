@@ -790,3 +790,34 @@ pre.diff { margin: 0; max-height: 60vh; overflow: auto; font-size: 13px; line-he
 .dropdown .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .dropdown button > :not(.ellipsis) { flex: none; }
 .space-list { max-height: min(360px, 50vh); overflow-y: auto; }
+
+/* Editor toolbar: stays at the top while the page scrolls. */
+.toolbar { position: sticky; top: 0; z-index: 20; display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin: 0 0 20px; padding: 4px 6px;
+  background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04); }
+.toolbar > button, .toolbar-insert > button { min-width: 30px; height: 30px; padding: 0 7px; border: 0; background: none; font-size: 13.5px; color: var(--text-2); }
+.toolbar > button:hover:not(:disabled), .toolbar-insert > button:hover { background: var(--bg-hover); }
+.toolbar > button.on { background: var(--bg-active); color: var(--text); }
+.toolbar > button:disabled { opacity: 0.35; }
+.toolbar select { width: auto; height: 30px; border: 0; background-color: transparent; font-size: 13.5px; }
+.toolbar .sep { width: 1px; height: 18px; margin: 0 4px; background: var(--line); }
+.toolbar-insert { position: relative; }
+.toolbar-insert .dropdown { width: 240px; max-height: 60vh; overflow-y: auto; }
+.toolbar-insert .dropdown button { height: 38px; }
+.toolbar-insert .slash-icon { width: 26px; height: 26px; font-size: 12px; }
+@media (max-width: 720px) { .toolbar { position: static; } }
+
+/* Page icon (emoji before the title) */
+.page-icon { position: relative; margin-bottom: 4px; }
+.page-icon-btn { height: auto; padding: 0 4px; border: 0; background: none; font-size: 52px; line-height: 1.1; }
+.page-icon-btn:hover:not(:disabled) { background: var(--bg-hover); }
+.page-icon-btn:disabled { cursor: default; opacity: 1; }
+.page-icon-add { height: 28px; padding: 0 8px; font-size: 13px; color: var(--muted); opacity: 0; transition: opacity 0.15s; }
+.doc-col:hover .page-icon-add, .page-icon-add:focus-visible { opacity: 1; }
+.emoji-pop { position: absolute; z-index: 30; top: 100%; left: 0; width: 320px; padding: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12); }
+.emoji-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; }
+.emoji-grid button { height: 34px; padding: 0; font-size: 20px; }
+.emoji-foot { display: flex; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.emoji-foot input { flex: 1; height: 30px; }
+.emoji-foot button { height: 30px; }
+.page-emoji { margin-right: 6px; }
+@media print { .toolbar, .page-icon-add { display: none !important; } }

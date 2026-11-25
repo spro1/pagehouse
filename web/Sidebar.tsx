@@ -225,7 +225,7 @@ function Tree({ pages, current, onAdd, onMoved }: { pages: PageNode[]; current: 
                   <Icon name="chevron" size={13} />
                 </span>
               </button>
-              <a href={`#/p/${p.id}`} draggable={false}>{p.title || t('common.untitled')}</a>
+              <a href={`#/p/${p.id}`} draggable={false}>{p.icon && <span className="page-emoji">{p.icon}</span>}{p.title || t('common.untitled')}</a>
               {p.locked && (
                 <span className="lock" title={t('tree.locked')} aria-label={t('tree.locked')}>
                   <Icon name="lock" size={12} />
@@ -262,7 +262,7 @@ function ThemeButton() {
   )
 }
 
-type Quick = { id: number; title: string; kind: string }
+type Quick = { id: number; title: string; kind: string; icon: string | null }
 /** Favorites and recently viewed pages, across spaces. Refreshed as pages open and stars change. */
 function QuickLinks({ current }: { current: number | null }) {
   const [q, setQ] = useState<{ starred: Quick[]; recent: Quick[] }>({ starred: [], recent: [] })
@@ -287,7 +287,7 @@ function QuickLinks({ current }: { current: number | null }) {
   }
   const link = (x: Quick) => (
     <a key={x.id} className={`nav-item quick ${x.id === current ? 'on' : ''}`} href={`#/p/${x.id}`}>
-      <Icon name="page" size={14} /> <span className="ellipsis">{x.title || t('common.untitled')}</span>
+      {x.icon ? <span className="page-emoji">{x.icon}</span> : <Icon name="page" size={14} />} <span className="ellipsis">{x.title || t('common.untitled')}</span>
     </a>
   )
   return (

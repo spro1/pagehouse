@@ -1,4 +1,6 @@
 import { Labels } from './Labels.tsx'
+import { Toolbar } from './editor/Toolbar.tsx'
+import { PageIcon } from './PageIcon.tsx'
 import { useEffect, useRef, useState } from 'react'
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react'
 import { BubbleMenu } from '@tiptap/react/menus'
@@ -40,7 +42,7 @@ function clearDraft(id: number) {
 type Page = {
   id: number; title: string; doc: any; version: number; updatedAt: string; updatedBy: string
   createdAt: string; createdBy: string; space: { id: number; name: string }; ancestors: { id: number; title: string }[]
-  access: 'edit' | 'view'; restricted: boolean; watching: boolean; labels: string[]; starred: boolean
+  access: 'edit' | 'view'; restricted: boolean; watching: boolean; labels: string[]; starred: boolean; icon: string | null
 }
 
 export function PageView({ id, me, onTitle, onDeleted }: { id: number; me: User; onTitle: (t: string) => void; onDeleted: () => void }) {
@@ -379,6 +381,8 @@ function LoadedPage({ page, live, me, onTitle, onDeleted }: { page: Page; live: 
 
       <div className="page-body">
         <article className="doc-col">
+          {canEdit && <Toolbar editor={editor} />}
+          <PageIcon pageId={page.id} initial={page.icon} canEdit={canEdit} />
           <textarea
             className="title"
             rows={1}

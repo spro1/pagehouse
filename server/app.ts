@@ -436,7 +436,7 @@ export function createApp(db: Db, dataDir: string) {
   app.get('/api/spaces/:id/pages', async (c) =>
     c.json(
       await all(
-        `SELECT p.id, p.parent_id AS "parentId", p.kind, p.title,
+        `SELECT p.id, p.parent_id AS "parentId", p.kind, p.title, p.icon,
            EXISTS (SELECT 1 FROM page_restrictions r WHERE r.page_id = p.id) AS locked
          FROM pages p WHERE p.space_id = $1 AND p.deleted_at IS NULL AND ${visible('p', 2, 3)} ORDER BY p.position, p.id`,
         [id(c), ...who(c)],
@@ -557,7 +557,7 @@ export function createApp(db: Db, dataDir: string) {
         )).id))
       const doc = JSON.parse(JSON.stringify(r.doc).replace(/\/api\/files\/(\d+)/g, (m, f) => (files.has(f) ? `/api/files/${files.get(f)}` : m)))
       const t = i === 0 ? title : r.title
-      await db.query('UPDATE pages SET doc = $2, text = $3 WHERE id = $1', [to, doc, docText(doc)])
+      await db.query('UPDATE pages SET doc = $2, text = $3, icon = $4 WHERE id = $1', [to, doc, docText(doc), r.icon])
       if (i === 0) await db.query('UPDATE page_versions SET doc = $2 WHERE page_id = $1', [to, doc])
       else await db.query('INSERT INTO page_versions (page_id, version, title, doc, author_id) VALUES ($1, 1, $2, $3, $4)', [to, t, doc, uid])
       await db.query('INSERT INTO page_restrictions (page_id, user_id, group_id, level) SELECT $1, user_id, group_id, level FROM page_restrictions WHERE page_id = $2', [to, r.id])
@@ -592,6 +592,7 @@ export function createApp(db: Db, dataDir: string) {
       createdAt: p.created_at, createdBy: p.created_by_name,
       space: { id: p.space_id, name: p.space_name, key: p.space_key }, ancestors,
       access: a,
+      icon: p.icon,
       labels: (await all('SELECT label FROM page_labels WHERE page_id = $1 ORDER BY label', [p.id])).map((r) => r.label),
       starred: !!(await one('SELECT 1 FROM page_stars WHERE page_id = $1 AND user_id = $2', [p.id, c.get('user').id])),
       watching: !!(await one('SELECT 1 FROM page_watches WHERE page_id = $1 AND user_id = $2', [p.id, c.get('user').id])),
@@ -627,6 +628,18 @@ export function createApp(db: Db, dataDir: string) {
        GROUP BY l.label ORDER BY count(*) DESC, l.label LIMIT 100`,
       [...who(c), `${q.replace(/[\\%_]/g, '\\$&')}%`],
     ))
+  })
+
+  // One emoji (any sequence: flags, skin tones, ZWJ families), or null to remove it.
+  app.put('/api/pages/:id/icon', async (c) => {
+    const denied = await guard(c, id(c), 'edit')
+    if (denied) return denied
+    const b = await c.req.json().catch(() => ({}))
+    const icon = b.icon === null || b.icon === '' ? null : typeof b.icon === 'string' ? b.icon.trim() : undefined
+    if (icon === undefined || (icon !== null && (icon.length > 16 || !/^[\p{Extended_Pictographic}\p{Regional_Indicator}\u200d\ufe0f\u20e3\p{Emoji_Modifier}\p{Emoji_Component}]+$/u.test(icon) || !/[\p{Extended_Pictographic}\p{Regional_Indicator}\u20e3]/u.test(icon))))
+      return fail(c, 400, 'bad_request')
+    await db.query('UPDATE pages SET icon = $2 WHERE id = $1', [id(c), icon])
+    return c.json({ icon })
   })
 
   app.put('/api/pages/:id/star', async (c) => {
