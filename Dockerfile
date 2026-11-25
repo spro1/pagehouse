@@ -1,12 +1,12 @@
 # Build the web app, then ship only the server, its three runtime packages and the built assets.
-FROM docker.io/library/node:24-alpine AS build
+FROM docker.io/library/node:26-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 RUN npm run build && npm prune --omit=dev
 
-FROM docker.io/library/node:24-alpine
+FROM docker.io/library/node:26-alpine
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="Pagehouse" \
       org.opencontainers.image.description="Self-hosted team wiki" \
