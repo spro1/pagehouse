@@ -299,6 +299,9 @@ button.locked { color: var(--danger); }
 button.locked:hover { color: var(--danger); }
 
 .page-body { display: grid; grid-template-columns: minmax(0, 1fr) 232px; gap: 40px; max-width: 1200px; margin: 0 auto; padding: 0 40px; }
+/* No table of contents (fewer than two headings): the text gets the whole width. */
+.page-body:has(> .side-col:empty:not(.panel)) { grid-template-columns: minmax(0, 1fr); }
+.side-col:empty:not(.panel) { display: none; }
 .doc-col { min-width: 0; max-width: 780px; width: 100%; justify-self: center; padding: 48px 0 160px; }
 .title {
   display: block; width: 100%; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none !important;
@@ -558,11 +561,11 @@ button.locked:hover { color: var(--danger); }
 .inherit-note .icon-svg { margin-top: 2px; }
 
 /* ───────────── Responsive ───────────── */
-@media (max-width: 1100px) {
-  .page-body { grid-template-columns: minmax(0, 1fr); }
-  .side-col:not(.panel) { display: none; }
-  .side-col.panel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 20; width: min(320px, 90vw); max-height: none; padding: 20px; background: var(--bg); border-left: 1px solid var(--line); box-shadow: var(--shadow-lg); }
-}
+/* Decided by the page area's own width (App sets .narrow-page), not the window's, so a wider sidebar hides the
+   table of contents first and the text keeps its width. */
+.layout.narrow-page .page-body { grid-template-columns: minmax(0, 1fr); }
+.layout.narrow-page .side-col:not(.panel) { display: none; }
+.layout.narrow-page .side-col.panel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 20; width: min(320px, 90vw); max-height: none; padding: 20px; background: var(--bg); border-left: 1px solid var(--line); box-shadow: var(--shadow-lg); }
 @media (max-width: 760px) {
   .layout { grid-template-columns: 1fr; }
   .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 35; width: min(288px, 86vw); transform: translateX(-100%); transition: transform 0.22s var(--ease); box-shadow: var(--shadow-lg); }

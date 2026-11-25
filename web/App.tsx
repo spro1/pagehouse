@@ -268,6 +268,16 @@ function Workspace({ me, route, onLogout }: { me: User; route: Route; onLogout: 
     return () => removeEventListener('resize', on)
   }, [])
   const shownNavW = Math.min(navW, navMax())
+  // The page area's width (the window minus the sidebar) decides whether the table of contents fits beside the text.
+  const mainRef = useRef<HTMLElement>(null)
+  const [narrow, setNarrow] = useState(false)
+  useEffect(() => {
+    const el = mainRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setNarrow(el.clientWidth < 1100))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
   // Scrollbars show while scrolling only (see .scrolling in styles.css).
   const scrollTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const onMainScroll = (e: React.UIEvent<HTMLElement>) => {
@@ -357,7 +367,7 @@ function Workspace({ me, route, onLogout }: { me: User; route: Route; onLogout: 
   else main = <Home me={me} spaceId={spaceId} onCreate={(tpl) => createPage(null, tpl)} />
 
   return (
-    <div className={`layout ${navOpen ? 'nav-open' : ''} ${collapsed ? 'nav-collapsed' : ''}`} style={{ '--nav-w': `${shownNavW}px` } as React.CSSProperties}>
+    <div className={`layout ${navOpen ? 'nav-open' : ''} ${collapsed ? 'nav-collapsed' : ''} ${narrow ? 'narrow-page' : ''}`} style={{ '--nav-w': `${shownNavW}px` } as React.CSSProperties}>
       <button className="nav-toggle ghost icon" aria-label={t('nav.menu')} aria-expanded={navOpen} onClick={() => setNavOpen(true)}>
         <Icon name="menu" size={18} />
       </button>
@@ -393,7 +403,7 @@ function Workspace({ me, route, onLogout }: { me: User; route: Route; onLogout: 
             if (step) (e.preventDefault(), saveNavW(Math.min(navMax(), Math.max(220, shownNavW + step))))
           }} />
       )}
-      <main onScroll={onMainScroll}>
+      <main ref={mainRef} onScroll={onMainScroll}>
         <Crash key={location.hash}><Suspense fallback={<div className="loading" />}>{main}</Suspense></Crash>
       </main>
       {palette && <Palette onClose={() => setPalette(false)} />}
