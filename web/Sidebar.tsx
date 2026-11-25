@@ -3,7 +3,7 @@ import { api, toast, type PageNode, type Space, type User } from './api.ts'
 import { t } from './i18n.ts'
 import { Icon } from './icons.tsx'
 import { Bell } from './Notifications.tsx'
-import { confirmDialog, copyText } from './ui.tsx'
+import { confirmDialog, copyText, Avatar } from './ui.tsx'
 import { applyTheme, theme as currentTheme, type Theme } from './theme.ts'
 
 type Props = {
@@ -55,11 +55,8 @@ export function Sidebar(p: Props) {
                   <button role="menuitem" onClick={() => (setSpaceMenu(false), dispatchEvent(new CustomEvent('ph:import', { detail: { parentId: null } })))}>
                     <Icon name="plus" /> {t('import.space')}
                   </button>
-                  <a role="menuitem" className="menu-link" href={`/api/spaces/${p.spaceId}/export`} download onClick={() => setSpaceMenu(false)}>
-                    <Icon name="page" /> {t('export.space')}
-                  </a>
-                  <a role="menuitem" className="menu-link" href={`/api/spaces/${p.spaceId}/export?format=html`} download onClick={() => setSpaceMenu(false)}>
-                    <Icon name="page" /> {t('export.spaceHtml')}
+                  <a role="menuitem" className="menu-link" href={`#/export?space=${p.spaceId}`} onClick={() => setSpaceMenu(false)}>
+                    <Icon name="page" /> {t('export.spaceMenu')}
                   </a>
                   <hr />
                 </>
@@ -111,7 +108,7 @@ export function Sidebar(p: Props) {
           </a>
         )}
         <div className="me">
-          <span className="avatar">{p.me.name.slice(0, 1)}</span>
+          <Avatar id={p.me.id} name={p.me.name} />
           <a href="#/settings" className={`me-name ${p.route === 'settings' ? 'on' : ''}`}>{p.me.name}</a>
           <ThemeButton />
           <button className="ghost icon" title={t('nav.logout')} aria-label={t('nav.logout')} onClick={p.onLogout}>

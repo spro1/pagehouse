@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
+import { Avatar } from './ui.tsx'
 import { api, ago, fullDate, listPeople } from './api.ts'
 import { t, type Key } from './i18n.ts'
 import { Icon } from './icons.tsx'
 
-type Item = { id: number; kind: string; createdAt: string; readAt: string | null; pageId: number; page: string; excerpt: string | null; actor: string | null }
+type Item = { id: number; kind: string; createdAt: string; readAt: string | null; pageId: number; page: string; excerpt: string | null; actor: string | null; actorId?: number | null }
 
 /** Comments keep mentions as <@id>; show them as names. */
 export async function mentionsToNames(text: string) {
@@ -70,7 +71,7 @@ export function Bell() {
                 className={`notif ${i.readAt ? '' : 'unread'}`}
                 onClick={() => (setOpen(false), !i.readAt && read([i.id]))}
               >
-                <span className="avatar">{(i.actor ?? '?').slice(0, 1)}</span>
+                <Avatar id={i.actorId} name={i.actor ?? '?'} />
                 <span className="notif-body">
                   <span>{notificationText(i)}</span>
                   {i.excerpt && <small className="notif-excerpt">{i.excerpt}</small>}

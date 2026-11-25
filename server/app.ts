@@ -2,7 +2,7 @@ import { Hono, type Context } from 'hono'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 import { bodyLimit } from 'hono/body-limit'
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
-import { createReadStream, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { createReadStream, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { Readable } from 'node:stream'
 import { compress } from 'hono/compress'
 import { secureHeaders } from 'hono/secure-headers'
@@ -13,7 +13,7 @@ import { registerExport } from './export.ts'
 import { oidcConfig, registerSso } from './sso.ts'
 import { createCollab } from './collab.ts'
 import { auditMiddleware, registerAudit } from './audit.ts'
-import { mailEnabled } from './mail.ts'
+import { mailEnabled, sendMail } from './mail.ts'
 import { registerMcp } from './mcp.ts'
 import { registerPreview } from './preview.ts'
 import { createNodeWebSocket } from '@hono/node-ws'
@@ -229,6 +229,7 @@ export function createApp(db: Db, dataDir: string) {
       signupOpen: process.env.ALLOW_SIGNUP === '1',
       sso: sso?.label ?? null,
       passwordLogin: !sso || process.env.PASSWORD_LOGIN !== '0',
+      mail: mailEnabled(),
       link: (await liveInvite(c.req.query('token')))?.purpose ?? null,
     }),
   )
@@ -278,7 +279,7 @@ export function createApp(db: Db, dataDir: string) {
     if (row.disabled_at) return fail(c, 403, 'account_disabled')
     if (sso && process.env.PASSWORD_LOGIN === '0' && row.role !== 'admin') return fail(c, 403, 'use_sso')
     await startSession(c, row.id)
-    return c.json({ id: row.id, email: row.email, name: row.name, role: row.role, locale: row.locale, theme: row.theme })
+    return c.json({ id: row.id, email: row.email, name: row.name, role: row.role, locale: row.locale, theme: row.theme, avatar: !!row.avatar, mustChangePassword: row.must_change_password })
   })
 
   app.post('/api/auth/reset', async (c) => {
@@ -304,6 +305,28 @@ export function createApp(db: Db, dataDir: string) {
     return c.json({ id: u.id, email: u.email, name: u.name, role: u.role, locale: u.locale })
   })
 
+  // Forgot password: with mail set up, a one-hour reset link goes to the address. The answer is the same whether
+  // or not the address has an account, so this can't be used to find out who does.
+  app.post('/api/auth/forgot', async (c) => {
+    if (!mailEnabled()) return fail(c, 404, 'mail_off')
+    const b = await c.req.json().catch(() => ({}))
+    const email = String(b.email ?? '').trim().toLowerCase()
+    if (throttled(c, `forgot:${email}`)) return tooMany(c)
+    failed(c, `forgot:${email}`) // every request counts toward the limit, so nobody gets flooded with mail
+    const u = email && (await one('SELECT id, locale FROM users WHERE email = $1 AND disabled_at IS NULL', [email]))
+    if (u) {
+      const token = randomBytes(24).toString('hex')
+      await db.query(`INSERT INTO invites (token_hash, purpose, user_id, created_by, expires_at) VALUES ($1, 'reset', $2, $2, now() + interval '1 hour')`, [sha256(token), u.id])
+      const base = process.env.PUBLIC_URL?.replace(/\/$/, '') || new URL(c.req.url).origin
+      const ko = u.locale === 'ko'
+      await sendMail(email, ko ? '[Pagehouse] 비밀번호 재설정' : '[Pagehouse] Reset your password',
+        (ko ? '아래 링크에서 새 비밀번호를 정하세요. 링크는 1시간 동안 한 번만 쓸 수 있습니다.\n\n' : 'Choose a new password at the link below. It works once, for one hour.\n\n') +
+        `${base}/#/reset/${token}\n\n` + (ko ? '요청하지 않았다면 이 메일은 무시하세요.' : 'If you didn’t ask for this, ignore this email.'),
+      ).catch((e) => console.error('forgot-password mail failed:', e.message))
+    }
+    return c.json({ ok: true })
+  })
+
   app.post('/api/auth/logout', async (c) => {
     const token = getCookie(c, 'sid')
     if (token) await db.query('DELETE FROM sessions WHERE token_hash = $1', [sha256(token)])
@@ -319,7 +342,7 @@ export function createApp(db: Db, dataDir: string) {
     const bearer = c.req.header('authorization')?.match(/^Bearer\s+(ph_[A-Za-z0-9_-]+)$/)?.[1]
     const user = token
       ? await one(
-          `SELECT u.id, u.email, u.name, u.role, u.locale, u.theme FROM sessions s JOIN users u ON u.id = s.user_id
+          `SELECT u.id, u.email, u.name, u.role, u.locale, u.theme, u.avatar IS NOT NULL AS avatar, u.must_change_password AS "mustChangePassword" FROM sessions s JOIN users u ON u.id = s.user_id
            WHERE s.token_hash = $1 AND s.expires_at > now() AND u.disabled_at IS NULL`,
           [sha256(token)],
         )
@@ -327,7 +350,7 @@ export function createApp(db: Db, dataDir: string) {
         ? await one(
             `UPDATE api_tokens t SET last_used_at = now() FROM users u
              WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND u.id = t.user_id AND u.disabled_at IS NULL
-             RETURNING u.id, u.email, u.name, u.role, u.locale, u.theme`,
+             RETURNING u.id, u.email, u.name, u.role, u.locale, u.theme, u.avatar IS NOT NULL AS avatar, u.must_change_password AS "mustChangePassword"`,
             [sha256(bearer)],
           )
         : undefined
@@ -340,15 +363,44 @@ export function createApp(db: Db, dataDir: string) {
   app.get('/api/me', async (c) =>
     c.json({ ...c.get('user'), mail: mailEnabled(), emailNotify: (await one('SELECT email_notify FROM users WHERE id = $1', [c.get('user').id]))?.email_notify }))
 
+  // Profile photo: the browser sends a small square image (it resizes before uploading).
+  app.put('/api/me/avatar', async (c) => {
+    const file = (await c.req.parseBody()).file
+    if (!(file instanceof File) || !['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) return fail(c, 400, 'bad_request')
+    if (file.size > 1024 * 1024) return fail(c, 413, 'file_too_large')
+    const buf = Buffer.from(await file.arrayBuffer())
+    const hash = sha256(buf)
+    const path = join(filesDir, hash)
+    if (!existsSync(path)) writeFileSync(path, buf)
+    await db.query('UPDATE users SET avatar = $1 WHERE id = $2', [`${hash}:${file.type}`, c.get('user').id])
+    return c.json({ avatar: true })
+  })
+  app.delete('/api/me/avatar', async (c) => {
+    await db.query('UPDATE users SET avatar = NULL WHERE id = $1', [c.get('user').id])
+    return c.json({ avatar: false })
+  })
+  app.get('/api/users/:id/avatar', async (c) => {
+    const a = (await one('SELECT avatar FROM users WHERE id = $1', [id(c)]))?.avatar as string | undefined
+    // Cached briefly either way, so lists of people don't ask again on every render.
+    if (!a) return c.body(null, 404, { 'Cache-Control': 'private, max-age=300' })
+    const [hash, mime] = a.split(':')
+    const path = join(filesDir, hash)
+    if (!existsSync(path)) return c.body(null, 404)
+    const etag = `"${hash}"`
+    if (c.req.header('if-none-match') === etag) return c.body(null, 304)
+    return c.body(readFileSync(path), 200, { 'Content-Type': mime, ETag: etag, 'Cache-Control': 'private, max-age=300' })
+  })
+
   app.patch('/api/me', async (c) => {
     const b = await c.req.json().catch(() => ({}))
     const locale = b.locale === undefined ? undefined : LOCALES.includes(b.locale) ? b.locale : null
     const theme = b.theme === undefined ? undefined : ['system', 'light', 'dark'].includes(b.theme) ? b.theme : null
     const emailNotify = typeof b.emailNotify === 'boolean' ? b.emailNotify : null
-    if (locale === null || theme === null || (locale === undefined && theme === undefined && emailNotify === null)) return fail(c, 400, 'bad_request')
-    await db.query('UPDATE users SET locale = coalesce($1, locale), theme = coalesce($2, theme), email_notify = coalesce($3, email_notify) WHERE id = $4',
-      [locale ?? null, theme ?? null, emailNotify, c.get('user').id])
-    return c.json({ ...c.get('user'), ...(locale && { locale }), ...(theme && { theme }), ...(emailNotify !== null && { emailNotify }) })
+    const name = b.name === undefined ? undefined : str(b.name, 100) ?? null
+    if (locale === null || theme === null || name === null || (locale === undefined && theme === undefined && emailNotify === null && name === undefined)) return fail(c, 400, 'bad_request')
+    await db.query('UPDATE users SET locale = coalesce($1, locale), theme = coalesce($2, theme), email_notify = coalesce($3, email_notify), name = coalesce($5, name) WHERE id = $4',
+      [locale ?? null, theme ?? null, emailNotify, c.get('user').id, name ?? null])
+    return c.json({ ...c.get('user'), ...(locale && { locale }), ...(theme && { theme }), ...(emailNotify !== null && { emailNotify }), ...(name && { name }) })
   })
 
   app.get('/api/me/tokens', async (c) =>
@@ -379,7 +431,7 @@ export function createApp(db: Db, dataDir: string) {
       return fail(c, 400, 'wrong_password')
     }
     if (typeof b.next !== 'string' || b.next.length < 8) return fail(c, 400, 'password_short')
-    await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hashPassword(b.next), user.id])
+    await db.query('UPDATE users SET password_hash = $1, must_change_password = false WHERE id = $2', [hashPassword(b.next), user.id])
     // Sign out every other device.
     await db.query('DELETE FROM sessions WHERE user_id = $1 AND token_hash <> $2', [user.id, sha256(getCookie(c, 'sid')!)])
     return c.json({ ok: true })
@@ -405,6 +457,18 @@ export function createApp(db: Db, dataDir: string) {
   })
 
   // Password reset without a mail server: the admin hands the user a one-time link.
+  // A temporary password the admin passes on; the person must pick their own right after signing in with it.
+  app.post('/api/admin/users/:id/temp-password', async (c) => {
+    if (id(c) === c.get('user').id) return fail(c, 400, 'cannot_change_self')
+    // Easy to read out loud: no 0/O, 1/l/I.
+    const abc = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+    const password = [...randomBytes(12)].map((b) => abc[b % abc.length]).join('')
+    const r = await db.query('UPDATE users SET password_hash = $1, must_change_password = true WHERE id = $2', [hashPassword(password), id(c)])
+    if (!r.rowCount) return fail(c, 404, 'user_not_found')
+    await db.query('DELETE FROM sessions WHERE user_id = $1', [id(c)])
+    return c.json({ password })
+  })
+
   app.post('/api/admin/users/:id/reset-link', async (c) => {
     if (!(await one('SELECT 1 FROM users WHERE id = $1', [id(c)]))) return fail(c, 404, 'user_not_found')
     const token = randomBytes(24).toString('hex')

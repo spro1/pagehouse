@@ -851,3 +851,22 @@ pre.diff { margin: 0; max-height: 60vh; overflow: auto; font-size: 13px; line-he
 @media (hover: none) { .code-copy { opacity: 1; } }
 @media print { .code-copy-anchor { display: none; } }
 .row-inline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+
+.avatar { overflow: hidden; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.banner.ok { background: var(--c-success, #ecf9f0); border: 1px solid var(--c-success-line, #b9e6c6); }
+
+.box.profile { display: flex; gap: 20px; align-items: flex-start; }
+.profile-photo { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: none; }
+.profile-photo .avatar.lg { width: 72px; height: 72px; font-size: 28px; }
+.profile-form { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.profile-form label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; }
+.profile-form .row { display: flex; gap: 8px; }
+.profile-form input { flex: 1; }
+
+.export-options { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 16px; }
+.export-option { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-lg); cursor: pointer; }
+.export-option.on { border-color: var(--accent); background: var(--accent-soft); }
+.export-option input { margin-top: 3px; width: auto; }
+.export-option span { display: flex; flex-direction: column; gap: 2px; }
+.export-busy { display: inline-flex; align-items: center; gap: 8px; margin-right: auto; }

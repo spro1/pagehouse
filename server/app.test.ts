@@ -876,6 +876,47 @@ test('HTML export: a browsable folder with the page tree, relative links and esc
   assert.match((await x.call('GET', `/api/pages/${parent.id}/export`)).headers.get('content-disposition')!, /%EB%B6%80%EB%AA%A8\.zip/)
 })
 
+test('profile: name, photo; admin temporary password must be replaced; forgot needs mail', async () => {
+  const admin = client()
+  await admin.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  const { token } = await admin.json('POST', '/api/admin/invites', { role: 'member' })
+  const eve = client()
+  const me = await eve.json('POST', '/api/auth/register', { email: 'eve@b.co', name: 'Eve', password: 'password1', invite: token })
+  // Name
+  assert.equal((await eve.json('PATCH', '/api/me', { name: '  이브  ' })).name, '이브')
+  assert.equal((await eve.json('GET', '/api/me')).name, '이브')
+  assert.equal((await eve.call('PATCH', '/api/me', { name: '   ' })).status, 400)
+  // Photo: images only, served to others, removable
+  assert.equal((await eve.call('GET', `/api/users/${me.id}/avatar`)).status, 404)
+  const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='), (c) => c.charCodeAt(0))
+  const up = (type: string) => { const f = new FormData(); f.append('file', new File([png], 'a', { type })); return app.request('/api/me/avatar', { method: 'PUT', headers: { cookie: eve.cookie }, body: f }) }
+  assert.equal((await up('image/svg+xml')).status, 400)
+  assert.equal((await up('image/png')).status, 200)
+  assert.equal((await eve.json('GET', '/api/me')).avatar, true)
+  const got = await admin.call('GET', `/api/users/${me.id}/avatar`)
+  assert.equal(got.headers.get('content-type'), 'image/png')
+  assert.equal(got.headers.get('x-content-type-options'), 'nosniff')
+  await eve.call('DELETE', '/api/me/avatar')
+  assert.equal((await admin.call('GET', `/api/users/${me.id}/avatar`)).status, 404)
+  // Temporary password: old one stops working, sessions end, and the account must pick a new one.
+  const { password } = await admin.json('POST', `/api/admin/users/${me.id}/temp-password`, {})
+  assert.match(password, /^[A-Za-z2-9]{12}$/)
+  assert.equal((await eve.call('GET', '/api/me')).status, 401)
+  assert.equal((await eve.call('POST', '/api/auth/login', { email: 'eve@b.co', password: 'password1' })).status, 401)
+  const login = await eve.json('POST', '/api/auth/login', { email: 'eve@b.co', password })
+  assert.equal(login.mustChangePassword, true)
+  assert.equal((await eve.json('GET', '/api/me')).mustChangePassword, true)
+  await eve.call('POST', '/api/me/password', { current: password, next: 'brand-new-pw' })
+  assert.equal((await eve.json('GET', '/api/me')).mustChangePassword, false)
+  assert.equal((await admin.call('POST', `/api/admin/users/${(await admin.json('GET', '/api/me')).id}/temp-password`, {})).status, 400)
+  const bob = client()
+  await bob.call('POST', '/api/auth/login', { email: 'bob@b.co', password: 'newpassword' })
+  assert.equal((await bob.call('POST', `/api/admin/users/${me.id}/temp-password`, {})).status, 403)
+  // Without mail, there's no self-service reset.
+  assert.equal((await client().call('POST', '/api/auth/forgot', { email: 'eve@b.co' })).status, 404)
+  assert.equal((await client().json('GET', '/api/auth/status')).mail, false)
+})
+
 test('templates: saved from a page, per space or global, removable', async () => {
   const admin = client()
   await admin.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })

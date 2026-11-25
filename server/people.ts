@@ -229,7 +229,7 @@ export function registerPeople(app: Hono<any>, { db, fail, visibleFor }: Deps) {
     const v = visibleFor(c)
     const items = await all(
       `SELECT n.id, n.kind, n.created_at AS "createdAt", n.read_at AS "readAt", n.page_id AS "pageId", p.title AS page,
-         n.comment_id AS "commentId", left(cm.body, 200) AS excerpt, a.name AS actor
+         n.comment_id AS "commentId", left(cm.body, 200) AS excerpt, a.name AS actor, n.actor_id AS "actorId"
        FROM notifications n JOIN pages p ON p.id = n.page_id LEFT JOIN users a ON a.id = n.actor_id
        LEFT JOIN comments cm ON cm.id = n.comment_id
        WHERE n.user_id = $1 AND p.deleted_at IS NULL AND (cm.id IS NULL OR cm.deleted_at IS NULL) AND ${v.sql('p', 2)}

@@ -2,7 +2,7 @@ import { hasKey, lang, t } from './i18n.ts'
 
 export type PageNode = { id: number; parentId: number | null; kind: string; title: string; locked?: boolean; icon?: string | null }
 export type Space = { id: number; key: string; name: string; defaultAccess?: 'edit' | 'view' | 'none'; role?: 'admin' | 'edit' | 'view' | null }
-export type User = { id: number; email: string; name: string; role: string; locale: string | null; theme?: string | null }
+export type User = { id: number; email: string; name: string; role: string; locale: string | null; theme?: string | null; avatar?: boolean; mustChangePassword?: boolean }
 
 export class ApiError extends Error {
   status: number

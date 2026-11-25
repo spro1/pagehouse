@@ -16,6 +16,8 @@ const RULES: [string, RegExp, string, boolean][] = [
   ['DELETE', /^\/api\/me\/tokens\/(\d+)$/, 'token.revoke', false],
   ['PATCH', /^\/api\/admin\/users\/(\d+)$/, 'user.update', true],
   ['POST', /^\/api\/admin\/users\/(\d+)\/reset-link$/, 'user.reset_link', false],
+  ['POST', /^\/api\/admin\/users\/(\d+)\/temp-password$/, 'user.temp_password', false],
+  ['POST', /^\/api\/auth\/forgot$/, 'auth.forgot', false],
   ['POST', /^\/api\/admin\/invites$/, 'user.invite', true],
   ['PUT', /^\/api\/admin\/settings$/, 'settings.update', true],
   ['POST', /^\/api\/admin\/groups$/, 'group.create', true],

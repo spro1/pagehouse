@@ -22,6 +22,14 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 
 export const mailEnabled = () => !!process.env.SMTP_URL
 
+let direct: ReturnType<typeof nodemailer.createTransport> | null = null
+/** One message right away (password reset); notifications go through the batching mailer below. */
+export async function sendMail(to: string, subject: string, text: string) {
+  if (!process.env.SMTP_URL) throw new Error('mail is not configured')
+  direct ??= nodemailer.createTransport(process.env.SMTP_URL)
+  await direct.sendMail({ from: process.env.SMTP_FROM || 'Pagehouse <pagehouse@localhost>', to, subject, text })
+}
+
 export function startMailer(db: Db) {
   if (!process.env.SMTP_URL) return () => {}
   const transport = nodemailer.createTransport(process.env.SMTP_URL)

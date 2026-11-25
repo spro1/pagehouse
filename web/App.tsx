@@ -31,12 +31,13 @@ import type { Template } from './templates.ts'
 import { Hosts } from './ui.tsx'
 import { ImportModal } from './ImportModal.tsx'
 import { SpaceSettings } from './SpaceSettings.tsx'
+import { ExportPage } from './ExportPage.tsx'
 import { applyTheme, theme, type Theme } from './theme.ts'
 
 type Route =
   | { name: 'home' } | { name: 'page'; id: number } | { name: 'trash'; spaceId: number }
   | { name: 'admin' } | { name: 'settings' } | { name: 'invite' | 'reset'; token: string }
-  | { name: 'search'; params: URLSearchParams }
+  | { name: 'search'; params: URLSearchParams } | { name: 'export'; params: URLSearchParams }
 
 function parseRoute(): Route {
   const h = location.hash.slice(1)
@@ -45,6 +46,7 @@ function parseRoute(): Route {
   if ((m = h.match(/^\/s\/(\d+)\/trash/))) return { name: 'trash', spaceId: Number(m[1]) }
   if ((m = h.match(/^\/(invite|reset)\/([a-f0-9]+)/))) return { name: m[1] as 'invite' | 'reset', token: m[2] }
   if ((m = h.match(/^\/search(?:\?(.*))?$/))) return { name: 'search', params: new URLSearchParams(m[1] ?? '') }
+  if ((m = h.match(/^\/export\?(.*)$/))) return { name: 'export', params: new URLSearchParams(m[1]) }
   if (h === '/admin') return { name: 'admin' }
   if (h === '/settings') return { name: 'settings' }
   return { name: 'home' }
@@ -72,6 +74,10 @@ export function App() {
   }
   useEffect(() => {
     api('/api/me').then(signIn, () => setMe(null))
+    // Name or photo changed in Settings.
+    const changed = (e: Event) => setMe((e as CustomEvent<User>).detail)
+    addEventListener('ph:me', changed)
+    return () => removeEventListener('ph:me', changed)
   }, [])
   if (me === undefined) return null
   // Invite and reset links work whether or not someone is signed in on this browser.
@@ -81,7 +87,11 @@ export function App() {
       {signedOut ? (
         <Auth route={route} onDone={(u) => ((location.hash = '#/'), signIn(u))} />
       ) : (
-        <Workspace me={me} route={route} onLogout={() => setMe(null)} />
+        me.mustChangePassword ? (
+          <MustChangePassword me={me} onDone={() => setMe({ ...me, mustChangePassword: false })} />
+        ) : (
+          <Workspace me={me} route={route} onLogout={() => setMe(null)} />
+        )
       )}
       <Hosts />
     </>
@@ -90,8 +100,9 @@ export function App() {
 
 function Auth({ route, onDone }: { route: Route; onDone: (u: User) => void }) {
   const token = route.name === 'invite' || route.name === 'reset' ? route.token : undefined
-  const [status, setStatus] = useState<{ needsSetup: boolean; signupOpen: boolean; link: string | null; sso: string | null; passwordLogin: boolean }>()
-  const [mode, setMode] = useState<'login' | 'register' | 'reset'>('login')
+  const [status, setStatus] = useState<{ needsSetup: boolean; signupOpen: boolean; link: string | null; sso: string | null; passwordLogin: boolean; mail: boolean }>()
+  const [mode, setMode] = useState<'login' | 'register' | 'reset' | 'forgot'>('login')
+  const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   useEffect(() => {
@@ -115,6 +126,7 @@ function Auth({ route, onDone }: { route: Route; onDone: (u: User) => void }) {
           setBusy(true)
           const f: any = Object.fromEntries(new FormData(e.currentTarget))
           try {
+            if (mode === 'forgot') return void (await api('/api/auth/forgot', { json: { email: f.email } }), setSent(true))
             if (mode === 'reset') onDone(await api('/api/auth/reset', { json: { token, password: f.password } }))
             else if (mode === 'register') onDone(await api('/api/auth/register', { json: { ...f, invite: token } }))
             else onDone(await api('/api/auth/login', { json: f }))
@@ -138,7 +150,8 @@ function Auth({ route, onDone }: { route: Route; onDone: (u: User) => void }) {
         )}
         {mode === 'register' && <label>{t('auth.name')}<input name="name" required autoComplete="name" autoFocus /></label>}
         {mode !== 'reset' && <label>{t('auth.email')}<input name="email" type="email" required autoComplete="email" autoFocus={mode === 'login'} /></label>}
-        <label>
+        {mode === 'forgot' && sent && <div className="banner ok" role="status">{t('auth.forgot.sent')}</div>}
+        {mode !== 'forgot' && <label>
           {t('auth.password')}
           <input
             name="password"
@@ -148,17 +161,50 @@ function Auth({ route, onDone }: { route: Route; onDone: (u: User) => void }) {
             autoFocus={mode === 'reset'}
             autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
           />
-        </label>
+        </label>}
         {error && <div className="error" role="alert">{error}</div>}
-        <button className="primary big" disabled={busy}>{t(`auth.submit.${mode}`)}</button>
+        {!(mode === 'forgot' && sent) && <button className="primary big" disabled={busy}>{t(`auth.submit.${mode}`)}</button>}
         {status.signupOpen && !status.needsSetup && !token && (
           <button type="button" className="link" onClick={() => setMode(mode === 'login' ? 'register' : 'login')}>
             {mode === 'login' ? t('auth.toRegister') : t('auth.toLogin')}
           </button>
         )}
-        {mode === 'login' && <p className="muted small">{t('auth.forgot')}</p>}
+        {mode === 'login' && (status.mail
+          ? <button type="button" className="link" onClick={() => (setMode('forgot'), setError(''), setSent(false))}>{t('auth.forgot.link')}</button>
+          : <p className="muted small">{t('auth.forgot')}</p>)}
+        {mode === 'forgot' && <button type="button" className="link" onClick={() => setMode('login')}>{t('auth.toLogin')}</button>}
       </form>
       <LangSelect />
+    </div>
+  )
+}
+
+/** Signed in with a temporary password from an admin: pick your own before anything else. */
+function MustChangePassword({ me, onDone }: { me: User; onDone: () => void }) {
+  const [error, setError] = useState('')
+  return (
+    <div className="auth-wrap">
+      <form className="auth form" onSubmit={async (e) => {
+        e.preventDefault()
+        const f: any = Object.fromEntries(new FormData(e.currentTarget))
+        if (f.next !== f.confirm) return setError(t('settings.mismatch'))
+        try {
+          await api('/api/me/password', { json: { current: f.current, next: f.next } })
+          toast(t('auth.temp.done'))
+          onDone()
+        } catch (err: any) {
+          setError(err.message)
+        }
+      }}>
+        <div className="brand"><span className="logo">P</span> {t('app.name')}</div>
+        <h1>{t('auth.temp.title')}</h1>
+        <p className="muted">{t('auth.temp.sub', { name: me.name })}</p>
+        <label>{t('auth.temp.current')}<input name="current" type="password" required autoComplete="current-password" autoFocus /></label>
+        <label>{t('settings.new')}<input name="next" type="password" minLength={8} required autoComplete="new-password" /></label>
+        <label>{t('settings.confirm')}<input name="confirm" type="password" minLength={8} required autoComplete="new-password" /></label>
+        {error && <div className="error" role="alert">{error}</div>}
+        <button className="primary big">{t('auth.submit.reset')}</button>
+      </form>
     </div>
   )
 }
@@ -253,6 +299,7 @@ function Workspace({ me, route, onLogout }: { me: User; route: Route; onLogout: 
   else if (route.name === 'admin' && me.role === 'admin') main = <Admin me={me} />
   else if (route.name === 'settings') main = <Settings me={me} />
   else if (route.name === 'search') main = <SearchPage key={route.params.toString()} initial={route.params} />
+  else if (route.name === 'export') main = <ExportPage key={route.params.toString()} params={route.params} />
   else main = <Home me={me} spaceId={spaceId} onCreate={(tpl) => createPage(null, tpl)} />
 
   return (

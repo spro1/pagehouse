@@ -152,3 +152,19 @@ export function Hosts() {
     </>
   )
 }
+
+// Bumped when you change your own photo, so the new one shows at once instead of after the cache expires.
+let avatarBust = 0
+export const bumpAvatar = () => (avatarBust = Date.now())
+
+/** A person's photo, or their initial when they have none (or it fails to load). */
+export function Avatar({ id, name, size }: { id?: number | null; name: string; size?: 'lg' }) {
+  const [failed, setFailed] = useState(false)
+  useEffect(() => setFailed(false), [id])
+  const initial = (name || '?').slice(0, 1)
+  return (
+    <span className={`avatar${size ? ` ${size}` : ''}`}>
+      {id && !failed ? <img src={`/api/users/${id}/avatar${avatarBust ? `?v=${avatarBust}` : ''}`} alt="" onError={() => setFailed(true)} /> : initial}
+    </span>
+  )
+}

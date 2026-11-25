@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, listPrincipals, pkey, toast, type Principal } from './api.ts'
 import { t, type Key } from './i18n.ts'
 import { Icon } from './icons.tsx'
-import { Modal } from './ui.tsx'
+import { Modal, Avatar } from './ui.tsx'
 
 type Access = 'edit' | 'view' | 'none'
 type Role = 'admin' | 'edit' | 'view'
@@ -13,7 +13,7 @@ const ACCESS: Access[] = ['edit', 'view', 'none']
 export function PrincipalLabel({ p, me }: { p: Principal; me?: { id: number } }) {
   return (
     <>
-      <span className="avatar">{p.groupId ? <Icon name="users" size={14} /> : p.name.slice(0, 1)}</span>
+      {p.groupId ? <span className="avatar"><Icon name="users" size={14} /></span> : <Avatar id={p.userId} name={p.name} />}
       <span className="person">
         <b><span>{p.name}</span>{me && p.userId === me.id && <span className="tag">{t('common.me')}</span>}</b>
         <small>{p.groupId ? t('group.size', { n: p.size ?? 0 }) : p.email}</small>

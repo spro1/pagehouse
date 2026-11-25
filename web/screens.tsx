@@ -1,11 +1,11 @@
 import { Groups } from './Groups.tsx'
 import { Audit } from './Audit.tsx'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api, ago, fullDate, toast, type User } from './api.ts'
 import { LANGS, lang, setLang, t, type Lang } from './i18n.ts'
 import { Icon } from './icons.tsx'
 import { TEMPLATES, type Template } from './templates.ts'
-import { Modal, confirmDialog, copyText } from './ui.tsx'
+import { Modal, confirmDialog, copyText, Avatar, bumpAvatar } from './ui.tsx'
 import { Monitor } from './Monitor.tsx'
 import { mentionsToNames, notificationText } from './Notifications.tsx'
 import { AccessChoice } from './SpaceSettings.tsx'
@@ -203,7 +203,7 @@ export function Home({ me, spaceId, onCreate }: { me: User; spaceId?: number; on
               {d.forYou.map((i) => (
                 <li key={i.id} className={i.readAt ? '' : 'unread'}>
                   <a href={`#/p/${i.pageId}`}>
-                    <span className="avatar">{(i.actor ?? '?').slice(0, 1)}</span>
+                    <Avatar id={i.actorId} name={i.actor ?? '?'} />
                     <span className="notif-body">
                       <span>{notificationText(i)}</span>
                       {i.excerpt && <small className="notif-excerpt">{i.excerpt}</small>}
@@ -340,6 +340,20 @@ export function Admin({ me }: { me: User }) {
                           {t('admin.resetLink')}
                         </button>
                         <button
+                          className="link small"
+                          onClick={async () => {
+                            if (!(await confirmDialog({ title: t('admin.temp.title', { name: u.name }), body: t('admin.temp.body'), ok: t('admin.temp.issue') }))) return
+                            try {
+                              const { password } = await api(`/api/admin/users/${u.id}/temp-password`, { method: 'POST' })
+                              setShared({ label: t('admin.temp.label', { name: u.name }), url: password })
+                            } catch (e: any) {
+                              toast(e.message)
+                            }
+                          }}
+                        >
+                          {t('admin.temp')}
+                        </button>
+                        <button
                           className={`link small ${u.disabledAt ? '' : 'danger'}`}
                           onClick={async () => {
                             if (!u.disabledAt && !(await confirmDialog({ title: t('admin.disable.title', { name: u.name }), body: t('admin.disable.body'), ok: t('admin.disable'), danger: true }))) return
@@ -465,18 +479,76 @@ function MailSetting() {
   )
 }
 
+/** Square-crops and shrinks a picked photo in the browser, so uploads stay small whatever the camera made. */
+async function squareImage(file: File, size = 256): Promise<Blob> {
+  const img = await createImageBitmap(file)
+  const side = Math.min(img.width, img.height)
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = size
+  canvas.getContext('2d')!.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size)
+  return new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('image'))), 'image/jpeg', 0.88))
+}
+
+function Profile({ me }: { me: User }) {
+  const [name, setName] = useState(me.name)
+  const [photo, setPhoto] = useState(0)
+  const pick = useRef<HTMLInputElement>(null)
+  // The rest of the app learns about the change (sidebar name and photo) from this event.
+  const changed = (u: Partial<User>) => dispatchEvent(new CustomEvent('ph:me', { detail: { ...me, ...u } }))
+  return (
+    <section className="box profile">
+      <div className="profile-photo">
+        <Avatar key={photo} id={me.avatar || photo ? me.id : null} name={me.name} size="lg" />
+        <div className="row">
+          <button type="button" className="link small" onClick={() => pick.current?.click()}>{t('settings.photo.change')}</button>
+          {(me.avatar || photo > 0) && (
+            <button type="button" className="link small danger" onClick={() => api('/api/me/avatar', { method: 'DELETE' }).then(() => (bumpAvatar(), setPhoto(0), changed({ avatar: false })))}>{t('settings.photo.remove')}</button>
+          )}
+        </div>
+        <input ref={pick} type="file" hidden accept="image/png,image/jpeg,image/webp" onChange={async (e) => {
+          const f = e.target.files?.[0]
+          e.target.value = ''
+          if (!f) return
+          try {
+            const form = new FormData()
+            form.append('file', new File([await squareImage(f)], 'avatar.jpg', { type: 'image/jpeg' }))
+            await api('/api/me/avatar', { method: 'PUT', body: form })
+            setPhoto(bumpAvatar())
+            changed({ avatar: true })
+          } catch (err: any) {
+            toast(err.message)
+          }
+        }} />
+      </div>
+      <form className="profile-form" onSubmit={async (e) => {
+        e.preventDefault()
+        try {
+          const u = await api<User>('/api/me', { method: 'PATCH', json: { name } })
+          changed({ name: u.name })
+          toast(t('settings.saved'))
+        } catch (err: any) {
+          toast(err.message)
+        }
+      }}>
+        <label>{t('settings.name')}
+          <div className="row">
+            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} required />
+            <button className="primary" disabled={!name.trim() || name.trim() === me.name}>{t('common.save')}</button>
+          </div>
+        </label>
+        <div className="muted small">{me.email} {me.role === 'admin' && <span className="tag">{t('admin.role.admin')}</span>}</div>
+        <p className="muted small">{t('settings.photo.hint')}</p>
+      </form>
+    </section>
+  )
+}
+
 export function Settings({ me }: { me: User }) {
   const [msg, setMsg] = useState<{ text: string; error?: boolean }>()
   return (
     <div className="screen narrow">
       <h1>{t('settings.title')}</h1>
-      <section className="box profile">
-        <span className="avatar lg">{me.name.slice(0, 1)}</span>
-        <div>
-          <b>{me.name}</b> {me.role === 'admin' && <span className="tag">{t('admin.role.admin')}</span>}
-          <div className="muted small">{me.email}</div>
-        </div>
-      </section>
+      <Profile me={me} />
       <section className="box">
         <h3>{t('theme.label')}</h3>
         <p className="muted small">{t('theme.note')}</p>

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, listPeople, toast, type Person } from './api.ts'
 import { t } from './i18n.ts'
 import { Icon } from './icons.tsx'
-import { Modal, confirmDialog } from './ui.tsx'
+import { Modal, confirmDialog, Avatar } from './ui.tsx'
 
 type Group = { id: number; name: string; size: number }
 
@@ -87,7 +87,7 @@ function GroupModal({ id, onClose, onSaved }: { id: number | null; onClose: () =
                 ? matches.length
                   ? matches.map((p) => (
                       <li key={p.id}>
-                        <span className="avatar">{p.name.slice(0, 1)}</span>
+                        <Avatar id={p.id} name={p.name} />
                         <span className="person"><b><span>{p.name}</span></b><small>{p.email}</small></span>
                         <button className="add-btn" onClick={() => add(p)}><Icon name="plus" size={14} /> {t('access.addBtn')}</button>
                       </li>
@@ -95,7 +95,7 @@ function GroupModal({ id, onClose, onSaved }: { id: number | null; onClose: () =
                   : <li className="muted small">{t('access.noMatch', { q: q.trim() })}</li>
                 : members.map((m) => (
                     <li key={m.id}>
-                      <span className="avatar">{m.name.slice(0, 1)}</span>
+                      <Avatar id={m.id} name={m.name} />
                       <span className="person"><b><span>{m.name}</span></b><small>{m.email}</small></span>
                       <button className="ghost icon" aria-label={t('access.remove', { name: m.name })} onClick={() => setMembers(members.filter((x) => x.id !== m.id))}>
                         <Icon name="x" size={14} />

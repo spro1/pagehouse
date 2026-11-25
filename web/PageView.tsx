@@ -14,7 +14,7 @@ import { CODE_LANGUAGES, extensions, type Live } from './editor/extensions.tsx'
 import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
 import { ySyncPluginKey } from '@tiptap/y-tiptap'
-import { AutoTextarea, Modal, confirmDialog, copyText } from './ui.tsx'
+import { AutoTextarea, Modal, confirmDialog, copyText, Avatar } from './ui.tsx'
 import { diffLines, type DiffLine } from './diff.ts'
 
 // Unsaved edits are mirrored to this browser until the server confirms the save,
@@ -323,8 +323,7 @@ function LoadedPage({ page, live, me, onTitle, onDeleted }: { page: Page; live: 
               <div className="menu-label">{t('page.export')}</div>
               <button role="menuitem" onClick={() => (setMenu(false), savePdf(title))}>{t('page.print')}</button>
               <button role="menuitem" onClick={() => (setMenu(false), exportMarkdown(title, editor))}>{t('page.exportMd')}</button>
-              <a role="menuitem" className="menu-link" href={`/api/pages/${page.id}/export`} download onClick={() => setMenu(false)}>{t('export.page')}</a>
-              <a role="menuitem" className="menu-link" href={`/api/pages/${page.id}/export?format=html`} download onClick={() => setMenu(false)}>{t('export.pageHtml')}</a>
+              <a role="menuitem" className="menu-link" href={`#/export?page=${page.id}`} onClick={() => setMenu(false)}>{t('export.pageMenu')}</a>
               <hr />
               <button role="menuitem" onClick={() => (setMenu(false), setSavingTpl(true))}>{t('tpl.save')}</button>
               {([false, true] as const).map((children) => (
@@ -985,7 +984,7 @@ function CommentBody({ c, me, onDelete }: { c: Comment; me: User; onDelete: () =
   return (
     <>
       <div className="comment-head">
-        <span className="avatar">{c.author.slice(0, 1)}</span>
+        <Avatar id={c.authorId} name={c.author} />
         <b>{c.author}</b>
         <span className="muted small" title={fullDate(c.createdAt)}>{ago(c.createdAt)}</span>
         {(c.authorId === me.id || me.role === 'admin') && (
@@ -1078,7 +1077,7 @@ function Composer({ placeholder, compact, onSubmit }: { placeholder: string; com
         <div className="slash-menu people-menu composer-mentions" role="listbox">
           {matches.map((p, i) => (
             <button key={p.id} role="option" aria-selected={i === sel} className={i === sel ? 'active' : ''} onMouseEnter={() => setSel(i)} onMouseDown={(e) => (e.preventDefault(), pick(p))}>
-              <span className="avatar">{p.name.slice(0, 1)}</span>
+              <Avatar id={p.id} name={p.name} />
               <span><b>{p.name}</b><small>{p.email}</small></span>
             </button>
           ))}
