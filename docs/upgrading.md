@@ -6,7 +6,7 @@
 
 | Installed with | Upgrade |
 |---|---|
-| One-line install (Docker, Podman) | In the install folder: `scripts/upgrade.sh <version>`, e.g. `scripts/upgrade.sh 0.2.0-beta.5` |
+| One-line install (Docker, Podman) | In the install folder: `scripts/upgrade.sh <version>`, e.g. `scripts/upgrade.sh 0.3.0` |
 | Offline bundle | Extract the new bundle and run `sh pagehouse-<version>/install.sh --dir <install folder>` |
 | Kubernetes (Helm) | `helm upgrade <name> pagehouse-<version>.tgz -n <namespace> --reuse-values` |
 
@@ -30,10 +30,19 @@
 
 ## Notes per version
 
+### 0.2.0-beta.5 → 0.3.0
+
+No database changes. One new optional setting.
+- **Monitoring.** Admin → Overview shows **Server health** (database, memory, server delay, recent errors, waiting notifications, overdue backup). For Prometheus, set `METRICS_TOKEN` in `.env` and scrape `/metrics`; see [Monitoring](monitoring.md). Without the token, `/metrics` stays off.
+- **Fixed: picking a block from the `/` menu (for example a table), or closing ⌘K search, could crash the page** in recent Chrome and Edge with "This screen couldn't be shown". Nothing was lost; reloading brought the page back.
+- **Installer:** a new install into a folder whose earlier install left its database behind now stops and explains what to do, instead of failing later with `auth_failed`.
+- **Product page** at https://spro1.github.io/pagehouse/.
+- From this version `releases/latest` points at it, so the one-line install no longer needs `--version`.
+
 ### 0.2.0-beta.4 → 0.2.0-beta.5
 
 Fixes only; no database or settings changes.
-- **`scripts/upgrade.sh` stopped right after the pre-upgrade backup** and reported nothing, so the version didn't change (the backup step swallowed the rest of the piped installer). If an upgrade left you on the old version, just run `scripts/upgrade.sh 0.2.0-beta.5`: the new installer works with the old script, and the extra backups it left in `backups/before-upgrade/` are harmless.
+- **`scripts/upgrade.sh` stopped right after the pre-upgrade backup** and reported nothing, so the version didn't change (the backup step swallowed the rest of the piped installer). If an upgrade left you on the old version, just run `scripts/upgrade.sh 0.3.0`: the new installer works with the old script, and the extra backups it left in `backups/before-upgrade/` are harmless.
 - **The first automatic backup of a new install failed** when nothing had been uploaded yet; the next try came a day later. Manual backups (`scripts/backup.sh`) and the Kubernetes backup job had the same problem.
 
 ### 0.2.0-beta.3 → 0.2.0-beta.4

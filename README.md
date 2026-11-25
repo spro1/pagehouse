@@ -88,10 +88,10 @@ Requires Docker 24+ or Podman 4+. Pick the option that matches your environment.
 curl -fsSL https://github.com/spro1/pagehouse/releases/latest/download/install.sh | sh -s -- --dir /opt/pagehouse
 ```
 
-During the beta, pin the version:
+To install a specific version:
 
 ```sh
-curl -fsSL https://github.com/spro1/pagehouse/releases/download/v0.2.0-beta.5/install.sh | sh -s -- --dir /opt/pagehouse --version 0.2.0-beta.5
+curl -fsSL https://github.com/spro1/pagehouse/releases/download/v0.3.0/install.sh | sh -s -- --dir /opt/pagehouse --version 0.3.0
 ```
 
 The installer:

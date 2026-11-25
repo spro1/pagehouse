@@ -103,7 +103,7 @@
         <div class="card">
           <h3>인터넷이 되는 서버 <span class="tag">가장 간단</span></h3>
           <p>DB 비밀번호와 암호화 키를 만들고, 이미지를 받아 서비스를 띄웁니다.</p>
-<pre class="cmd"><code>curl -fsSL https://github.com/spro1/pagehouse/releases/download/v0.2.0-beta.5/install.sh | sh -s -- --dir /opt/pagehouse --version 0.2.0-beta.5</code></pre>
+<pre class="cmd"><code>curl -fsSL https://github.com/spro1/pagehouse/releases/latest/download/install.sh | sh -s -- --dir /opt/pagehouse</code></pre>
         </div>
         <div class="card">
           <h3>폐쇄망</h3>
@@ -140,7 +140,7 @@ sh pagehouse-&lt;버전&gt;/install.sh --dir /opt/pagehouse</code></pre>
       <details><summary>정말 무료인가요?</summary><p>네. Apache-2.0 라이선스의 오픈소스이고 사용자 수 제한도 없습니다. 서버 비용만 듭니다.</p></details>
       <details><summary>몇 명까지 쓸 수 있나요?</summary><p>2~4 vCPU, 4GB 메모리면 200명 정도까지 권장합니다. 더 큰 조직은 쿠버네티스에서 앱을 여러 대 띄우고 외부 PostgreSQL을 쓸 수 있습니다.</p></details>
       <details><summary>회사 계정(SSO)으로 로그인할 수 있나요?</summary><p>네. OpenID Connect를 지원하면 관리 → SSO에서 바로 켤 수 있습니다. 지금까지 Keycloak과 연동을 테스트했습니다.</p></details>
-      <details><summary>지금 써도 되나요?</summary><p>현재 베타입니다. 기능은 실제 업무에 쓸 수 있는 수준이지만, 정식 버전 전까지 바뀌는 부분이 있을 수 있으니 업그레이드 전에 업그레이드 가이드를 확인하세요. 자동 백업이 기본으로 켜져 있습니다.</p></details>
+      <details><summary>지금 써도 되나요?</summary><p>네, 실제 업무에 쓸 수 있습니다. 1.0 전까지는 버전 사이에 바뀌는 부분이 있을 수 있으니 업그레이드 전에 업그레이드 가이드를 확인하세요. 자동 백업이 기본으로 켜져 있고, 모든 릴리스는 이전 버전을 설치한 뒤 업그레이드하는 테스트를 거칩니다.</p></details>
       <details><summary>문제가 있거나 기능을 제안하고 싶어요.</summary><p><a href="https://github.com/spro1/pagehouse/issues">GitHub 이슈</a>에 남겨 주세요. 보안 문제는 <a href="https://github.com/spro1/pagehouse/security">비공개 보고</a>로 알려 주세요.</p></details>
     </div>
   </section>
