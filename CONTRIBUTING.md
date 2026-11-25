@@ -25,7 +25,7 @@ only moves when a version is released, so `main` always matches the latest relea
 
 1. Fork the repository (or create a branch, if you're a maintainer) and open a pull request against the current
    `release/*` branch. Fixes that must go out on their own get a new release branch for a patch version.
-2. CI (`test` and `image`) must pass, and the branch must be up to date with its target.
+2. CI (`test`, `image` and `e2e`) must pass, and the branch must be up to date with its target.
 3. A maintainer (see `.github/CODEOWNERS`) reviews it, and every review thread must be resolved. Approvals aren't
    enforced yet because there is one maintainer; raise `required_approving_review_count` in the ruleset when
    there are more.
