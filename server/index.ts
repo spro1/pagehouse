@@ -27,6 +27,8 @@ app.use('*', async (c, next) => {
   if (c.res.headers.get('content-type')?.startsWith('text/html')) c.header('Cache-Control', 'no-cache')
 })
 app.use('*', serveStatic({ root: './dist' }))
+// A build file that isn't there (an old tab asking for the previous release's code) must fail as such, not get the HTML page.
+app.get('/assets/*', (c) => c.text('Not found', 404))
 app.get('*', serveStatic({ path: './dist/index.html' }))
 
 const port = Number(process.env.PORT ?? 3000)

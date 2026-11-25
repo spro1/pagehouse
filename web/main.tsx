@@ -1,7 +1,7 @@
 import { t } from './i18n.ts'
 import './theme.ts'
 import { createRoot } from 'react-dom/client'
-import { App } from './App.tsx'
+import { App, reloadForNewRelease } from './App.tsx'
 import './styles.css'
 
 // The browser words its own form warnings ("fill out this field", "use at least 8 characters") in the OS language,
@@ -16,6 +16,12 @@ addEventListener('invalid', (e) => {
   else if (v.tooLong) el.setCustomValidity(t('valid.tooLong', { n: el.maxLength }))
   else if (v.typeMismatch && el.type === 'url') el.setCustomValidity(t('valid.url'))
 }, true)
+// After an upgrade, a tab still running the old release can't load its old code files: reload once to get the new
+// release. The flag stops a loop if loading keeps failing for another reason (network down).
+addEventListener('vite:preloadError', (e) => {
+  e.preventDefault()
+  reloadForNewRelease()
+})
 // A custom message sticks until cleared, so clear it as the person types.
 addEventListener('input', (e) => (e.target as HTMLInputElement).setCustomValidity?.(''), true)
 

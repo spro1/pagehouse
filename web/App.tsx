@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
+import { Component, Suspense, lazy, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { api, toast, type PageNode, type Space, type User } from './api.ts'
 import { lang, setLang, t } from './i18n.ts'
 import { SearchPage } from './Search.tsx'
@@ -6,7 +6,23 @@ import { Icon } from './icons.tsx'
 import { Sidebar } from './Sidebar.tsx'
 // The editor (Tiptap, syntax highlighting) is most of the bundle: load it only when a page opens,
 // and fetch it in the background once the app is idle so opening the first page stays instant.
-const loadPageView = () => import('./PageView.tsx')
+export function reloadForNewRelease() {
+  try {
+    if (sessionStorage.getItem('ph:reloaded') === location.href) return
+    sessionStorage.setItem('ph:reloaded', location.href)
+  } catch {}
+  location.reload()
+}
+const loadPageView = () =>
+  import('./PageView.tsx').then(
+    (m) => {
+      try {
+        sessionStorage.removeItem('ph:reloaded')
+      } catch {}
+      return m
+    },
+    (e) => (reloadForNewRelease(), Promise.reject(e)),
+  )
 const PageView = lazy(() => loadPageView().then((m) => ({ default: m.PageView })))
 if ('requestIdleCallback' in window) requestIdleCallback(() => void loadPageView())
 else setTimeout(() => void loadPageView(), 1500)
@@ -262,7 +278,7 @@ function Workspace({ me, route, onLogout }: { me: User; route: Route; onLogout: 
         onSpaceSettings={() => setSpaceSettings(true)}
       />
       <main>
-        <Suspense fallback={<div className="loading" />}>{main}</Suspense>
+        <Crash key={location.hash}><Suspense fallback={<div className="loading" />}>{main}</Suspense></Crash>
       </main>
       {palette && <Palette onClose={() => setPalette(false)} />}
       {spaceSettings && spaceId && (
@@ -291,4 +307,28 @@ function Workspace({ me, route, onLogout }: { me: User; route: Route; onLogout: 
       )}
     </div>
   )
+}
+
+/** Something broke while drawing a screen: show that instead of a blank page, keep the sidebar, and let the person
+ *  reload. Moving to another page (the key changes) tries again. */
+class Crash extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null }
+  static getDerivedStateFromError(error: Error) {
+    return { error }
+  }
+  componentDidCatch(error: Error) {
+    console.error(error)
+  }
+  render() {
+    if (!this.state.error) return this.props.children
+    return (
+      <div className="screen">
+        <div className="empty-box">
+          <p><b>{t('crash.title')}</b></p>
+          <p className="muted small">{t('crash.body')}</p>
+          <button className="primary" onClick={() => location.reload()}>{t('crash.reload')}</button>
+        </div>
+      </div>
+    )
+  }
 }
