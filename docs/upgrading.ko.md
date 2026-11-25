@@ -6,7 +6,7 @@
 
 | 설치 방식 | 업그레이드 방법 |
 |---|---|
-| 한 줄 설치(Docker·Podman) | 설치 폴더에서 `scripts/upgrade.sh <버전>`. 예: `scripts/upgrade.sh 0.2.0-beta.2` |
+| 한 줄 설치(Docker·Podman) | 설치 폴더에서 `scripts/upgrade.sh <버전>`. 예: `scripts/upgrade.sh 0.2.0-beta.3` |
 | 오프라인 번들 | 새 번들을 풀고 `sh pagehouse-<버전>/install.sh --dir <설치 폴더>` |
 | 쿠버네티스(Helm) | `helm upgrade <이름> pagehouse-<버전>.tgz -n <네임스페이스> --reuse-values` |
 
@@ -30,7 +30,7 @@
 
 ## 버전별 확인 사항
 
-### 0.2.0-beta.2 → 다음 버전 (아직 릴리스 전)
+### 0.2.0-beta.2 → 0.2.0-beta.3
 
 - DB 변경 없음, 설정 변경 없음.
 - **에디터:** 글자 색, 배경색, 밑줄, 정렬, 링크, 서식 지우기 버튼이 툴바에 생겼습니다. Markdown으로 내보내면 색은 빠집니다(Markdown에 색 표현이 없습니다). HTML 내보내기에는 남습니다.
