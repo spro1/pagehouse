@@ -103,7 +103,9 @@ Restart after changing it: `docker compose up -d`.
 | `OIDC_LABEL` | `SSO` | Text on the sign-in button |
 | `OIDC_AUTO_CREATE` | `1` | `0` lets in only people who already have an account with that email |
 | `PASSWORD_LOGIN` | `1` | `0` with SSO on: only administrators can still sign in with a password |
-| `SMTP_URL`, `SMTP_FROM` | empty | Email for unread notifications, e.g. `smtp://user:pass@mail.example.com:587`. Links in mail need `PUBLIC_URL` |
+| `TRUST_PROXY` | `0` | Number of reverse proxies in front. Set `1` behind a proxy so sign-in throttling and the audit log see real client addresses; `0` for direct connections (the Helm chart sets `1` when ingress is on) |
+| `OIDC_TRUST_EMAIL` | `0` | SSO accounts are matched by email, so only emails the provider marks verified are accepted. `1` for providers that never send `email_verified` (some Entra ID setups) — only if users can't change their email there |
+| `SMTP_URL`, `SMTP_FROM` | empty | Notification emails and "Forgot your password?" reset links. For example `smtp://user:pass@mail.example.com:587`. Links in mail need `PUBLIC_URL` |
 | `LINK_PREVIEW` / `LINK_PREVIEW_ALLOW` | `1` / empty | Link cards fetch a pasted link's title and image from the server. Private and loopback addresses are refused unless listed, e.g. `jira.corp.local,.gitlab.corp.local` |
 | `PAGEHOUSE_VERSION` | set by the installer | Image version. Upgrades change it |
 | `BACKUP_INTERVAL_HOURS` / `BACKUP_KEEP` | `24` / `14` | Automatic backup timing and retention |
@@ -212,6 +214,10 @@ PostgreSQL 14+ with the `pg_trgm` extension available. The first start runs `CRE
 | Large uploads fail | Raise the proxy body limit (nginx `client_max_body_size`) |
 | No new backups | `docker compose logs backup`; free disk space |
 | Which version is running? | `curl localhost:3000/healthz` |
+| Suddenly a blank screen | A tab left open across an upgrade: reload once. If it persists, the page says "This screen couldn't be shown" and the cause is in the browser console |
+| Copy buttons do nothing | Current versions copy on plain HTTP too; reload an old tab |
+| `/healthz` answers 503 (`relay: down`) | With several instances, the database notification link has been down over a minute. Fix the database; the app reconnects |
+| Forgotten password | With `SMTP_URL`, the sign-in page sends a reset email; otherwise an admin issues a reset link or temporary password in **Admin → People** |
 
 ## Uninstall
 

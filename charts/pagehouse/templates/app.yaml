@@ -56,6 +56,10 @@ spec:
                   name: {{ .Values.externalDatabase.existingSecret | default (include "pagehouse.secret" .) }}
                   key: url
             - { name: ALLOW_SIGNUP, value: {{ ternary "1" "0" .Values.allowSignup | quote }} }
+            {{- if .Values.ingress.enabled }}
+            # Behind the ingress: count the address it adds to X-Forwarded-For (sign-in throttling, audit log).
+            - { name: TRUST_PROXY, value: "1" }
+            {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

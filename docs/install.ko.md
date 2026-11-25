@@ -96,14 +96,16 @@ docker compose up -d --build
 |---|---|---|
 | `POSTGRES_PASSWORD` | 설치 스크립트가 생성 | DB 비밀번호. 나중에 바꾸려면 Postgres 안에서도 바꿔야 합니다 |
 | `PORT` | `3000` | 서버에서 열 포트 |
-| `BIND_ADDRESS` | `0.0.0.0` | 같은 서버의 리버스 프록시로만 받으려면 `127.0.0.1` |
+| `BIND_ADDRESS` | `0.0.0.0` | 같은 서버의 리버스 프록시로만 받으려면 `127.0.0.1`(이때 `TRUST_PROXY=1`도) |
 | `ALLOW_SIGNUP` | `0` | `1`이면 접속 가능한 누구나 가입 |
 | `PUBLIC_URL` | (요청에서 추정) | 사용자가 접속하는 주소. 예: `https://wiki.example.com`. SSO 리디렉션과 메일 링크에 쓰임 |
 | `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | 비어 있음 | OpenID Connect SSO(Keycloak, Entra ID, Google Workspace, Okta 등). 리디렉션 URI: `<PUBLIC_URL>/api/auth/oidc/callback` |
 | `OIDC_LABEL` | `SSO` | 로그인 버튼 문구 |
 | `OIDC_AUTO_CREATE` | `1` | `0`이면 같은 이메일 계정이 이미 있는 사람만 로그인 |
 | `PASSWORD_LOGIN` | `1` | SSO를 켠 상태에서 `0`이면 관리자만 비밀번호 로그인 가능 |
-| `SMTP_URL`, `SMTP_FROM` | 비어 있음 | 읽지 않은 알림을 메일로 보냄. 예: `smtp://user:pass@mail.example.com:587`. 메일 속 링크는 `PUBLIC_URL`이 있어야 함 |
+| `TRUST_PROXY` | `0` | 앞단 리버스 프록시 수. 프록시 뒤라면 `1`로 두어야 로그인 시도 제한과 감사 로그가 실제 접속 주소를 씁니다. 직접 접속이면 `0`(Helm은 인그레스를 켜면 자동으로 `1`) |
+| `OIDC_TRUST_EMAIL` | `0` | SSO 계정은 이메일로 연결되므로 제공자가 확인(verified)한 이메일만 받습니다. `email_verified`를 보내지 않는 제공자(일부 Entra ID)에서 `1`. 사용자가 제공자 쪽 이메일을 직접 바꿀 수 없을 때만 쓰세요 |
+| `SMTP_URL`, `SMTP_FROM` | 비어 있음 | 읽지 않은 알림 메일과 "비밀번호를 잊으셨나요?" 재설정 메일. 예: `smtp://user:pass@mail.example.com:587`. 메일 속 링크는 `PUBLIC_URL`이 있어야 함 |
 | `LINK_PREVIEW` / `LINK_PREVIEW_ALLOW` | `1` / 비어 있음 | 링크 카드: 서버가 붙여 넣은 링크의 제목과 이미지를 가져옴. 사설·루프백 주소는 목록에 있어야 허용. 예: `jira.corp.local,.gitlab.corp.local` |
 | `PAGEHOUSE_VERSION` | 설치 스크립트가 지정 | 이미지 버전. 업그레이드가 바꿉니다 |
 | `BACKUP_INTERVAL_HOURS` / `BACKUP_KEEP` | `24` / `14` | 자동 백업 주기와 보관 개수 |
@@ -212,6 +214,10 @@ scripts/upgrade.sh 0.2.0      # 특정 버전
 | 큰 파일 업로드 실패 | 프록시 업로드 크기 제한(nginx `client_max_body_size`)을 올리세요 |
 | 새 백업이 안 생김 | `docker compose logs backup`, 디스크 여유 공간 |
 | 실행 중인 버전 확인 | `curl localhost:3000/healthz` |
+| 갑자기 빈 화면 | 업그레이드 직후 열려 있던 탭이면 새로고침 한 번. 그래도 나오면 "화면을 표시하지 못했습니다" 안내와 함께 원인이 콘솔에 남습니다 |
+| 복사 버튼이 안 됨 | 최신 버전에서는 HTTP 주소에서도 동작합니다. 오래된 탭이면 새로고침 |
+| `/healthz`가 503 (`relay: down`) | 여러 대 구성에서 DB 알림 연결이 1분 넘게 끊김. DB 상태를 확인하면 앱이 다시 연결합니다 |
+| 비밀번호를 잊음 | `SMTP_URL`이 있으면 로그인 화면에서 재설정 메일, 없으면 관리자가 **관리 → 사용자**에서 재설정 링크·임시 비밀번호 발급 |
 
 ## 제거
 

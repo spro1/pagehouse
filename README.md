@@ -35,23 +35,23 @@ Weekly reports, meeting notes and technical docs in one place, inside your own n
 | **What you need** | One Linux server with Docker or Podman, or a Kubernetes cluster (Helm chart) |
 | **Moving parts** | The app, PostgreSQL and a backup job: three containers, no external services |
 | **Data safety** | Trash that never empties itself, version history, daily automatic backups, a backup before every upgrade and restore |
-| **Leaving** | Export any space as Markdown plus attachments. Your data isn't tied to a format |
-| **Sign-in** | Local accounts with invite links, or SSO with any OpenID Connect provider (Keycloak, Entra ID, Google Workspace, Okta) |
+| **Leaving** | Export any space as Markdown or as HTML you can open in a browser, with attachments. Your data isn't tied to a format |
+| **Sign-in** | Local accounts with invite links, or SSO with any OpenID Connect provider (Keycloak, Entra ID, Google Workspace, Okta). Forgotten passwords: an email reset link, or a temporary password from an admin |
 
 ## Features
 
 | | |
 |---|---|
-| ✍️ **Editor** | `/` block menu, Markdown shortcuts, tables with merge and split, code highlighting for 25 languages, Mermaid diagrams, info and warning panels, to-dos, link cards, images and files by paste or drop, `@` mentions |
+| ✍️ **Editor** | A formatting toolbar and `/` block menu, Markdown shortcuts, tables with merge and split, code highlighting for 25 languages (with a copy button), Mermaid diagrams, info and warning panels, to-dos, link cards, images and files by paste or drop, `@` mentions, an emoji per page |
 | 🏠 **Home and notifications** | A landing page with recently viewed pages, new pages, and docs and comments that mention you; watch pages for edits; unread notifications by email (SMTP) |
-| 🗂️ **Organize** | Spaces, nested pages with drag and drop, built-in templates plus your own saved per space, trash with undo |
+| 🗂️ **Organize** | Spaces, nested pages with drag and drop (`⋯` and `+` on every page in the tree), copying with subpages, labels, favorites and recently viewed, built-in templates plus your own, trash with undo |
 | 🔎 **Search** | ⌘K quick search and a full search page: every word must match (Korean particles handled), comments and attachment names included, filters by space, author and date |
 | 🔒 **Permissions** | Per-space access (everyone edits, everyone views, private) for people or groups, plus per-page view/edit restrictions. What you can't see never appears in search, files or history |
 | 💬 **Collaborate** | Real-time co-editing with live cursors, inline comments on selected text, comments with replies and resolve, version history with diff and restore |
-| 🗂️ **Organizing** | Labels across spaces, favorites and recently viewed in the sidebar, copy a page with or without its subpages, PDF and Markdown export |
 | 🛡️ **Audit log** | Sign-ins (failed ones too), account, group and permission changes, deletions and exports, for admins |
+| 👤 **Accounts** | Change your name and profile photo, reset a forgotten password by email (with SMTP), or get a temporary password from an admin that must be changed at first sign-in |
 | 🤖 **AI agents** | Built-in MCP server: agents search, read and write pages with a personal API token and exactly your permissions |
-| 📦 **Migrate** | Import Confluence HTML exports (page tree and order, attachments, panels, expand, status, tasks), Notion, Markdown and HTML; export Markdown plus attachments as a ZIP |
+| 📦 **Migrate** | Import Confluence CSV and HTML exports (page tree and order, folders, attachments, labels; code, panels, Jira, drawio and other macros), Notion, Markdown and HTML; export Markdown or HTML ZIPs and pages as PDF |
 | 📊 **Admin** | Storage use against a limit, disk space, backup status, activity, largest files |
 | 🌐 **Interface** | English and Korean, light and dark themes, set per account |
 
@@ -89,7 +89,7 @@ curl -fsSL https://github.com/spro1/pagehouse/releases/latest/download/install.s
 During the beta, pin the version:
 
 ```sh
-curl -fsSL https://github.com/spro1/pagehouse/releases/download/v0.1.0-beta.3/install.sh | sh -s -- --dir /opt/pagehouse --version 0.1.0-beta.3
+curl -fsSL https://github.com/spro1/pagehouse/releases/download/v0.2.0-beta.1/install.sh | sh -s -- --dir /opt/pagehouse --version 0.2.0-beta.1
 ```
 
 The installer:
@@ -122,12 +122,14 @@ This deploys PostgreSQL, a daily backup CronJob and a generated database passwor
 ## Day-one checklist
 
 1. **Administrator.** Open `http://<server>:3000` and create the first account. It becomes the administrator, and sign-up closes after it.
-2. **HTTPS.** Put it behind your reverse proxy (nginx, Caddy, …) and set `BIND_ADDRESS=127.0.0.1` in `.env`. See the [examples](docs/install.md#https).
+2. **HTTPS.** Put it behind your reverse proxy (nginx, Caddy, …) and set `BIND_ADDRESS=127.0.0.1` and `TRUST_PROXY=1` in `.env`. See the [examples](docs/install.md#https).
+   - Plain HTTP on an IP address works too, but use HTTPS for the sake of the sign-in cookie.
 3. **Invite the team.** In **Admin → People**, create invite links and send them over chat. No mail server is needed.
 4. **Spaces.** Create one per team, and make sensitive ones (HR, management) **Private**.
 5. **Backups.** In **Admin → Overview**, check that "Last automatic backup" appears. Then copy `/opt/pagehouse/backups` off the server, for example to a NAS.
 6. **Storage limit (optional).** Set it in **Admin → Overview**. At the limit, text still saves; only new uploads are refused.
-7. **Bring your old docs.** See [moving from another wiki](#moving-from-another-wiki).
+7. **Email (optional).** Set `SMTP_URL` in `.env` for notification emails and "Forgot your password?" reset links. Without it, admins issue reset links or temporary passwords in **Admin → People**.
+8. **Bring your old docs.** See [moving from another wiki](#moving-from-another-wiki).
 
 ## Operations
 
@@ -136,23 +138,30 @@ This deploys PostgreSQL, a daily backup CronJob and a generated database passwor
 | Backup | Automatic every 24 h into `backups/pagehouse-auto-*.tar.gz` (14 kept). Manual: `scripts/backup.sh` |
 | Restore | `scripts/restore.sh <backup>`. It backs up the current state first and prints the command to undo |
 | Upgrade | `scripts/upgrade.sh [version]`. It backs up first and keeps `.env` and all data. Air-gapped: run the new bundle's `install.sh --dir` |
-| Health | `curl localhost:3000/healthz` (includes the version); the Admin page shows storage, backups and activity |
+| Health | `curl localhost:3000/healthz` (includes the version); the Admin page shows storage, backups, activity and the audit log |
+| Scale out | On Kubernetes, raise `replicaCount` with a ReadWriteMany attachment volume. Live co-editing works across instances through PostgreSQL |
 | Logs | `docker compose logs app` |
 
 Data lives in the compose volumes `db` (pages, history, accounts) and `files` (attachments), and backups in the install folder's `backups/`. To use an existing PostgreSQL, see the [installation guide](docs/install.md#using-an-external-postgresql-compose).
 
 ## Moving from another wiki
 
-Use **Home → Import** and drop in files or a ZIP.
+Use **Home → Import** (or the space menu → Import pages) and drop in files or a ZIP, or choose an unzipped folder.
 
 | From | How to export | What comes across |
 |---|---|---|
-| **Confluence** | Space tools → Export → HTML | Page tree (from breadcrumbs), attachments and images, info and warning macros as panels, code macros |
+| **Confluence (recommended)** | Space settings → Export → **CSV** | From Confluence's own page source: page and folder tree in order, attachments with their names, labels, links between pages, code, panels, expand, Jira, drawio, tasks and more |
+| **Confluence** | Space settings → Export → HTML | Page tree, attachments and images, the common macros |
+| **One Confluence page** | Page → Export → Markdown | The text (dynamic macros remain as links) |
 | **Notion** | Settings → Export → Markdown & CSV | Subpage tree, images, links between pages |
 | **Folders of Markdown / HTML** | ZIP the folder | Folders as parent pages, linked images and files |
 | **Pagehouse** | Space menu → Export | Everything: tree, attachments and links |
 
 Import always adds new pages and never touches existing ones. If you don't like the result, move it to the trash and try again.
+
+- When it finishes, anything to check is grouped by reason with what to do: attachments over the 50 MB limit, links to pages in other spaces, and so on.
+- Confluence authors, dates, comments, permissions and history don't come across. The CSV export has no user names, so @mentions show as "@user".
+- For exports of hundreds of MB, unzip and use **choose a folder**: it's easier on the browser's memory.
 
 ## Security
 
@@ -161,8 +170,12 @@ Import always adds new pages and never touches existing ones. If you don't like 
 - **Browser hardening:**
   - a strict Content-Security-Policy,
   - cross-site write protection,
-  - sign-in throttling,
+  - sign-in throttling per address and per account (behind a proxy, set `TRUST_PROXY` so it counts real addresses),
   - uploads served sandboxed, as downloads only.
+- **Accounts:**
+  - SSO links to existing accounts only through an email the provider has verified.
+  - Password-reset requests get the same answer whether or not the account exists.
+  - Only admins can move a page out from under a restricted page (which would lift what it inherits).
 - **Containers:**
   - The app and database run as non-root users.
   - Images contain no package managers and no unused TLS libraries.
@@ -177,10 +190,13 @@ Please report vulnerabilities privately, as described in [SECURITY.md](SECURITY.
 No. Installing (from the offline bundle), using and upgrading all work without it.
 
 **How many users can it handle?**
-There is no seat limit. A single-server setup is aimed at a few hundred people.
+There is no seat limit. A single-server setup is aimed at a few hundred people; on Kubernetes the app can scale out.
 
 **Can people sign in with company accounts (SSO)?**
 Yes, with any OpenID Connect provider. Set `OIDC_ISSUER`, `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`; see the [install guide](docs/install.md). Accounts are matched by email.
+
+**I forgot my password.**
+With email set up, use "Forgot your password?" on the sign-in page. Otherwise an admin creates a reset link or a temporary password in **Admin → People**; signing in with a temporary password asks you to choose your own straight away.
 
 **Can administrators see private documents?**
 Yes. Site administrators can open every space and page, so they can unlock content when needed. Give the admin role sparingly.
@@ -189,13 +205,13 @@ Yes. Site administrators can open every space and page, so they can unlock conte
 Daily backups accumulate in the server's `backups/` folder. Copy that folder off the server, and you can install on a new machine and run `scripts/restore.sh`.
 
 **Can we move to another tool later?**
-Yes. Export any space as standard Markdown files and attachments.
+Yes. Export any space as standard Markdown files and attachments, or as HTML that opens in a browser: space menu → Export space.
 
 ## Roadmap
 
 - LDAP / SAML sign-in
 - Chat (Slack, Teams, Mattermost) webhooks
-- Direct import from a Confluence server over its API
+- Direct import from a Confluence server over its API, with @mention user mapping
 - Full-text search inside attachments (PDF, Office)
 
 ## Documentation
