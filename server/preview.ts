@@ -51,6 +51,16 @@ const allowed = (host: string) =>
   (process.env.LINK_PREVIEW_ALLOW ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
     .some((a) => (a.startsWith('.') ? host.endsWith(a) || host === a.slice(1) : host === a))
 
+/** A DNS lookup for http(s).request that refuses private addresses (unless `trusted`), checking every address returned. */
+export const guardedLookup = (trusted: boolean) =>
+  ((host: string, opts: any, cb: any) =>
+    lookup(host, opts, (err, addr: any, family?: number) => {
+      if (err) return cb(err)
+      const list: { address: string }[] = Array.isArray(addr) ? addr : [{ address: addr }]
+      if (!trusted && list.some((a) => privateAddress(a.address))) return cb(new Error('private address'))
+      opts.all ? cb(null, addr) : cb(null, addr, family)
+    })) as any
+
 function get(url: URL, redirects = 3): Promise<{ html: string; url: URL }> {
   return new Promise((resolve, reject) => {
     const lib = url.protocol === 'https:' ? https : http
@@ -62,13 +72,7 @@ function get(url: URL, redirects = 3): Promise<{ html: string; url: URL }> {
       timeout: 5000,
       headers: { 'user-agent': 'Pagehouse link preview', accept: 'text/html,application/xhtml+xml' },
       // Node asks for every address (opts.all) to race IPv4/IPv6; each one is checked.
-      lookup: ((host: string, opts: any, cb: any) =>
-        lookup(host, opts, (err, addr: any, family?: number) => {
-          if (err) return cb(err)
-          const list: { address: string }[] = Array.isArray(addr) ? addr : [{ address: addr }]
-          if (!trusted && list.some((a) => privateAddress(a.address))) return cb(new Error('private address'))
-          opts.all ? cb(null, addr) : cb(null, addr, family)
-        })) as any,
+      lookup: guardedLookup(trusted),
     }, (res) => {
       const loc = res.headers.location
       if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && loc) {

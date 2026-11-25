@@ -14,6 +14,7 @@ import { registerSso, registerSsoAdmin, ssoLogoutUrl, ssoSource } from './sso.ts
 import { createCollab } from './collab.ts'
 import { relayDownSince } from './cluster.ts'
 import { auditMiddleware, registerAudit } from './audit.ts'
+import { createWebhooks, httpUrl } from './webhooks.ts'
 import { mailEnabled, sendMail } from './mail.ts'
 import { registerMcp } from './mcp.ts'
 import { registerPreview } from './preview.ts'
@@ -232,6 +233,7 @@ export function createApp(db: Db, dataDir: string) {
 
   // SSO can be switched on or changed by an admin at any time, so every use reads the current config.
   const sso = ssoSource(db)
+  const hooks = createWebhooks(db)
   registerSso(app, db, sso, startSession)
 
   const liveInvite = (token: unknown) =>
@@ -379,7 +381,7 @@ export function createApp(db: Db, dataDir: string) {
   })
 
   app.get('/api/me', async (c) =>
-    c.json({ ...c.get('user'), mail: mailEnabled(), emailNotify: (await one('SELECT email_notify FROM users WHERE id = $1', [c.get('user').id]))?.email_notify }))
+    c.json({ ...c.get('user'), mail: mailEnabled(), ...(await one('SELECT email_notify AS "emailNotify", webhook_url AS "webhookUrl" FROM users WHERE id = $1', [c.get('user').id])) }))
 
   // Profile photo: the browser sends a small square image (it resizes before uploading).
   app.put('/api/me/avatar', async (c) => {
@@ -415,6 +417,11 @@ export function createApp(db: Db, dataDir: string) {
     const theme = b.theme === undefined ? undefined : ['system', 'light', 'dark'].includes(b.theme) ? b.theme : null
     const emailNotify = typeof b.emailNotify === 'boolean' ? b.emailNotify : null
     const name = b.name === undefined ? undefined : str(b.name, 100) ?? null
+    // '' clears it.
+    const webhookUrl = b.webhookUrl === undefined ? undefined : b.webhookUrl === '' || b.webhookUrl === null ? '' : httpUrl(b.webhookUrl)
+    if (webhookUrl === null) return fail(c, 400, 'bad_request')
+    if (webhookUrl !== undefined) await db.query('UPDATE users SET webhook_url = $1 WHERE id = $2', [webhookUrl || null, c.get('user').id])
+    if (webhookUrl !== undefined && locale === undefined && theme === undefined && emailNotify === null && name === undefined) return c.json({ webhookUrl: webhookUrl || null })
     if (locale === null || theme === null || name === null || (locale === undefined && theme === undefined && emailNotify === null && name === undefined)) return fail(c, 400, 'bad_request')
     await db.query('UPDATE users SET locale = coalesce($1, locale), theme = coalesce($2, theme), email_notify = coalesce($3, email_notify), name = coalesce($5, name) WHERE id = $4',
       [locale ?? null, theme ?? null, emailNotify, c.get('user').id, name ?? null])
@@ -585,6 +592,7 @@ export function createApp(db: Db, dataDir: string) {
     )
     await db.query('INSERT INTO page_versions (page_id, version, title, doc, author_id) VALUES ($1, 1, $2, $3, $4)', [row.id, title, doc, user.id])
     await db.query('INSERT INTO page_watches (user_id, page_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [user.id, row.id])
+    hooks.emit('page.created', row.id, user.id)
     return c.json({ id: row.id, parentId, kind, title })
   })
 
@@ -867,6 +875,7 @@ export function createApp(db: Db, dataDir: string) {
       ...(parentAuthor ? [[Number(parentAuthor), 'reply'] as [number, string]] : []),
       ...(pageCreator ? [[Number(pageCreator), 'comment'] as [number, string]] : []),
     ])
+    hooks.emit('comment.created', id(c), user.id, { comment: { id: Number(row.id), parentId: row.parentId == null ? null : Number(row.parentId), body: row.body } })
     return c.json({ ...row, author: user.name })
   })
 
@@ -944,6 +953,7 @@ export function createApp(db: Db, dataDir: string) {
            SELECT 1 FROM notifications n WHERE n.user_id = w.user_id AND n.page_id = $1 AND n.kind = 'update' AND n.read_at IS NULL)`,
         [pageId, userId])).rows
       await notify(db, userId, pageId, null, watchers.map((w) => [w.user_id, 'update']))
+      hooks.emit('page.updated', pageId, userId, { version: r.version })
     }
     return r
   }
@@ -1041,6 +1051,7 @@ export function createApp(db: Db, dataDir: string) {
       return { rowCount: u.rowCount ?? 0, blocked: false }
     })
     if (r.blocked) return fail(c, 403, 'delete_blocked')
+    if (r.rowCount) hooks.emit('page.deleted', id(c), user.id, { pagesDeleted: r.rowCount })
     return r.rowCount ? c.json({ ok: true }) : fail(c, 404, 'page_not_found')
   })
 
@@ -1236,6 +1247,7 @@ export function createApp(db: Db, dataDir: string) {
   registerAdmin(app, { db, filesDir, fail })
   registerAudit(app, db)
   registerSsoAdmin(app, sso)
+  hooks.register(app, fail)
   registerPeople(app, { db, fail, visibleFor: (c) => ({ sql: (alias, first) => visible(alias, first, first + 1), params: who(c) }) })
   registerExport(app, {
     db, filesDir, fail, guard,

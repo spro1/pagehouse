@@ -31,7 +31,9 @@ You land on **Home** after signing in.
 - **Recently viewed**
 - the page tree
 
-The bell next to the space name counts unread notifications.
+The bell next to the space name counts unread notifications. You get one when someone mentions you, replies to your comment, comments on your page, or edits a page you watch.
+- **By email**, if the server can send mail: unread notifications are bundled into one email a few minutes later. Turn it off in **Settings**.
+- **In a chat tool**: in **Settings → Notifications to a chat webhook**, paste an incoming webhook URL from Slack, Mattermost, Microsoft Teams, Google Chat or Discord, click **Send test**, then **Save**. Addresses on the internal network work only if an administrator allows them (`WEBHOOK_ALLOW`).
 
 ## Spaces and pages
 
@@ -236,7 +238,7 @@ Keep in mind:
 
 ## For administrators
 
-**Admin** in the sidebar has five tabs (Overview, People, Groups, SSO, Audit log).
+**Admin** in the sidebar has six tabs (Overview, People, Groups, SSO, Webhooks, Audit log).
 
 **Overview:**
 - storage use against the disk and an optional **storage limit**
@@ -260,6 +262,13 @@ At the limit new uploads are refused, but text always saves.
 3. Click **Turn on SSO**. It applies as soon as it's saved, and the sign-in page gets the button.
 
 This is also where you choose whether first sign-ins create accounts and whether password sign-in stays allowed. If the server's `.env` sets `OIDC_ISSUER`, that wins and the screen is read-only. Signing out of the wiki also signs out of the provider. Provider-side steps: [SSO guide](sso.md).
+
+**Webhooks:** send page and comment events to another system (CI, a bot, a search index).
+1. **Add webhook**: a name, the URL, all spaces or one, and the events (page created, edited, deleted, comment added).
+2. Copy the **signing secret** shown once. Each request is a JSON `POST` with headers `X-Pagehouse-Event` and `X-Pagehouse-Signature: sha256=<HMAC-SHA256 of the body with the secret>`; check it on the receiving side.
+3. **Send test** posts a `ping` event. The list shows the last delivery and its result.
+
+Restricted pages are never sent. Edits are sent at most every 10 minutes per page. Failed deliveries are retried twice (after 5 and 30 seconds).
 
 **Groups:** group people, then grant space roles and page restrictions to the group. A group still used in permissions can't be deleted.
 

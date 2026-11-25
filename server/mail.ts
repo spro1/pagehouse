@@ -4,7 +4,7 @@ import nodemailer from 'nodemailer'
 import type { Db } from './db.ts'
 
 const DELAY_MIN = 3
-const TEXT = {
+export const TEXT = {
   en: {
     subject: (n: number) => (n === 1 ? '1 new notification' : `${n} new notifications`),
     mention: '{actor} mentioned you in {page}', comment_mention: '{actor} mentioned you in a comment on {page}',

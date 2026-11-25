@@ -1,6 +1,7 @@
 import { Groups } from './Groups.tsx'
 import { Audit } from './Audit.tsx'
 import { SsoSettings } from './SsoSettings.tsx'
+import { Webhooks } from './Webhooks.tsx'
 import { useEffect, useRef, useState } from 'react'
 import { api, ago, fullDate, toast, type User } from './api.ts'
 import { LANGS, lang, setLang, t, type Lang } from './i18n.ts'
@@ -282,18 +283,18 @@ export function Admin({ me }: { me: User }) {
     const { token } = await api('/api/admin/invites', { json: { role } })
     setShared({ label: t(role === 'admin' ? 'admin.invite.admin' : 'admin.invite.member'), url: link('invite', token) })
   }
-  const [tab, setTab] = useState<'overview' | 'people' | 'groups' | 'sso' | 'audit'>(() => (['people', 'groups', 'sso', 'audit'] as const).find((k) => location.hash.includes(k)) ?? 'overview')
+  const [tab, setTab] = useState<'overview' | 'people' | 'groups' | 'sso' | 'webhooks' | 'audit'>(() => (['people', 'groups', 'sso', 'webhooks', 'audit'] as const).find((k) => location.hash.includes(k)) ?? 'overview')
   return (
     <div className="screen wide">
       <h1>{t('admin.title')}</h1>
       <div className="tabs" role="tablist">
-        {(['overview', 'people', 'groups', 'sso', 'audit'] as const).map((k) => (
+        {(['overview', 'people', 'groups', 'sso', 'webhooks', 'audit'] as const).map((k) => (
           <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => (setTab(k), history.replaceState(null, '', k === 'overview' ? '#/admin' : `#/admin/${k}`))}>
             {t(`admin.tab.${k}`)}
           </button>
         ))}
       </div>
-      {tab === 'overview' ? <Monitor /> : tab === 'groups' ? <Groups /> : tab === 'audit' ? <Audit /> : tab === 'sso' ? <SsoSettings /> : <>
+      {tab === 'overview' ? <Monitor /> : tab === 'groups' ? <Groups /> : tab === 'audit' ? <Audit /> : tab === 'sso' ? <SsoSettings /> : tab === 'webhooks' ? <Webhooks /> : <>
       <section className="box">
         <div className="box-head">
           <div>
@@ -480,6 +481,41 @@ function MailSetting() {
   )
 }
 
+/** Posts my notifications to a chat webhook (Slack, Mattermost, Teams, Google Chat, Discord). */
+function WebhookSetting() {
+  const [url, setUrl] = useState<string>()
+  const [saved, setSaved] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => void api<{ webhookUrl: string | null }>('/api/me').then((m) => (setUrl(m.webhookUrl ?? ''), setSaved(m.webhookUrl ?? ''))), [])
+  if (url === undefined) return null
+  const run = async (f: () => Promise<void>) => {
+    setBusy(true)
+    try { await f() } catch (e: any) { toast(e.message) } finally { setBusy(false) }
+  }
+  const test = () => run(async () => {
+    const r = await api<{ status: number; error: string | null }>('/api/me/webhook/test', { json: { url } })
+    toast(r.error === 'private address' ? t('hook.private') : r.error ? t('hook.test.fail', { error: r.error }) : t('hook.test.ok'))
+  })
+  const save = (v: string) => run(async () => {
+    await api('/api/me', { method: 'PATCH', json: { webhookUrl: v } })
+    setUrl(v)
+    setSaved(v)
+    toast(t(v ? 'hook.me.saved' : 'hook.me.cleared'))
+  })
+  return (
+    <section className="box">
+      <h3>{t('hook.me.title')}</h3>
+      <p className="muted small">{t('hook.me.sub')}</p>
+      <div className="row hook-me">
+        <input type="url" value={url} placeholder="https://hooks.slack.com/services/…" aria-label={t('hook.me.title')} onChange={(e) => setUrl(e.target.value)} />
+        <button type="button" disabled={busy || !url} onClick={test}>{t('hook.test')}</button>
+        <button type="button" className="primary" disabled={busy || url === saved} onClick={() => save(url.trim())}>{t('common.save')}</button>
+        {saved && <button type="button" disabled={busy} onClick={() => save('')}>{t('hook.me.clear')}</button>}
+      </div>
+    </section>
+  )
+}
+
 /** Square-crops and shrinks a picked photo in the browser, so uploads stay small whatever the camera made. */
 async function squareImage(file: File, size = 256): Promise<Blob> {
   const img = await createImageBitmap(file)
@@ -561,6 +597,7 @@ export function Settings({ me }: { me: User }) {
         <LangSelect account />
       </section>
       <MailSetting />
+      <WebhookSetting />
       <Tokens />
       <section className="box">
         <h3>{t('settings.password')}</h3>

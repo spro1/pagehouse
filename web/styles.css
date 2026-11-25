@@ -928,3 +928,14 @@ pre.diff { margin: 0; max-height: 60vh; overflow: auto; font-size: 13px; line-he
 .doc .image-caption:placeholder-shown { opacity: 0; }
 .doc .image-figure:hover .image-caption:placeholder-shown, .doc .image-figure.selected .image-caption:placeholder-shown, .doc .image-caption:focus { opacity: 1; }
 .doc figcaption { font-size: 13px; color: var(--muted); }
+
+/* Webhooks */
+.hook-form { display: grid; gap: 10px; margin: 12px 0; padding: 12px; border: 1px solid var(--line); border-radius: var(--r); }
+.hook-events { border: none; padding: 0; margin: 0; display: grid; gap: 4px; }
+.hook-events legend { font-size: 13px; margin-bottom: 4px; }
+.hook-list { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 8px; }
+.hook-list li { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r); }
+.hook-list .grow { min-width: 0; flex: 1; }
+.hook-me { flex-wrap: wrap; gap: 8px; }
+.hook-me input { flex: 1; min-width: 220px; }
+.webhooks .banner code { word-break: break-all; }
