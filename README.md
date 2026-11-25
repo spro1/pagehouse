@@ -91,7 +91,7 @@ curl -fsSL https://github.com/spro1/pagehouse/releases/latest/download/install.s
 During the beta, pin the version:
 
 ```sh
-curl -fsSL https://github.com/spro1/pagehouse/releases/download/v0.2.0-beta.1/install.sh | sh -s -- --dir /opt/pagehouse --version 0.2.0-beta.1
+curl -fsSL https://github.com/spro1/pagehouse/releases/download/v0.2.0-beta.2/install.sh | sh -s -- --dir /opt/pagehouse --version 0.2.0-beta.2
 ```
 
 The installer:

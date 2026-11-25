@@ -2,8 +2,8 @@ apiVersion: v2
 name: pagehouse
 description: Self-hosted team wiki (app, PostgreSQL and scheduled backups)
 type: application
-version: 0.2.0-beta.1
-appVersion: "0.2.0-beta.1"
+version: 0.2.0-beta.2
+appVersion: "0.2.0-beta.2"
 annotations:
   licenses: Apache-2.0
 keywords: [wiki, documentation, knowledge-base]

@@ -91,7 +91,7 @@ curl -fsSL https://github.com/spro1/pagehouse/releases/latest/download/install.s
 베타 기간에는 버전을 지정합니다.
 
 ```sh
-curl -fsSL https://github.com/spro1/pagehouse/releases/download/v0.2.0-beta.1/install.sh | sh -s -- --dir /opt/pagehouse --version 0.2.0-beta.1
+curl -fsSL https://github.com/spro1/pagehouse/releases/download/v0.2.0-beta.2/install.sh | sh -s -- --dir /opt/pagehouse --version 0.2.0-beta.2
 ```
 
 설치 스크립트는 무작위 DB 비밀번호가 든 `.env`를 권한 600으로 만들고 이미지를 받아 서비스를 띄운 뒤 정상 상태가 될 때까지 기다립니다.
