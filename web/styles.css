@@ -836,3 +836,7 @@ pre.diff { margin: 0; max-height: 60vh; overflow: auto; font-size: 13px; line-he
 .node .add:last-child { margin-right: 4px; }
 .node .add[aria-expanded="true"] { opacity: 1; background: var(--bg-active); }
 .node.active .add { opacity: 1; }
+
+.import-warnings details { margin: 10px 0; }
+.import-warnings summary { cursor: pointer; }
+.import-warnings details > p { margin: 4px 0 6px; }

@@ -6,9 +6,11 @@ export type User = { id: number; email: string; name: string; role: string; loca
 
 export class ApiError extends Error {
   status: number
-  constructor(message: string, status: number) {
+  code?: string
+  constructor(message: string, status: number, code?: string) {
     super(message)
     this.status = status
+    this.code = code
   }
 }
 
@@ -22,7 +24,7 @@ export async function api<T = any>(path: string, opts: { method?: string; json?:
   if (!res.ok) {
     // The server sends a stable code plus an English message; show the code in the user's language.
     const key = `err.${data.code}`
-    throw new ApiError(hasKey(key) ? t(key) : data.error ?? res.statusText, res.status)
+    throw new ApiError(hasKey(key) ? t(key) : data.error ?? res.statusText, res.status, data.code)
   }
   return data
 }

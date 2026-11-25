@@ -324,6 +324,7 @@ function LoadedPage({ page, live, me, onTitle, onDeleted }: { page: Page; live: 
               <button role="menuitem" onClick={() => (setMenu(false), savePdf(title))}>{t('page.print')}</button>
               <button role="menuitem" onClick={() => (setMenu(false), exportMarkdown(title, editor))}>{t('page.exportMd')}</button>
               <a role="menuitem" className="menu-link" href={`/api/pages/${page.id}/export`} download onClick={() => setMenu(false)}>{t('export.page')}</a>
+              <a role="menuitem" className="menu-link" href={`/api/pages/${page.id}/export?format=html`} download onClick={() => setMenu(false)}>{t('export.pageHtml')}</a>
               <hr />
               <button role="menuitem" onClick={() => (setMenu(false), setSavingTpl(true))}>{t('tpl.save')}</button>
               {([false, true] as const).map((children) => (

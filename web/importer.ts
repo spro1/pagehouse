@@ -38,7 +38,15 @@ export type Plan = {
   notes?: string[]
 }
 export type Progress = { done: number; total: number; current: string }
-export type Result = { created: { id: number; title: string }[]; warnings: string[] }
+/** Something the import couldn't carry over as-is, grouped by kind in the dialog with what to do about it. */
+export type Warning = {
+  kind: 'file-missing' | 'file-too-big' | 'file-failed' | 'page-failed' | 'link-outside'
+  page: string
+  pageId?: number
+  /** the file, link target or error concerned */
+  item?: string
+}
+export type Result = { created: { id: number; title: string }[]; warnings: Warning[] }
 
 const DOC_EXT = /\.(md|markdown|html?|txt)$/i
 // A 2,000-page Confluence space with its attachments is ~11,000 files; leave plenty of room.
@@ -462,7 +470,7 @@ async function setDoc(id: number, title: string, doc: Json) {
 
 export async function run(p: Plan, spaceId: number, parentId: number | null, onProgress: (p: Progress) => void): Promise<Result> {
   const created: Result['created'] = []
-  const warnings: string[] = []
+  const warnings: Warning[] = []
   const ids = new Map<string, number>()
 
   if (p.kind === 'pagehouse') {
@@ -498,7 +506,7 @@ export async function run(p: Plan, spaceId: number, parentId: number | null, onP
           if (!fileUrl.has(old)) {
             const att = m.attachments.find((a: any) => a.id === old)
             const load = att && findFile(att.path)
-            if (!load) return (warnings.push(`${pg.title}: missing file ${att?.name ?? old}`), u)
+            if (!load) return (warnings.push({ kind: 'file-missing', page: pg.title, pageId: newId, item: att?.name ?? String(old) }), u)
             fileUrl.set(old, (await uploadFile(newId, att.name, await load())).url)
           }
           return fileUrl.get(old)!
@@ -539,7 +547,7 @@ export async function run(p: Plan, spaceId: number, parentId: number | null, onP
         }
         if (uploaded.has(path)) return uploaded.get(path)!
         const load = p.files.get(path)
-        if (!load) return DOC_EXT.test(path) ? u : (warnings.push(`${d.title}: “${u}” not found in the upload`), u)
+        if (!load) return DOC_EXT.test(path) ? u : (warnings.push({ kind: 'file-missing', page: d.title, pageId: page.id, item: u }), u)
         if (DOC_EXT.test(path)) return u
         const name = d.names?.get(path) ?? baseName(path)
         try {
@@ -548,7 +556,7 @@ export async function run(p: Plan, spaceId: number, parentId: number | null, onP
           return url
         } catch (e: any) {
           // One file that can't be uploaded (too big, storage full) mustn't cost the page its text.
-          warnings.push(`${d.title}: ${name} — ${e.message}`)
+          warnings.push({ kind: e.code === 'file_too_large' ? 'file-too-big' : 'file-failed', page: d.title, pageId: page.id, item: e.code === 'file_too_large' ? name : `${name} (${e.message})` })
           uploaded.set(path, u)
           return u
         }
@@ -556,7 +564,7 @@ export async function run(p: Plan, spaceId: number, parentId: number | null, onP
       if (d.kind !== 'folder') await setDoc(page.id, d.title, doc)
       if (d.labels?.length) await api(`/api/pages/${page.id}/labels`, { method: 'PUT', json: { labels: d.labels } })
     } catch (e: any) {
-      warnings.push(`${d.title}: ${e.message}`)
+      warnings.push({ kind: 'page-failed', page: d.title, pageId: ids.get(d.key), item: e.message })
     }
   }
   // Links between imported pages (to .md/.html files, or [[wiki links]] by name) now point at the new pages.
@@ -579,6 +587,7 @@ export async function run(p: Plan, spaceId: number, parentId: number | null, onP
           const name = decodeURIComponent(u.slice(6))
           const target = byName.get(name.toLowerCase())
           // A page that wasn't in the upload: search for it instead of a dead link.
+          if (!target) warnings.push({ kind: 'link-outside', page: d.title, pageId: id, item: name })
           return target ? `#/p/${target}` : `#/search?q=${encodeURIComponent(name)}`
         }
         if (/^([a-z][a-z0-9+.-]*:|#|\/api\/)/i.test(u)) return u
@@ -591,7 +600,7 @@ export async function run(p: Plan, spaceId: number, parentId: number | null, onP
       })
       if (JSON.stringify(linked) !== JSON.stringify(cur.doc)) await setDoc(id, cur.title, linked)
     } catch (e: any) {
-      warnings.push(`${d.title}: ${e.message}`)
+      warnings.push({ kind: 'page-failed', page: d.title, pageId: id, item: e.message })
     }
   }
   onProgress({ done: total, total, current: '' })

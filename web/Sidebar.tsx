@@ -58,6 +58,9 @@ export function Sidebar(p: Props) {
                   <a role="menuitem" className="menu-link" href={`/api/spaces/${p.spaceId}/export`} download onClick={() => setSpaceMenu(false)}>
                     <Icon name="page" /> {t('export.space')}
                   </a>
+                  <a role="menuitem" className="menu-link" href={`/api/spaces/${p.spaceId}/export?format=html`} download onClick={() => setSpaceMenu(false)}>
+                    <Icon name="page" /> {t('export.spaceHtml')}
+                  </a>
                   <hr />
                 </>
               )}

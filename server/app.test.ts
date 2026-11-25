@@ -841,6 +841,41 @@ test('page icon: one emoji, shown in the tree, removable, editors only', async (
   assert.equal((await bob.call('PUT', `/api/pages/${page.id}/icon`, { icon: '🔥' })).status, 404)
 })
 
+test('HTML export: a browsable folder with the page tree, relative links and escaped content', async () => {
+  const { unzipSync } = await import('fflate')
+  const x = client()
+  await x.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  const [space] = await x.json('GET', '/api/spaces')
+  const parent = await x.json('POST', '/api/pages', { spaceId: space.id, title: 'HTML 부모' })
+  const child = await x.json('POST', '/api/pages', { spaceId: space.id, parentId: parent.id, title: '자식 <script>' })
+  const doc = { type: 'doc', content: [
+    { type: 'callout', attrs: { variant: 'warning' }, content: [{ type: 'paragraph', content: [{ type: 'text', text: '주의 <b>' }] }] },
+    { type: 'paragraph', content: [
+      { type: 'text', text: '자식으로', marks: [{ type: 'link', attrs: { href: `#/p/${child.id}` } }] },
+      { type: 'text', text: ' 나쁜링크', marks: [{ type: 'link', attrs: { href: 'javascript:alert(1)' } }] },
+    ] },
+    { type: 'codeBlock', attrs: { language: 'js' }, content: [{ type: 'text', text: 'a < b && c' }] },
+  ] }
+  await x.call('PUT', `/api/pages/${parent.id}`, { title: 'HTML 부모', doc, version: 1 })
+  const res = await x.call('GET', `/api/pages/${parent.id}/export?format=html`)
+  assert.equal(res.status, 200)
+  assert.match(res.headers.get('content-disposition')!, /-html\.zip/)
+  const files = unzipSync(new Uint8Array(await res.arrayBuffer()))
+  const names = Object.keys(files).sort()
+  // Same layout as the Markdown export: a page's children sit in a folder named after it.
+  assert.deepEqual(names.filter((n) => !n.endsWith('pagehouse.json')), ['HTML 부모/HTML 부모.html', 'HTML 부모/HTML 부모/자식 _script_.html', 'HTML 부모/index.html', 'HTML 부모/style.css'].sort())
+  const html = new TextDecoder().decode(files['HTML 부모/HTML 부모.html'])
+  assert.match(html, /class="callout warning"/)
+  assert.match(html, /주의 &lt;b&gt;/)
+  assert.match(html, /a &lt; b &amp;&amp; c/)
+  assert.match(html, new RegExp(`href="${encodeURI('HTML 부모/자식 _script_.html').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`))
+  assert.ok(!html.includes('javascript:'), 'unsafe link dropped')
+  assert.ok(html.includes('자식 &lt;script&gt;'), 'nav titles escaped')
+  assert.match(new TextDecoder().decode(files['HTML 부모/index.html']), /href="HTML%20%EB%B6%80%EB%AA%A8\.html"/)
+  // Markdown stays the default.
+  assert.match((await x.call('GET', `/api/pages/${parent.id}/export`)).headers.get('content-disposition')!, /%EB%B6%80%EB%AA%A8\.zip/)
+})
+
 test('templates: saved from a page, per space or global, removable', async () => {
   const admin = client()
   await admin.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })

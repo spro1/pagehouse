@@ -6,6 +6,7 @@ import { join, posix } from 'node:path'
 import { zipSync, type Zippable } from 'fflate'
 import type { Db } from './db.ts'
 import { toMarkdown } from './markdown.ts'
+import { EXPORT_CSS, toHtmlPage, type NavItem } from './html.ts'
 
 type Deps = {
   db: Db
@@ -22,7 +23,7 @@ const safeName = (s: string) =>
 type Row = { id: number; parent_id: number | null; title: string; doc: any; space_id: number; updated_at: Date; position: number }
 
 export function registerExport(app: Hono<any>, { db, filesDir, fail, guard, visibleFor }: Deps) {
-  async function build(c: Context<any>, rows: Row[], rootIds: number[], rootName: string, space: { name: string; key: string }) {
+  async function build(c: Context<any>, rows: Row[], rootIds: number[], rootName: string, space: { name: string; key: string }, format: 'md' | 'html') {
     const children = new Map<number | null, Row[]>()
     for (const r of rows) children.set(r.parent_id, [...(children.get(r.parent_id) ?? []), r])
     for (const list of children.values()) list.sort((a, b) => a.position - b.position || a.id - b.id)
@@ -35,11 +36,23 @@ export function registerExport(app: Hono<any>, { db, filesDir, fail, guard, visi
         let base = safeName(r.title)
         for (let i = 2; used.has(base.toLowerCase()); i++) base = `${safeName(r.title)} (${i})`
         used.add(base.toLowerCase())
-        paths.set(r.id, posix.join(dir, `${base}.md`))
+        paths.set(r.id, posix.join(dir, `${base}.${format}`))
         assign(children.get(r.id) ?? [], posix.join(dir, base))
       }
     }
     assign(rows.filter((r) => rootIds.includes(r.id)), rootName)
+
+    const byId = new Map(rows.map((r) => [r.id, r]))
+    const ancestors = (r: Row) => {
+      const out: Row[] = []
+      for (let p = byId.get(r.parent_id as number); p && paths.has(p.id); p = byId.get(p.parent_id as number)) out.unshift(p)
+      return out
+    }
+    const rootRows = rows.filter((r) => rootIds.includes(r.id)).sort((a, b) => a.position - b.position || a.id - b.id)
+    const navFor = (list: Row[], current: number, rel: (p: string) => string): NavItem[] =>
+      list.map((r) => ({ title: r.title, href: encodeURI(rel(paths.get(r.id)!)), current: r.id === current, children: navFor(children.get(r.id) ?? [], current, rel) }))
+    const cssPath = posix.join(rootName, 'style.css')
+    const indexPath = posix.join(rootName, 'index.html')
 
     const ids = [...paths.keys()]
     const atts = ids.length
@@ -60,7 +73,20 @@ export function registerExport(app: Hono<any>, { db, filesDir, fail, guard, visi
         if (pg && paths.has(Number(pg[1]))) return encodeURI(rel(paths.get(Number(pg[1]))!))
         return u
       }
-      zip[path] = [new TextEncoder().encode(toMarkdown(r.title, r.doc, url)), { level: 6 }]
+      const text = format === 'md' ? toMarkdown(r.title, r.doc, url) : toHtmlPage({
+        title: r.title, doc: r.doc, url, space: space.name, updated: r.updated_at, css: rel(cssPath), home: rel(indexPath),
+        crumbs: ancestors(r).map((a) => ({ title: a.title, href: encodeURI(rel(paths.get(a.id)!)) })),
+        nav: navFor(rootRows, r.id, rel),
+      })
+      zip[path] = [new TextEncoder().encode(text), { level: 6 }]
+    }
+    if (format === 'html') {
+      // Opening the folder in a browser starts at index.html: the space's page tree.
+      zip[cssPath] = [new TextEncoder().encode(EXPORT_CSS), { level: 6 }]
+      zip[indexPath] = [new TextEncoder().encode(toHtmlPage({
+        title: space.name, doc: { type: 'doc', content: [] }, url: (u) => u, space: space.name, css: 'style.css', home: 'index.html', crumbs: [],
+        nav: navFor(rootRows, -1, (p) => posix.relative(rootName, p)),
+      })), { level: 6 }]
     }
     let missing = 0
     for (const a of atts) {
@@ -86,12 +112,14 @@ export function registerExport(app: Hono<any>, { db, filesDir, fail, guard, visi
     return new Response(data, {
       headers: {
         'Content-Type': 'application/zip',
-        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(rootName)}.zip`,
+        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(format === 'html' ? `${rootName}-html` : rootName)}.zip`,
         'Content-Length': String(data.byteLength),
         'Cache-Control': 'no-store',
       },
     })
   }
+
+  const fmt = (c: Context<any>) => (c.req.query('format') === 'html' ? 'html' : 'md')
 
   // Every live page under (and including) the root, minus the ones this user can't see.
   async function subtree(c: Context<any>, where: string, params: unknown[]) {
@@ -114,7 +142,7 @@ export function registerExport(app: Hono<any>, { db, filesDir, fail, guard, visi
     const root = rows.find((r) => r.id === pid)
     if (!root) return fail(c, 404, 'page_not_found')
     const space = (await db.query('SELECT name, key FROM spaces WHERE id = $1', [root.space_id])).rows[0]
-    return build(c, rows, [pid], safeName(root.title), space)
+    return build(c, rows, [pid], safeName(root.title), space, fmt(c))
   })
 
   app.get('/api/spaces/:id/export', async (c) => {
@@ -122,6 +150,6 @@ export function registerExport(app: Hono<any>, { db, filesDir, fail, guard, visi
     const space = Number.isInteger(sid) ? (await db.query('SELECT name, key FROM spaces WHERE id = $1', [sid])).rows[0] : null
     if (!space) return fail(c, 404, 'space_not_found')
     const rows = await subtree(c, 'p.space_id = $1 AND p.parent_id IS NULL', [sid])
-    return build(c, rows, rows.filter((r) => r.parent_id === null).map((r) => r.id), safeName(space.name), space)
+    return build(c, rows, rows.filter((r) => r.parent_id === null).map((r) => r.id), safeName(space.name), space, fmt(c))
   })
 }

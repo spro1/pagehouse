@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { t, type Key } from './i18n.ts'
 import { Icon } from './icons.tsx'
 import { Modal } from './ui.tsx'
-import type { Plan, Progress, Result } from './importer.ts'
+import type { Plan, Progress, Result, Warning } from './importer.ts'
 
 type Props = { spaceId: number; spaceName: string; parentId: number | null; parentTitle?: string; onClose: () => void; onDone: () => void }
 type Step = { s: 'pick'; error?: string } | { s: 'reading' } | { s: 'review'; plan: Plan } | { s: 'running'; p: Progress } | { s: 'done'; r: Result }
@@ -131,15 +131,39 @@ export function ImportModal({ spaceId, spaceName, parentId, parentTitle, onClose
         {step.s === 'done' && (
           <div className="import-review">
             <div className="import-kind ok"><b>✓ {t('import.done', { n: step.r.created.length })}</b></div>
-            {step.r.warnings.length > 0 && (
-              <>
-                <p className="muted small">{t('import.warnings', { n: step.r.warnings.length })}</p>
-                <ul className="import-list warn">{step.r.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
-              </>
-            )}
+            {step.r.warnings.length > 0 && <Warnings list={step.r.warnings} onOpen={onClose} />}
           </div>
         )}
       </div>
     </Modal>
+  )
+}
+
+const KINDS: Warning['kind'][] = ['page-failed', 'file-too-big', 'file-failed', 'file-missing', 'link-outside']
+
+/** What the import couldn't carry over, grouped by why, each group saying what to do; pages open on click. */
+function Warnings({ list, onOpen }: { list: Warning[]; onOpen: () => void }) {
+  return (
+    <div className="import-warnings">
+      <p className="muted small">{t('import.warnings', { n: list.length })}</p>
+      {KINDS.map((k) => {
+        const items = list.filter((w) => w.kind === k)
+        if (!items.length) return null
+        return (
+          <details key={k} open={k !== 'link-outside'}>
+            <summary><b>{t(`import.w.${k}` as Key)}</b> <span className="muted">({items.length})</span></summary>
+            <p className="muted small">{t(`import.w.${k}.fix` as Key)}</p>
+            <ul className="import-list warn">
+              {items.map((w, i) => (
+                <li key={i}>
+                  {w.pageId ? <a href={`#/p/${w.pageId}`} onClick={onOpen}>{w.page}</a> : w.page}
+                  {w.item && <span className="muted"> — {w.item}</span>}
+                </li>
+              ))}
+            </ul>
+          </details>
+        )
+      })}
+    </div>
   )
 }
