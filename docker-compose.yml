@@ -85,7 +85,10 @@ services:
           policy
           name="pagehouse-auto-$$(date +%Y%m%d-%H%M%S)"
           work="/tmp/$$name"; mkdir -p "$$work"
-          if pg_dump -Fc -f "$$work/db.dump" && tar -C /data -cf "$$work/files.tar" files \
+          # A new install has no files folder until the first upload: then files.tar is an empty archive (10 KiB of
+          # zeros; busybox tar won't create an empty one). Any other tar error still fails the backup.
+          if { if [ -d /data/files ]; then tar -C /data -cf "$$work/files.tar" files; else head -c 10240 /dev/zero > "$$work/files.tar"; fi; } \
+             && pg_dump -Fc -f "$$work/db.dump" \
              && tar -C "$$work" -czf "/backups/$$name.tar.gz.part" db.dump files.tar; then
             mv "/backups/$$name.tar.gz.part" "/backups/$$name.tar.gz"
             echo "backup written: $$name.tar.gz"

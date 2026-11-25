@@ -65,7 +65,8 @@ spec:
                   name="pagehouse-auto-$(date +%Y%m%d-%H%M%S)"
                   work="/tmp/$name"; mkdir -p "$work"
                   pg_dump -Fc -f "$work/db.dump" "$DATABASE_URL"
-                  tar -C /data -cf "$work/files.tar" files 2>/dev/null || tar -cf "$work/files.tar" -T /dev/null
+                  # No files folder before the first upload: an empty archive (busybox tar won't create one).
+                  if [ -d /data/files ]; then tar -C /data -cf "$work/files.tar" files; else head -c 10240 /dev/zero > "$work/files.tar"; fi
                   tar -C "$work" -czf "/backups/$name.tar.gz.part" db.dump files.tar
                   mv "/backups/$name.tar.gz.part" "/backups/$name.tar.gz"
                   # Retention from Admin → Overview → Backups (the schedule itself comes from values.yaml).
