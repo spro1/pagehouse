@@ -68,7 +68,13 @@ spec:
                   tar -C /data -cf "$work/files.tar" files 2>/dev/null || tar -cf "$work/files.tar" -T /dev/null
                   tar -C "$work" -czf "/backups/$name.tar.gz.part" db.dump files.tar
                   mv "/backups/$name.tar.gz.part" "/backups/$name.tar.gz"
-                  ls -1t /backups/pagehouse-auto-*.tar.gz | tail -n +$((KEEP + 1)) | xargs -r rm -f
+                  # Retention from Admin → Overview → Backups (the schedule itself comes from values.yaml).
+                  set -- $(psql "$DATABASE_URL" -AtF ' ' -c "SELECT coalesce((v->>'keep')::int, $KEEP), coalesce((v->>'maxAgeDays')::int, 0), coalesce((v->>'manualMaxAgeDays')::int, 0)
+                    FROM (SELECT (SELECT value FROM settings WHERE key = 'backup') AS v) s" 2>/dev/null)
+                  keep=${1:-$KEEP}; age=${2:-0}; manual_age=${3:-0}
+                  ls -1t /backups/pagehouse-auto-*.tar.gz | tail -n +$((keep + 1)) | xargs -r rm -f
+                  [ "$age" -gt 0 ] && find /backups -name 'pagehouse-auto-*.tar.gz' -mmin +$((age * 1440)) -print -delete || true
+                  [ "$manual_age" -gt 0 ] && find /backups -name 'pagehouse-*.tar.gz' ! -name 'pagehouse-auto-*' -mmin +$((manual_age * 1440)) -print -delete || true
                   echo "backup written: $name.tar.gz"
               volumeMounts:
                 - { name: files, mountPath: /data, readOnly: true }

@@ -904,3 +904,9 @@ pre.diff { margin: 0; max-height: 60vh; overflow: auto; font-size: 13px; line-he
 .sso-check input { margin-top: 3px; width: auto; }
 .sso-check span { display: flex; flex-direction: column; gap: 2px; font-size: 13.5px; }
 .tag.muted-tag { background: var(--bg-hover); color: var(--muted); }
+
+.backup-policy { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); display: grid; gap: 8px; }
+.backup-policy h4 { margin: 0; font-size: 14px; }
+.backup-policy .policy-field { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 13px; }
+.backup-policy .policy-field input { width: 80px; }
+.backup-policy .actions { display: flex; justify-content: flex-end; }

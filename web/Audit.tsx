@@ -7,7 +7,7 @@ type Entry = {
   actor: { id: number; name: string } | null; target: { id: number; name: string | null } | null
 }
 const ACTIONS = ['auth.login', 'auth.sso', 'auth.register', 'auth.reset', 'user.password', 'token.create', 'token.revoke', 'user.update',
-  'user.reset_link', 'user.invite', 'settings.update', 'settings.sso', 'group.create', 'group.update', 'group.delete', 'space.create', 'space.settings',
+  'user.reset_link', 'user.invite', 'settings.update', 'settings.sso', 'settings.backup', 'group.create', 'group.update', 'group.delete', 'space.create', 'space.settings',
   'space.export', 'page.restrictions', 'page.delete', 'page.restore', 'page.move', 'page.export']
 const label = (a: string) => { const k = `audit.${a}`; return hasKey(k) ? t(k) : a }
 

@@ -120,7 +120,7 @@ docker compose up -d --build
 | `SMTP_URL`, `SMTP_FROM` | 비어 있음 | 읽지 않은 알림 메일과 "비밀번호를 잊으셨나요?" 재설정 메일. 예: `smtp://user:pass@mail.example.com:587`. 메일 속 링크는 `PUBLIC_URL`이 있어야 함 |
 | `LINK_PREVIEW` / `LINK_PREVIEW_ALLOW` | `1` / 비어 있음 | 링크 카드: 서버가 붙여 넣은 링크의 제목과 이미지를 가져옴. 사설·루프백 주소는 목록에 있어야 허용. 예: `jira.corp.local,.gitlab.corp.local` |
 | `PAGEHOUSE_VERSION` | 설치 스크립트가 지정 | 이미지 버전. 업그레이드가 바꿉니다 |
-| `BACKUP_INTERVAL_HOURS` / `BACKUP_KEEP` | `24` / `14` | 자동 백업 주기와 보관 개수 |
+| `BACKUP_INTERVAL_HOURS` / `BACKUP_KEEP` | `24` / `14` | 자동 백업 주기와 보관 개수의 기본값. **관리 → 개요 → 백업 정책**에서 바꾸면 그 값이 우선하고, 재시작하지 않아도 됩니다 |
 
 ## HTTPS
 
@@ -175,6 +175,8 @@ Pagehouse는 사용자가 원하지 않는 한 쓴 내용이 사라지지 않도
 ## 백업과 복원
 
 자동 백업은 따로 할 일이 없습니다. 실행될 때 한 번, 그 뒤 `BACKUP_INTERVAL_HOURS`마다 만들어집니다. 파일 이름은 `backups/pagehouse-auto-<시각>.tar.gz`이고 시각은 UTC 기준입니다. NAS로 매일 `rsync` 하는 식으로 서버 밖에도 복사해 두세요.
+
+**백업 정책**(관리 → 개요): 자동 백업 주기와 보관 개수를 정하고, 필요하면 며칠 지난 자동 백업이나 수동·업그레이드 전 백업(`backups/pagehouse-<시각>.tar.gz`, `backups/before-upgrade/`)을 지우게 할 수 있습니다. 따로 정하지 않으면 수동 백업은 지우지 않습니다. 오래된 백업은 새 백업이 성공한 뒤에만 지우고, `backups/`의 다른 파일은 건드리지 않습니다. Kubernetes에서는 백업 주기를 Helm values의 `backup.schedule`로 정하고, 보관 설정은 똑같이 적용됩니다.
 
 직접 백업하려면 다음을 실행합니다.
 

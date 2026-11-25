@@ -65,6 +65,18 @@ function backups(dir: string | undefined) {
 
 const started = Date.now()
 
+/** How long backups are kept. Saved by an admin; read by the backup container on every run. Env gives the defaults. */
+export type BackupPolicy = { intervalHours: number; keep: number; maxAgeDays: number; manualMaxAgeDays: number }
+export async function backupPolicy(db: Db): Promise<BackupPolicy> {
+  const s = (await db.query(`SELECT value FROM settings WHERE key = 'backup'`)).rows[0]?.value ?? {}
+  return {
+    intervalHours: s.intervalHours ?? (Number(process.env.BACKUP_INTERVAL_HOURS) || 24),
+    keep: s.keep ?? (Number(process.env.BACKUP_KEEP) || 14),
+    maxAgeDays: s.maxAgeDays ?? 0,
+    manualMaxAgeDays: s.manualMaxAgeDays ?? 0,
+  }
+}
+
 export function registerAdmin(app: Hono<any>, { db, filesDir, fail }: Deps) {
   const one = async (sql: string, params: unknown[] = []) => (await db.query(sql, params)).rows[0]
   const all = async (sql: string, params: unknown[] = []) => (await db.query(sql, params)).rows
@@ -101,6 +113,7 @@ export function registerAdmin(app: Hono<any>, { db, filesDir, fail }: Deps) {
       one(`SELECT current_setting('server_version') AS v`),
     ])
     const activeEditors = await one(`SELECT count(DISTINCT author_id)::int AS n FROM page_versions WHERE created_at > now() - interval '30 days'`)
+    const bk = backups(process.env.BACKUP_DIR)
     return c.json({
       storage: {
         dbBytes: used.db,
@@ -110,7 +123,7 @@ export function registerAdmin(app: Hono<any>, { db, filesDir, fail }: Deps) {
         limitBytes: limit,
         disk: disk(filesDir),
       },
-      backups: backups(process.env.BACKUP_DIR),
+      backups: bk && { ...bk, policy: await backupPolicy(db) },
       counts: { ...counts, activeEditors30d: activeEditors.n },
       spaces: spaces.map((s) => ({ ...s, fileBytes: Number(s.fileBytes) })),
       largestFiles: largest.map((f) => ({ ...f, size: Number(f.size) })),
@@ -122,6 +135,18 @@ export function registerAdmin(app: Hono<any>, { db, filesDir, fail }: Deps) {
         uptimeSeconds: Math.round((Date.now() - started) / 1000),
       },
     })
+  })
+
+  app.put('/api/admin/backup-policy', async (c) => {
+    const b = await c.req.json().catch(() => ({}))
+    const int = (v: unknown, min: number, max: number) => (Number.isInteger(v) && (v as number) >= min && (v as number) <= max ? (v as number) : null)
+    const p = { intervalHours: int(b.intervalHours, 1, 168), keep: int(b.keep, 1, 365), maxAgeDays: int(b.maxAgeDays, 0, 3650), manualMaxAgeDays: int(b.manualMaxAgeDays, 0, 3650) }
+    if (Object.values(p).some((v) => v === null)) return fail(c, 400, 'bad_request')
+    await db.query(
+      `INSERT INTO settings (key, value) VALUES ('backup', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+      [JSON.stringify(p)],
+    )
+    return c.json(p)
   })
 
   app.put('/api/admin/settings', async (c) => {

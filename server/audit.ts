@@ -20,6 +20,7 @@ const RULES: [string, RegExp, string, boolean][] = [
   ['POST', /^\/api\/auth\/forgot$/, 'auth.forgot', false],
   ['POST', /^\/api\/admin\/invites$/, 'user.invite', true],
   ['PUT', /^\/api\/admin\/settings$/, 'settings.update', true],
+  ['PUT', /^\/api\/admin\/backup-policy$/, 'settings.backup', true],
   // The body holds the client secret: record that SSO changed, not the values.
   ['PUT', /^\/api\/admin\/sso$/, 'settings.sso', false],
   ['POST', /^\/api\/admin\/groups$/, 'group.create', true],
