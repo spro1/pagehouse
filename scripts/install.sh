@@ -42,7 +42,10 @@ case "$0" in
   *install.sh) here=$(cd "$(dirname "$0")" 2>/dev/null && pwd || echo "") ;;
   *) here="" ;;
 esac
-if [ -n "$here" ] && [ -f "$here/docker-compose.yml" ] && [ -f "$here/VERSION" ]; then
+if [ -n "${PAGEHOUSE_BUNDLE:-}" ]; then
+  # An unpacked bundle given explicitly (tests run the installer from stdin, like `curl | sh`, with a local build).
+  bundle=$(cd "$PAGEHOUSE_BUNDLE" && pwd)
+elif [ -n "$here" ] && [ -f "$here/docker-compose.yml" ] && [ -f "$here/VERSION" ]; then
   bundle=$here
 else
   command -v curl >/dev/null 2>&1 || die "curl is required to download Pagehouse"
