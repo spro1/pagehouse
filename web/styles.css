@@ -6,6 +6,7 @@
   --bg-active: #e9e9e6;
   --line: #e7e7e4;
   --line-strong: #d6d6d2;
+  --scroll-thumb: rgb(0 0 0 / 0.22);
   --text: #1d1d1b;
   --text-2: #4a4a46;
   --muted: #7a7a74;
@@ -39,6 +40,7 @@
     --bg-active: #323233;
     --line: #2e2e2e;
     --line-strong: #3d3d3d;
+    --scroll-thumb: rgb(255 255 255 / 0.22);
     --text: #ececea;
     --text-2: #c4c4c0;
     --muted: #9a9a95;
@@ -68,6 +70,7 @@
   --bg-active: #323233;
   --line: #2e2e2e;
   --line-strong: #3d3d3d;
+  --scroll-thumb: rgb(255 255 255 / 0.22);
   --text: #ececea;
   --text-2: #c4c4c0;
   --muted: #9a9a95;
@@ -217,7 +220,7 @@ input[type='radio'], input[type='checkbox'] { width: auto; height: auto; accent-
 .lang-select select { width: auto; height: 30px; font-size: 13.5px; background: transparent; }
 
 /* ───────────── Layout & sidebar ───────────── */
-.layout { display: grid; grid-template-columns: 268px minmax(0, 1fr); height: 100vh; }
+.layout { position: relative; display: grid; grid-template-columns: var(--nav-w, 268px) minmax(0, 1fr); height: 100vh; }
 main { overflow: auto; min-width: 0; }
 .nav-toggle { display: none; }
 
@@ -296,6 +299,9 @@ button.locked { color: var(--danger); }
 button.locked:hover { color: var(--danger); }
 
 .page-body { display: grid; grid-template-columns: minmax(0, 1fr) 232px; gap: 40px; max-width: 1200px; margin: 0 auto; padding: 0 40px; }
+/* No table of contents (fewer than two headings): the text gets the whole width. */
+.page-body:has(> .side-col:empty:not(.panel)) { grid-template-columns: minmax(0, 1fr); }
+.side-col:empty:not(.panel) { display: none; }
 .doc-col { min-width: 0; max-width: 780px; width: 100%; justify-self: center; padding: 48px 0 160px; }
 .title {
   display: block; width: 100%; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none !important;
@@ -555,11 +561,11 @@ button.locked:hover { color: var(--danger); }
 .inherit-note .icon-svg { margin-top: 2px; }
 
 /* ───────────── Responsive ───────────── */
-@media (max-width: 1100px) {
-  .page-body { grid-template-columns: minmax(0, 1fr); }
-  .side-col:not(.panel) { display: none; }
-  .side-col.panel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 20; width: min(320px, 90vw); max-height: none; padding: 20px; background: var(--bg); border-left: 1px solid var(--line); box-shadow: var(--shadow-lg); }
-}
+/* Decided by the page area's own width (App sets .narrow-page), not the window's, so a wider sidebar hides the
+   table of contents first and the text keeps its width. */
+.layout.narrow-page .page-body { grid-template-columns: minmax(0, 1fr); }
+.layout.narrow-page .side-col:not(.panel) { display: none; }
+.layout.narrow-page .side-col.panel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 20; width: min(320px, 90vw); max-height: none; padding: 20px; background: var(--bg); border-left: 1px solid var(--line); box-shadow: var(--shadow-lg); }
 @media (max-width: 760px) {
   .layout { grid-template-columns: 1fr; }
   .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 35; width: min(288px, 86vw); transform: translateX(-100%); transition: transform 0.22s var(--ease); box-shadow: var(--shadow-lg); }
@@ -949,3 +955,33 @@ pre.diff { margin: 0; max-height: 60vh; overflow: auto; font-size: 13px; line-he
 .tag.warn-tag { background: var(--danger-soft); color: var(--danger); }
 .health-errors { list-style: none; padding: 0; margin: 8px 0 0; font-size: 13px; display: grid; gap: 6px; }
 .health-errors code { font-size: 12px; }
+
+/* Toolbar menus open toward the side with room (see useSide in editor/Toolbar.tsx). */
+.toolbar .dropdown.open-left { left: 0; right: auto; }
+
+/* Sidebar: folded away on wide screens (⌘\ / Ctrl+\), remembered per browser. */
+.collapse-nav { flex: none; }
+.nav-expand { position: fixed; top: 9px; left: 8px; z-index: 30; background: var(--bg); border: 1px solid var(--line); }
+.layout.nav-collapsed { grid-template-columns: minmax(0, 1fr); }
+.layout.nav-collapsed .sidebar { display: none; }
+/* Room for the fixed expand button at the top left. */
+.layout.nav-collapsed .page-bar { padding-left: 52px; }
+@media (max-width: 760px) {
+  .collapse-nav, .nav-expand { display: none; }
+  .layout.nav-collapsed .sidebar { display: flex; }
+}
+
+/* Scrollbars: thin, shown on hover in the sidebar and while scrolling in the page. */
+.sidebar, main { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+.sidebar:hover, main.scrolling { scrollbar-color: var(--scroll-thumb) transparent; }
+.sidebar::-webkit-scrollbar, main::-webkit-scrollbar { width: 8px; height: 8px; }
+.sidebar::-webkit-scrollbar-thumb, main::-webkit-scrollbar-thumb { background: transparent; border-radius: 4px; }
+.sidebar:hover::-webkit-scrollbar-thumb, main.scrolling::-webkit-scrollbar-thumb { background: var(--scroll-thumb); }
+.sidebar::-webkit-scrollbar-track, main::-webkit-scrollbar-track { background: transparent; }
+
+/* Sidebar resize handle: on the sidebar's right edge. Out of the grid flow so the columns stay sidebar | page. */
+.nav-resize { position: absolute; top: 0; bottom: 0; left: calc(var(--nav-w, 268px) - 3px); width: 6px; z-index: 25; cursor: col-resize; }
+.nav-resize::after { content: ''; position: absolute; top: 0; bottom: 0; left: 2px; width: 2px; background: transparent; transition: background 0.15s; }
+.nav-resize:hover::after, .nav-resize:focus-visible::after, body.resizing .nav-resize::after { background: var(--accent); }
+body.resizing { cursor: col-resize; user-select: none; }
+@media (max-width: 760px) { .nav-resize { display: none; } }

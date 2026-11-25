@@ -60,7 +60,7 @@ const en = {
   'auth.linkInvalid': 'This link has expired or was already used. Ask an administrator for a new one.',
 
   'nav.label': 'Navigation', 'nav.menu': 'Menu', 'nav.closeMenu': 'Close menu',
-  'nav.search': 'Search', 'nav.home': 'Home', 'nav.trash': 'Trash', 'nav.admin': 'Admin', 'nav.logout': 'Sign out',
+  'nav.search': 'Search', 'nav.collapse': 'Hide sidebar', 'nav.expand': 'Show sidebar', 'nav.resize': 'Drag to resize the sidebar · double-click to reset', 'nav.home': 'Home', 'nav.trash': 'Trash', 'nav.admin': 'Admin', 'nav.logout': 'Sign out',
   'nav.pages': 'Pages', 'nav.newPage': 'New page', 'nav.newSpace': 'New space', 'nav.noPages': 'No pages yet.',
   'tree.expand': 'Expand', 'tree.collapse': 'Collapse', 'tree.addChild': 'Add a page inside', 'tree.locked': 'Restricted',
   'space.fallback': 'Space',
@@ -318,7 +318,7 @@ const ko: Dict = {
   'auth.linkInvalid': '링크가 만료되었거나 이미 사용되었습니다. 관리자에게 새 링크를 요청하세요.',
 
   'nav.label': '탐색', 'nav.menu': '메뉴', 'nav.closeMenu': '메뉴 닫기',
-  'nav.search': '검색', 'nav.home': '홈', 'nav.trash': '휴지통', 'nav.admin': '관리', 'nav.logout': '로그아웃',
+  'nav.search': '검색', 'nav.collapse': '사이드바 접기', 'nav.expand': '사이드바 펼치기', 'nav.resize': '끌어서 사이드바 폭 조절 · 더블클릭하면 기본 폭', 'nav.home': '홈', 'nav.trash': '휴지통', 'nav.admin': '관리', 'nav.logout': '로그아웃',
   'nav.pages': '페이지', 'nav.newPage': '새 페이지', 'nav.newSpace': '새 스페이스', 'nav.noPages': '아직 페이지가 없습니다.',
   'tree.expand': '펼치기', 'tree.collapse': '접기', 'tree.addChild': '하위 페이지 추가', 'tree.locked': '접근 제한됨',
   'space.fallback': '스페이스',

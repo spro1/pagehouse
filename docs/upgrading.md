@@ -6,7 +6,7 @@
 
 | Installed with | Upgrade |
 |---|---|
-| One-line install (Docker, Podman) | In the install folder: `scripts/upgrade.sh <version>`, e.g. `scripts/upgrade.sh 0.3.0` |
+| One-line install (Docker, Podman) | In the install folder: `scripts/upgrade.sh <version>`, e.g. `scripts/upgrade.sh 0.3.1` |
 | Offline bundle | Extract the new bundle and run `sh pagehouse-<version>/install.sh --dir <install folder>` |
 | Kubernetes (Helm) | `helm upgrade <name> pagehouse-<version>.tgz -n <namespace> --reuse-values` |
 
@@ -30,6 +30,14 @@
 
 ## Notes per version
 
+### 0.3.0 → 0.3.1
+
+No database or settings changes.
+- **Sidebar**: hide it with the button at its top right or Cmd/Ctrl+\\, and drag its edge to make it wider (up to 40% of the window). Both are remembered per browser.
+- **Text keeps its width**: when the page area gets narrow (for example a wider sidebar), the table of contents on the right hides first; pages without one no longer reserve its column.
+- **Scrollbars** appear only while hovering the sidebar or scrolling the page.
+- **Fixed:** on laptop-sized windows the toolbar's **+ Insert**, color and link menus opened under the sidebar.
+
 ### 0.2.0-beta.5 → 0.3.0
 
 No database changes. One new optional setting.
@@ -42,7 +50,7 @@ No database changes. One new optional setting.
 ### 0.2.0-beta.4 → 0.2.0-beta.5
 
 Fixes only; no database or settings changes.
-- **`scripts/upgrade.sh` stopped right after the pre-upgrade backup** and reported nothing, so the version didn't change (the backup step swallowed the rest of the piped installer). If an upgrade left you on the old version, just run `scripts/upgrade.sh 0.3.0`: the new installer works with the old script, and the extra backups it left in `backups/before-upgrade/` are harmless.
+- **`scripts/upgrade.sh` stopped right after the pre-upgrade backup** and reported nothing, so the version didn't change (the backup step swallowed the rest of the piped installer). If an upgrade left you on the old version, just run `scripts/upgrade.sh 0.3.1`: the new installer works with the old script, and the extra backups it left in `backups/before-upgrade/` are harmless.
 - **The first automatic backup of a new install failed** when nothing had been uploaded yet; the next try came a day later. Manual backups (`scripts/backup.sh`) and the Kubernetes backup job had the same problem.
 
 ### 0.2.0-beta.3 → 0.2.0-beta.4

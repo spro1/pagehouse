@@ -31,6 +31,8 @@ You land on **Home** after signing in.
 - **Recently viewed**
 - the page tree
 
+Hide the sidebar with the panel button at its top right, or **⌘\\** / **Ctrl+\\**; the same brings it back (the choice is remembered in this browser). Drag the sidebar's right edge to make it wider, up to 40% of the window while the page keeps at least 720 px; double-click the edge to reset it.
+
 The bell next to the space name counts unread notifications. You get one when someone mentions you, replies to your comment, comments on your page, or edits a page you watch.
 - **By email**, if the server can send mail: unread notifications are bundled into one email a few minutes later. Turn it off in **Settings**.
 - **In a chat tool**: in **Settings → Notifications to a chat webhook**, paste an incoming webhook URL from Slack, Mattermost, Microsoft Teams, Google Chat or Discord, click **Send test**, then **Save**. Addresses on the internal network work only if an administrator allows them (`WEBHOOK_ALLOW`).
