@@ -8,6 +8,8 @@ imagePullSecrets: []
 # 1 lets anyone who can reach the site create an account. Keep false and use invite links.
 # Extra settings for the app, e.g. single sign-on (see docs/install.md for every variable):
 # extraEnv:
+#   - name: SECRET_KEY        # encrypts stored secrets; keep it, backups don't include it
+#     valueFrom: { secretKeyRef: { name: pagehouse-key, key: key } }
 #   - { name: PUBLIC_URL, value: https://wiki.example.com }
 #   - { name: OIDC_ISSUER, value: https://sso.example.com/realms/company }
 #   - { name: OIDC_CLIENT_ID, value: pagehouse }

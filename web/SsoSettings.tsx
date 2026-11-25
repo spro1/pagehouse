@@ -5,7 +5,7 @@ import { copyText } from './ui.tsx'
 
 type Sso = {
   source: 'env' | 'admin'; enabled: boolean; issuer: string; clientId: string; hasSecret: boolean; label: string
-  autoCreate: boolean; trustEmail: boolean; passwordLogin: boolean; redirectUri: string
+  autoCreate: boolean; trustEmail: boolean; passwordLogin: boolean; redirectUri: string; encrypted: boolean
 }
 
 /** Admin tab: single sign-on with an OpenID Connect provider (Keycloak, Entra ID, Google Workspace, Okta, …). */
@@ -57,6 +57,7 @@ export function SsoSettings() {
         <span className={`tag ${s.enabled ? '' : 'muted-tag'}`}>{t(s.enabled ? 'sso.on' : 'sso.off')}</span>
       </div>
       {locked && <div className="banner warn">{t('sso.env')}</div>}
+      {!locked && !s.encrypted && <div className="banner warn">{t('sso.plain')}</div>}
 
       <div className="sso-redirect">
         <span className="small muted">{t('sso.redirect')}</span>
