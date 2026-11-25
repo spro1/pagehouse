@@ -42,19 +42,19 @@ jobs:
     needs: meta
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.TAG }}
       - name: Version in package.json matches the tag
         run: test "$(node -p "require('./package.json').version")" = "${{ needs.meta.outputs.version }}"
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
@@ -67,7 +67,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: PostgreSQL image (patched, without gosu)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: docker/postgres
           platforms: linux/amd64,linux/arm64
@@ -82,7 +82,7 @@ jobs:
       matrix:
         arch: [amd64, arm64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.TAG }}
       # One architecture per archive. `docker save` of a multi-arch image fails on missing manifests,
@@ -101,7 +101,7 @@ jobs:
             docker-archive:"$dir/postgres.tar":${{ needs.meta.outputs.image }}-postgres:17
       - name: Build bundles
         run: sh scripts/make-release.sh "${{ needs.meta.outputs.version }}" "${{ needs.meta.outputs.image }}" "${GITHUB_REPOSITORY}" --offline ${{ matrix.arch }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: bundles-${{ matrix.arch }}
           path: |
@@ -112,11 +112,11 @@ jobs:
     needs: [meta, bundles]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.TAG }}
       # Only our bundles: other artifacts in the run would collide when merged into one folder.
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           pattern: bundles-*
           path: release

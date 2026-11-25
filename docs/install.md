@@ -29,7 +29,7 @@ In the commands below, `spro1/pagehouse` is the GitHub repository Pagehouse is p
 | Software | Supported | Notes |
 |---|---|---|
 | Container runtime | Docker 24+ with Compose v2, or Podman 4+ with `podman compose` | Tested on Podman 6.0 |
-| Kubernetes | 1.25+, Helm 3 | ReadWriteMany storage to run several instances |
+| Kubernetes | 1.21+ (the chart uses `batch/v1` CronJobs), Helm 3 | ReadWriteMany storage to run several instances |
 | External PostgreSQL | 14+, with the `pg_trgm` extension | Optional |
 | Browser | Current Chrome, Edge, Firefox, Safari | Importing an export of hundreds of MB needs 1–2 GB of free browser memory (less if you unzip it and choose the folder) |
 
