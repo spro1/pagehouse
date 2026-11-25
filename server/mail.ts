@@ -2,6 +2,7 @@
 // are sent as one email per person (reading them in the app first means no email at all).
 import nodemailer from 'nodemailer'
 import type { Db } from './db.ts'
+import { inc } from './metrics.ts'
 
 const DELAY_MIN = 3
 export const TEXT = {
@@ -61,7 +62,7 @@ export function startMailer(db: Db) {
           from, to: items[0].email, subject: `[Pagehouse] ${L.subject(items.length)}`,
           text: items.map((r) => `- ${line(r)}${link(r) ? `\n  ${link(r)}` : ''}`).join('\n') + `\n\n${L.footer}`,
           html: `<ul>${items.map((r) => `<li>${link(r) ? `<a href="${esc(link(r))}">${esc(line(r))}</a>` : esc(line(r))}</li>`).join('')}</ul><p style="color:#888">${esc(L.footer)}</p>`,
-        }).catch((e) => console.error(`mail to user ${items[0].user_id} failed:`, e.message))
+        }).then(() => inc('pagehouse_mail_sent_total', { result: 'ok' }), (e) => (inc('pagehouse_mail_sent_total', { result: 'failed' }), console.error(`mail to user ${items[0].user_id} failed:`, e.message)))
       }
     } catch (e) {
       console.error('mailer:', (e as Error).message)
