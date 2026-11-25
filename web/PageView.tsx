@@ -14,7 +14,7 @@ import { CODE_LANGUAGES, extensions, type Live } from './editor/extensions.tsx'
 import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
 import { ySyncPluginKey } from '@tiptap/y-tiptap'
-import { AutoTextarea, Modal, confirmDialog } from './ui.tsx'
+import { AutoTextarea, Modal, confirmDialog, copyText } from './ui.tsx'
 import { diffLines, type DiffLine } from './diff.ts'
 
 // Unsaved edits are mirrored to this browser until the server confirms the save,
@@ -299,7 +299,7 @@ function LoadedPage({ page, live, me, onTitle, onDeleted }: { page: Page; live: 
         <button
           className="ghost"
           title={t('page.copyLink')}
-          onClick={() => navigator.clipboard.writeText(location.href).then(() => toast(t('page.linkCopied')))}
+          onClick={() => copyText(location.href, t('page.linkCopied'))}
         >
           <Icon name="link" />
           <span className="label">{t('page.copyLink')}</span>

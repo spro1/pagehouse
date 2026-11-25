@@ -80,6 +80,29 @@ type ToastMsg = { text: string; action?: { label: string; run: () => void }; id:
 let showToast: (m: ToastMsg) => void = () => {}
 export const toast = (text: string, action?: ToastMsg['action']) => showToast({ text, action, id: Date.now() })
 
+/** Copies text and says so. The Clipboard API only exists on HTTPS or localhost; on a plain-HTTP address
+ *  (http://10.0.0.5:3000, common on internal networks) fall back to the older copy command. */
+export async function copyText(text: string, done: string) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+      return toast(done)
+    }
+  } catch {}
+  const area = document.createElement('textarea')
+  area.value = text
+  area.setAttribute('readonly', '')
+  area.style.cssText = 'position:fixed;top:0;left:0;opacity:0'
+  document.body.append(area)
+  area.select()
+  let ok = false
+  try {
+    ok = document.execCommand('copy')
+  } catch {}
+  area.remove()
+  toast(ok ? done : t('common.copyFailed'))
+}
+
 export function Hosts() {
   const [ask, setAsk] = useState<Ask | null>(null)
   const [msg, setMsg] = useState<ToastMsg | null>(null)

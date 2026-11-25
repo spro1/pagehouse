@@ -5,7 +5,7 @@ import { api, ago, fullDate, toast, type User } from './api.ts'
 import { LANGS, lang, setLang, t, type Lang } from './i18n.ts'
 import { Icon } from './icons.tsx'
 import { TEMPLATES, type Template } from './templates.ts'
-import { Modal, confirmDialog } from './ui.tsx'
+import { Modal, confirmDialog, copyText } from './ui.tsx'
 import { Monitor } from './Monitor.tsx'
 import { mentionsToNames, notificationText } from './Notifications.tsx'
 import { AccessChoice } from './SpaceSettings.tsx'
@@ -368,7 +368,7 @@ function CopyBox({ label, url }: { label: string; url: string }) {
       <span className="small muted">{label}</span>
       <div className="row">
         <input readOnly value={url} onFocus={(e) => e.target.select()} aria-label={label} />
-        <button className="primary" onClick={() => navigator.clipboard.writeText(url).then(() => toast(t('common.copied')))}>{t('common.copy')}</button>
+        <button className="primary" onClick={() => copyText(url, t('common.copied'))}>{t('common.copy')}</button>
       </div>
     </div>
   )

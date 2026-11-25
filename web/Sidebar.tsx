@@ -3,7 +3,7 @@ import { api, toast, type PageNode, type Space, type User } from './api.ts'
 import { t } from './i18n.ts'
 import { Icon } from './icons.tsx'
 import { Bell } from './Notifications.tsx'
-import { confirmDialog } from './ui.tsx'
+import { confirmDialog, copyText } from './ui.tsx'
 import { applyTheme, theme as currentTheme, type Theme } from './theme.ts'
 
 type Props = {
@@ -146,7 +146,7 @@ function Tree({ pages, current, onAdd, onMoved }: { pages: PageNode[]; current: 
   }, [menu])
   const copyLink = (p: PageNode) => {
     setMenu(null)
-    navigator.clipboard.writeText(`${location.origin}${location.pathname}#/p/${p.id}`).then(() => toast(t('page.linkCopied')), () => {})
+    copyText(`${location.origin}${location.pathname}#/p/${p.id}`, t('page.linkCopied'))
   }
   const trash = async (p: PageNode) => {
     setMenu(null)
