@@ -12,4 +12,8 @@ repo=$(sed -n 's/^REPO=${PAGEHOUSE_REPO:-\(.*\)}$/\1/p' install.sh 2>/dev/null)
 url="https://github.com/$repo/releases/latest/download/install.sh"
 [ $# -ge 1 ] && url="https://github.com/$repo/releases/download/v${1#v}/install.sh"
 command -v curl >/dev/null 2>&1 || { echo "curl is required" >&2; exit 1; }
-curl -fsSL "$url" | PAGEHOUSE_DIR="$PWD" PAGEHOUSE_VERSION="${1:-}" sh
+# Saved to a file first: piped into sh, anything in it that reads stdin would eat the rest of the script.
+tmp=$(mktemp)
+trap 'rm -f "$tmp"' EXIT
+curl -fsSL "$url" -o "$tmp"
+PAGEHOUSE_DIR="$PWD" PAGEHOUSE_VERSION="${1:-}" sh "$tmp" </dev/null
