@@ -35,6 +35,7 @@ export function ImportModal({ spaceId, spaceName, parentId, parentTitle, onClose
   const [step, setStep] = useState<Step>({ s: 'pick' })
   const [over, setOver] = useState(false)
   const input = useRef<HTMLInputElement>(null)
+  const folder = useRef<HTMLInputElement>(null)
   const where = parentTitle ? `“${parentTitle}”` : t('import.top', { space: spaceName })
 
   async function choose(files: File[]) {
@@ -96,11 +97,14 @@ export function ImportModal({ spaceId, spaceName, parentId, parentTitle, onClose
             <Icon name="page" size={28} />
             <p>
               {t('import.drop')}{' '}
-              <button className="link" onClick={() => input.current?.click()}>{t('import.choose')}</button>
+              <button className="link" onClick={() => input.current?.click()}>{t('import.choose')}</button>{' '}
+              {t('import.or')}{' '}
+              <button className="link" onClick={() => folder.current?.click()}>{t('import.chooseFolder')}</button>
             </p>
             <p className="muted small">{t('import.formats')}</p>
             {step.error && <p className="error">{step.error}</p>}
             <input ref={input} type="file" hidden multiple accept=".md,.markdown,.html,.htm,.txt,.zip" onChange={(e) => choose([...(e.target.files ?? [])])} />
+            <input ref={folder} type="file" hidden {...{ webkitdirectory: '' }} onChange={(e) => choose([...(e.target.files ?? [])])} />
           </div>
         )}
         {step.s === 'reading' && <div className="import-center"><span className="spinner" /> {t('import.reading')}</div>}
@@ -114,6 +118,7 @@ export function ImportModal({ spaceId, spaceName, parentId, parentTitle, onClose
               ))}
             </ul>
             {step.plan.skipped.length > 0 && <p className="muted small">{t('import.skipped', { n: step.plan.skipped.length })}</p>}
+            {!!step.plan.notes?.length && <p className="muted small">{t('import.notes', { list: step.plan.notes.join(', ') })}</p>}
           </div>
         )}
         {step.s === 'running' && (

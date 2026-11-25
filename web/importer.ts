@@ -5,10 +5,12 @@
 //   - Pagehouse export (pagehouse.json inside): lossless, keeps the tree, attachments and page links
 //   - Notion "Markdown & CSV" export: "Page 1a2b….md" next to a "Page 1a2b…/" folder of subpages
 //   - Confluence "HTML" space export: page tree rebuilt from each page's breadcrumbs, attachments/ folder
+//   - Confluence Cloud "CSV" space export (content.csv, bodycontent.csv, attachments/): see confluenceCsv.ts
 //   - any folder of .md / .html / .txt files: folders become parent pages
 import { Editor } from '@tiptap/core'
 import { Markdown } from '@tiptap/markdown'
-import { unzipSync } from 'fflate'
+import { gunzipSync, unzipSync } from 'fflate'
+import { parseCsv, planCsv } from './confluenceCsv.ts'
 import { api } from './api.ts'
 import { extensions } from './editor/extensions.tsx'
 import { ALERT_TO_CALLOUT } from '../server/markdown.ts'
@@ -17,14 +19,23 @@ import { t } from './i18n.ts'
 const ATTACHMENTS_HEADING = () => t('import.attachments')
 
 type Json = { type: string; attrs?: Record<string, any>; content?: Json[]; text?: string; marks?: { type: string; attrs?: Record<string, any> }[] }
-type Item = { path: string; data: Uint8Array }
-type Doc = { key: string; path: string; title: string; parent: string | null; doc: Json; dir: string }
+// Documents are read up front; other files (attachments, often most of the size) only when uploaded.
+type Item = { path: string; data?: Uint8Array; load: () => Promise<Uint8Array> }
+type Doc = {
+  key: string; path: string; title: string; parent: string | null; doc: Json; dir: string
+  kind?: 'page' | 'folder'
+  /** upload path → the file's real name (Confluence stores attachments under numeric names) */
+  names?: Map<string, string>
+  labels?: string[]
+}
 export type Plan = {
-  kind: 'pagehouse' | 'notion' | 'confluence' | 'files'
+  kind: 'pagehouse' | 'notion' | 'confluence' | 'confluence-csv' | 'files'
   docs: Doc[]
-  files: Map<string, Uint8Array>
+  files: Map<string, () => Promise<Uint8Array>>
   manifest?: any
   skipped: string[]
+  /** things the import can't carry over, shown before starting */
+  notes?: string[]
 }
 export type Progress = { done: number; total: number; current: string }
 export type Result = { created: { id: number; title: string }[]; warnings: string[] }
@@ -70,15 +81,34 @@ const stripExt = (s: string) => s.replace(/\.[^.]+$/, '')
 // Notion appends a 32-hex id to every file and folder name.
 const stripNotionId = (s: string) => s.replace(/\s+[0-9a-f]{32}$/i, '')
 
-/** Reads the chosen files; ZIPs are expanded in memory. */
+// Read up front: the documents and the tables/manifests that describe them.
+const EAGER = /\.(md|markdown|html?|txt|csv|csv\.gz|json)$/i
+const junk = (p: string) => /(^|\/)(__MACOSX|\.DS_Store)/.test(p)
+
+/** Reads the chosen files (or a chosen folder). ZIPs are opened in memory, but attachments inside are only
+ *  decompressed when they're uploaded, so a large export (hundreds of MB of attachments) stays workable. */
 export async function readFiles(files: File[]): Promise<Item[]> {
   const items: Item[] = []
   for (const f of files) {
-    const data = new Uint8Array(await f.arrayBuffer())
+    const rel = (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name
+    if (junk(rel)) continue
     if (/\.zip$/i.test(f.name)) {
-      const entries = unzipSync(data, { filter: (e) => !e.name.endsWith('/') && !/(^|\/)(__MACOSX|\.DS_Store)/.test(e.name) })
-      for (const [path, bytes] of Object.entries(entries)) items.push({ path: norm(fixName(path)), data: bytes })
-    } else items.push({ path: norm(f.name), data })
+      const zip = new Uint8Array(await f.arrayBuffer())
+      const lazy: string[] = []
+      const eager = unzipSync(zip, {
+        filter: (e) => {
+          if (e.name.endsWith('/') || junk(e.name)) return false
+          if (EAGER.test(e.name)) return true
+          lazy.push(e.name)
+          return false
+        },
+      })
+      for (const [name, bytes] of Object.entries(eager)) items.push({ path: norm(fixName(name)), data: bytes, load: async () => bytes })
+      for (const name of lazy) items.push({ path: norm(fixName(name)), load: async () => unzipSync(zip, { filter: (e) => e.name === name })[name] })
+    } else {
+      const data = EAGER.test(rel) ? new Uint8Array(await f.arrayBuffer()) : undefined
+      items.push({ path: norm(rel), data, load: async () => data ?? new Uint8Array(await f.arrayBuffer()) })
+    }
     if (items.length > MAX_FILES) throw new Error(`more than ${MAX_FILES} files`)
   }
   return items
@@ -86,11 +116,31 @@ export async function readFiles(files: File[]): Promise<Item[]> {
 
 // ---------- converting one document ----------
 
+/** Pairs the ** markers on a line in order; spaces just inside a pair move outside it ("**a: **b" → "**a:** b"). */
+function tightenBold(line: string) {
+  const parts = line.split('**')
+  if (parts.length < 3) return line
+  let out = parts[0]
+  for (let i = 1; i < parts.length; i++) {
+    if (i % 2 === 1 && i + 1 < parts.length) {
+      const inner = parts[i]
+      const core = inner.trim()
+      out += core ? `${inner.match(/^\s*/)![0]}**${core}**${inner.match(/\s*$/)![0]}` : `**${inner}**`
+      out += parts[++i]
+    } else out += '**' + parts[i]
+  }
+  return out
+}
+
 function fromMarkdown(md: string): Json {
   md = md
+    // "**label: **" (Confluence, Google Docs): spaces just inside the markers stop Markdown seeing bold; move them out.
+    .split(/(^```[\s\S]*?^```)/m)
+    .map((part, i) => (i % 2 ? part : part.split('\n').map(tightenBold).join('\n')))
+    .join('')
     // Obsidian / wiki style: ![[image.png]], [[Page]], [[Page|label]], [[Page#Heading]]
     .replace(/!\[\[([^\]|]+?)(?:\|[^\]]*)?\]\]/g, (_, f) => `![](<${f.trim()}>)`)
-    .replace(/\[\[([^\]|#]+?)(?:#[^\]|]*)?(?:\|([^\]]+))?\]\]/g, (_, page, label) => `[${(label ?? page).trim()}](<wiki:${page.trim()}>)`)
+    .replace(/\[\[([^\]|#]+?)(?:#[^\]|]*)?(?:\|([^\]]+))?\]\]/g, (_, page, label) => `[${(label ?? page).trim()}](<#wiki:${encodeURIComponent(page.trim())}>)`)
     // <details><summary>Title</summary>body</details> → the title in bold, then the body (no fold in the editor).
     .replace(/<details[^>]*>\s*<summary[^>]*>([\s\S]*?)<\/summary>([\s\S]*?)<\/details>/gi, (_, s, b) => `\n**${s.trim()}**\n\n${b.trim()}\n`)
   const json = editor().markdown!.parse(md) as Json
@@ -255,16 +305,19 @@ function dropTitleHeading(doc: Json, title: string, headingIsTitle: boolean): { 
 // ---------- planning ----------
 
 export function plan(items: Item[]): Plan {
-  const files = new Map(items.map((i) => [i.path, i.data]))
+  const files = new Map(items.map((i) => [i.path, i.load]))
   const manifestItem = items.find((i) => baseName(i.path) === 'pagehouse.json')
-  if (manifestItem) {
+  if (manifestItem?.data) {
     try {
       const manifest = JSON.parse(decode(manifestItem.data))
       if (manifest.format === 'pagehouse-export') return { kind: 'pagehouse', docs: [], files, manifest, skipped: [] }
     } catch {}
   }
 
-  let docItems = items.filter((i) => DOC_EXT.test(i.path))
+  const csv = csvPlan(items, files)
+  if (csv) return csv
+
+  let docItems = items.filter((i) => DOC_EXT.test(i.path) && i.data) as (Item & { data: Uint8Array })[]
   const skipped = items.filter((i) => !DOC_EXT.test(i.path) && !/\.(png|jpe?g|gif|webp|svg|pdf|zip|csv|docx?|xlsx?|pptx?|txt|json)$/i.test(i.path)).map((i) => i.path)
   const htmlCount = docItems.filter((i) => /\.html?$/i.test(i.path)).length
   const confluence = htmlCount > 0 && docItems.some((i) => /\.html?$/i.test(i.path) && /id="breadcrumbs"|confluence/i.test(decode(i.data).slice(0, 20000)))
@@ -339,6 +392,43 @@ export function plan(items: Item[]): Plan {
   return { kind: confluence ? 'confluence' : notion ? 'notion' : 'files', docs: ordered, files, skipped }
 }
 
+/** Confluence Cloud CSV export: content.csv and bodycontent.csv side by side (".csv.gz" names, gzipped or not). */
+function csvPlan(items: Item[], files: Plan['files']): Plan | null {
+  const table = (name: string) => {
+    const it = items.find((i) => i.data && new RegExp(`(^|/)${name}\\.csv(\\.gz)?$`, 'i').test(i.path))
+    if (!it?.data) return undefined
+    const bytes = it.data[0] === 0x1f && it.data[1] === 0x8b ? gunzipSync(it.data) : it.data
+    return parseCsv(decode(bytes))
+  }
+  const content = table('content')
+  const bodies = table('bodycontent')
+  if (!content || !bodies) return null
+  // Paths in the upload are relative to the folder holding content.csv.
+  const base = dirOf(items.find((i) => /(^|\/)content\.csv(\.gz)?$/i.test(i.path))!.path)
+  const at = (p: string) => (base ? `${base}/${p}` : p)
+  const unknown = new Map<string, number>()
+  const pages = planCsv({ content, bodies, labels: table('label'), contentLabels: table('content_label') }, unknown, t('import.csv.user'))
+  const docs: Doc[] = pages.map((p) => {
+    let html = p.html
+    if (p.unused.length)
+      html += `<h3>${escapeHtml(ATTACHMENTS_HEADING())}</h3><ul>${p.unused.map((n) => `<li><a href="${escapeHtml(at(p.files.get(n)!))}">${escapeHtml(n)}</a></li>`).join('')}</ul>`
+    // Attachment paths in the body are relative to the export root; make them relative to the upload.
+    html = html.replace(/(src|href)="attachments\//g, `$1="${at('attachments/')}`)
+    editor().commands.setContent(html || '<p></p>', { emitUpdate: false })
+    const names = new Map([...p.files].map(([n, path]) => [norm(at(path)), n]))
+    return { key: `csv:${p.id}`, path: p.title, title: p.title.slice(0, 500), parent: p.parent && `csv:${p.parent}`, doc: editor().getJSON() as Json, dir: '', kind: p.kind, names, labels: p.labels }
+  })
+  // Parents first; siblings in Confluence's order.
+  const kids = new Map<string | null, Doc[]>()
+  const pos = new Map(pages.map((p) => [`csv:${p.id}`, p.position]))
+  for (const d of docs) kids.set(d.parent, [...(kids.get(d.parent) ?? []), d])
+  const ordered: Doc[] = []
+  const walk = (parent: string | null) =>
+    (kids.get(parent) ?? []).sort((a, b) => pos.get(a.key)! - pos.get(b.key)! || a.title.localeCompare(b.title)).forEach((d) => (ordered.push(d), walk(d.key)))
+  walk(null)
+  return { kind: 'confluence-csv', docs: ordered, files, skipped: [], notes: [...unknown].map(([n, c]) => `${n} ×${c}`) }
+}
+
 // ---------- running ----------
 
 const MIME: Record<string, string> = {
@@ -362,8 +452,8 @@ async function rewrite(node: Json, map: (url: string) => Promise<string>): Promi
   return { ...node, ...(attrs && { attrs }), ...(marks && { marks }), ...(content && { content }) }
 }
 
-async function createPage(spaceId: number, parentId: number | null, title: string) {
-  return api<{ id: number }>('/api/pages', { json: { spaceId, parentId, title } })
+async function createPage(spaceId: number, parentId: number | null, title: string, kind: 'page' | 'folder' = 'page') {
+  return api<{ id: number }>('/api/pages', { json: { spaceId, parentId, title, kind } })
 }
 async function setDoc(id: number, title: string, doc: Json) {
   const page = await api<{ version: number }>(`/api/pages/${id}`)
@@ -407,9 +497,9 @@ export async function run(p: Plan, spaceId: number, parentId: number | null, onP
           const old = Number(f[1])
           if (!fileUrl.has(old)) {
             const att = m.attachments.find((a: any) => a.id === old)
-            const data = att && findFile(att.path)
-            if (!data) return (warnings.push(`${pg.title}: missing file ${att?.name ?? old}`), u)
-            fileUrl.set(old, (await uploadFile(newId, att.name, data)).url)
+            const load = att && findFile(att.path)
+            if (!load) return (warnings.push(`${pg.title}: missing file ${att?.name ?? old}`), u)
+            fileUrl.set(old, (await uploadFile(newId, att.name, await load())).url)
           }
           return fileUrl.get(old)!
         }
@@ -427,12 +517,13 @@ export async function run(p: Plan, spaceId: number, parentId: number | null, onP
   for (const [i, d] of p.docs.entries()) {
     onProgress({ done: i, total, current: d.title })
     try {
-      const page = await createPage(spaceId, d.parent ? ids.get(d.parent) ?? parentId : parentId, d.title)
+      const page = await createPage(spaceId, d.parent ? ids.get(d.parent) ?? parentId : parentId, d.title, d.kind)
       ids.set(d.key, page.id)
       created.push({ id: page.id, title: d.title })
       const uploaded = new Map<string, string>()
       const doc = await rewrite(d.doc, async (u) => {
-        if (/^(https?:|mailto:|#|\/api\/|wiki:)/i.test(u)) return u
+        // Any URL scheme (https:, ftp:, mailto:, smb:, …) points outside the upload.
+        if (/^([a-z][a-z0-9+.-]*:|#|\/api\/)/i.test(u) && !u.startsWith('data:')) return u
         if (u.startsWith('data:image/')) {
           const [, type, b64] = u.match(/^data:image\/(\w+);base64,(.*)$/) ?? []
           if (!b64) return u
@@ -447,14 +538,23 @@ export async function run(p: Plan, spaceId: number, parentId: number | null, onP
           return u
         }
         if (uploaded.has(path)) return uploaded.get(path)!
-        const data = p.files.get(path)
-        if (!data) return DOC_EXT.test(path) ? u : (warnings.push(`${d.title}: “${u}” not found in the upload`), u)
+        const load = p.files.get(path)
+        if (!load) return DOC_EXT.test(path) ? u : (warnings.push(`${d.title}: “${u}” not found in the upload`), u)
         if (DOC_EXT.test(path)) return u
-        const url = (await uploadFile(page.id, baseName(path), data)).url
-        uploaded.set(path, url)
-        return url
+        const name = d.names?.get(path) ?? baseName(path)
+        try {
+          const url = (await uploadFile(page.id, name, await load())).url
+          uploaded.set(path, url)
+          return url
+        } catch (e: any) {
+          // One file that can't be uploaded (too big, storage full) mustn't cost the page its text.
+          warnings.push(`${d.title}: ${name} — ${e.message}`)
+          uploaded.set(path, u)
+          return u
+        }
       })
-      await setDoc(page.id, d.title, doc)
+      if (d.kind !== 'folder') await setDoc(page.id, d.title, doc)
+      if (d.labels?.length) await api(`/api/pages/${page.id}/labels`, { method: 'PUT', json: { labels: d.labels } })
     } catch (e: any) {
       warnings.push(`${d.title}: ${e.message}`)
     }
@@ -466,7 +566,8 @@ export async function run(p: Plan, spaceId: number, parentId: number | null, onP
     if (!id) continue
     for (const n of [d.title, stripNotionId(stripExt(baseName(d.path)))]) if (!byName.has(n.toLowerCase())) byName.set(n.toLowerCase(), id)
   }
-  const internal = /"href":"(?!https?:|mailto:|#|\/api\/|data:)/
+  // "#wiki:Title" is a link by page name (the editor only keeps links with known schemes, so it rides on "#").
+  const internal = /"href":"(?!https?:|mailto:|#(?!wiki:)|\/api\/|data:)/
   for (const d of p.docs) {
     const id = ids.get(d.key)
     // Only pages that link to other files need a second look; the rest are done.
@@ -474,13 +575,13 @@ export async function run(p: Plan, spaceId: number, parentId: number | null, onP
     try {
       const cur = await api<{ doc: Json; title: string }>(`/api/pages/${id}`)
       const linked = await rewrite(cur.doc, async (u) => {
-        if (/^(https?:|mailto:|#|\/api\/|data:)/i.test(u)) return u
-        if (u.startsWith('wiki:')) {
-          const name = u.slice(5)
+        if (u.startsWith('#wiki:')) {
+          const name = decodeURIComponent(u.slice(6))
           const target = byName.get(name.toLowerCase())
           // A page that wasn't in the upload: search for it instead of a dead link.
           return target ? `#/p/${target}` : `#/search?q=${encodeURIComponent(name)}`
         }
+        if (/^([a-z][a-z0-9+.-]*:|#|\/api\/)/i.test(u)) return u
         try {
           const target = ids.get(norm(`${d.dir}/${decodeURIComponent(u.split(/[?#]/)[0])}`))
           return target ? `#/p/${target}` : u
