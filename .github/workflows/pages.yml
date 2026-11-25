@@ -30,6 +30,8 @@ jobs:
           mkdir -p _site/images
           cp site/*.html site/*.css site/*.js site/robots.txt site/sitemap.xml _site/
           cp docs/images/* _site/images/
+          # New CSS/JS at once after a deploy, instead of whatever the browser cached (Pages caches 10 minutes).
+          sed -i "s/__V__/${GITHUB_SHA::8}/g" _site/*.html
       - uses: actions/upload-pages-artifact@v4
         with:
           path: _site

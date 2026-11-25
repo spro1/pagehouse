@@ -50,7 +50,7 @@ nav.links a { color: var(--text-2); }
 .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 .badges { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 22px; font-size: 13px; color: var(--muted); }
 .badges span { padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; }
-.shot { margin: 44px auto 0; border-radius: 14px; overflow: hidden; border: 1px solid var(--line); box-shadow: var(--shadow); }
+.shot { width: 100%; height: auto; aspect-ratio: 16 / 10; margin: 44px auto 0; border-radius: 14px; overflow: hidden; border: 1px solid var(--line); box-shadow: var(--shadow); }
 
 /* Sections */
 section.block { padding: 72px 0; scroll-margin-top: 60px; }
@@ -76,15 +76,11 @@ h2 { font-size: clamp(26px, 3.4vw, 36px); letter-spacing: -0.015em; line-height:
 .facts td { color: var(--text-2); }
 @media (max-width: 640px) { .facts th { white-space: normal; width: 34%; } .facts th, .facts td { padding: 12px; } }
 
-/* Screens: one screenshot at a time, switched by tabs (CSS only), so the section stays one image tall. */
-.screens { position: relative; max-width: 900px; margin: 0 auto; }
-.screens input { position: absolute; top: 0; left: 0; opacity: 0; pointer-events: none; }
-.screen-tabs { display: flex; justify-content: center; gap: 6px; margin-bottom: 16px; }
-.screen-tabs label { cursor: pointer; padding: 7px 16px; border: 1px solid var(--line); border-radius: 999px; font-size: 14px; color: var(--text-2); background: var(--card); }
-#shot-dark:checked ~ .screen-tabs label[for="shot-dark"], #shot-search:checked ~ .screen-tabs label[for="shot-search"] { background: var(--accent); border-color: var(--accent); color: #fff; }
-#shot-dark:focus-visible ~ .screen-tabs label[for="shot-dark"], #shot-search:focus-visible ~ .screen-tabs label[for="shot-search"] { outline: 2px solid var(--accent); outline-offset: 2px; }
-.screen { display: none; width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--line); box-shadow: var(--shadow); }
-#shot-dark:checked ~ .screen-dark, #shot-search:checked ~ .screen-search { display: block; }
+/* Screens: one under the other, each at its own 16:10 proportions. */
+.screens { max-width: 880px; margin: 0 auto; display: grid; gap: 40px; }
+.screens figure { margin: 0; }
+.screens img { width: 100%; height: auto; aspect-ratio: 16 / 10; border-radius: 12px; border: 1px solid var(--line); box-shadow: var(--shadow); }
+.screens figcaption { text-align: center; color: var(--muted); font-size: 14px; margin-top: 12px; }
 
 /* Install */
 .tabs { display: grid; gap: 16px; grid-template-columns: 1fr; }
