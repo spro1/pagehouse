@@ -830,3 +830,9 @@ pre.diff { margin: 0; max-height: 60vh; overflow: auto; font-size: 13px; line-he
 .emoji-foot button { height: 30px; }
 .page-emoji { margin-right: 6px; }
 @media print { .toolbar, .page-icon-add { display: none !important; } }
+
+.tree-menu { width: 220px; z-index: 50; }
+.node .add { margin-right: 2px; }
+.node .add:last-child { margin-right: 4px; }
+.node .add[aria-expanded="true"] { opacity: 1; background: var(--bg-active); }
+.node.active .add { opacity: 1; }

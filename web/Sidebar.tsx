@@ -3,6 +3,7 @@ import { api, toast, type PageNode, type Space, type User } from './api.ts'
 import { t } from './i18n.ts'
 import { Icon } from './icons.tsx'
 import { Bell } from './Notifications.tsx'
+import { confirmDialog } from './ui.tsx'
 import { applyTheme, theme as currentTheme, type Theme } from './theme.ts'
 
 type Props = {
@@ -131,6 +132,45 @@ function Tree({ pages, current, onAdd, onMoved }: { pages: PageNode[]; current: 
   })
   const [drag, setDrag] = useState<number | null>(null)
   const [drop, setDrop] = useState<Drop | null>(null)
+  // The row menu is fixed-positioned so the sidebar's scrolling can't clip it.
+  const [menu, setMenu] = useState<{ page: PageNode; x: number; y: number } | null>(null)
+  useEffect(() => {
+    if (!menu) return
+    const close = (e: Event) => !(e.target as Element).closest?.('.tree-menu') && setMenu(null)
+    addEventListener('mousedown', close)
+    addEventListener('scroll', close, true)
+    return () => (removeEventListener('mousedown', close), removeEventListener('scroll', close, true))
+  }, [menu])
+  const copyLink = (p: PageNode) => {
+    setMenu(null)
+    navigator.clipboard.writeText(`${location.origin}${location.pathname}#/p/${p.id}`).then(() => toast(t('page.linkCopied')), () => {})
+  }
+  const trash = async (p: PageNode) => {
+    setMenu(null)
+    if (!(await confirmDialog({ title: t('page.trash.title'), body: t('page.trash.body'), ok: t('page.toTrash'), danger: true }))) return
+    try {
+      await api(`/api/pages/${p.id}`, { method: 'DELETE' })
+    } catch (e: any) {
+      return toast(e.message)
+    }
+    // The open page (or one inside it) went to the trash: go home rather than show a page that's gone.
+    let x: PageNode | undefined = current === null ? undefined : byId.get(current)
+    while (x && x.id !== p.id) x = x.parentId === null ? undefined : byId.get(x.parentId)
+    if (x) location.hash = '#/'
+    dispatchEvent(new CustomEvent('ph:tree-changed'))
+    toast(t('page.trashed'), {
+      label: t('common.undo'),
+      run: () => api(`/api/pages/${p.id}/restore`, { method: 'POST' }).then(() => dispatchEvent(new CustomEvent('ph:tree-changed'))),
+    })
+  }
+  const copy = (p: PageNode, children: boolean) => {
+    setMenu(null)
+    api<{ id: number; count: number }>(`/api/pages/${p.id}/copy`, { method: 'POST', json: { title: t('page.copy.title', { title: p.title || t('common.untitled') }), children } }).then((r) => {
+      dispatchEvent(new CustomEvent('ph:tree-changed'))
+      location.hash = `#/p/${r.id}`
+      toast(t('page.copied', { n: r.count }))
+    }, (e) => toast(e.message))
+  }
   const children = useMemo(() => {
     const m = new Map<number | null, PageNode[]>()
     for (const p of pages) m.set(p.parentId, [...(m.get(p.parentId) ?? []), p])
@@ -231,6 +271,13 @@ function Tree({ pages, current, onAdd, onMoved }: { pages: PageNode[]; current: 
                   <Icon name="lock" size={12} />
                 </span>
               )}
+              <button className="add" aria-haspopup="menu" aria-expanded={menu?.page.id === p.id} title={t('page.more')} aria-label={t('page.more')}
+                onClick={(e) => {
+                  const r = e.currentTarget.getBoundingClientRect()
+                  setMenu(menu?.page.id === p.id ? null : { page: p, x: r.left, y: r.bottom + 4 })
+                }}>
+                <Icon name="more" size={13} />
+              </button>
               <button className="add" onClick={() => onAdd(p.id)} title={t('tree.addChild')} aria-label={t('tree.addChild')}>
                 <Icon name="plus" size={13} />
               </button>
@@ -241,7 +288,22 @@ function Tree({ pages, current, onAdd, onMoved }: { pages: PageNode[]; current: 
       })}
     </ul>
   )
-  return <div className="tree">{render(null, 0)}</div>
+  return (
+    <div className="tree">
+      {render(null, 0)}
+      {menu && (
+        <div className="dropdown tree-menu" role="menu" style={{ position: 'fixed', left: Math.min(menu.x, innerWidth - 240), top: Math.min(menu.y, innerHeight - 240) }}>
+          <button role="menuitem" onClick={() => (setMenu(null), onAdd(menu.page.id))}><Icon name="plus" /> {t('tree.addChild')}</button>
+          <hr />
+          <button role="menuitem" onClick={() => copyLink(menu.page)}><Icon name="link" /> {t('page.copyLink')}</button>
+          <button role="menuitem" onClick={() => copy(menu.page, false)}><Icon name="page" /> {t('page.copy')}</button>
+          {children.has(menu.page.id) && <button role="menuitem" onClick={() => copy(menu.page, true)}><Icon name="page" /> {t('page.copyTree')}</button>}
+          <hr />
+          <button role="menuitem" className="danger" onClick={() => trash(menu.page)}><Icon name="trash" /> {t('page.toTrash')}</button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 /** Cycles system → light → dark; saved to the account. */
