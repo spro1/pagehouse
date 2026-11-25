@@ -517,10 +517,10 @@ test('OIDC single sign-on creates and signs in an account by email', async () =>
     for await (const ch of req) body += ch
     res.setHeader('content-type', 'application/json')
     if (u.pathname === '/.well-known/openid-configuration')
-      return res.end(JSON.stringify({ authorization_endpoint: `${base}/auth`, token_endpoint: `${base}/token`, userinfo_endpoint: `${base}/me` }))
+      return res.end(JSON.stringify({ authorization_endpoint: `${base}/auth`, token_endpoint: `${base}/token`, userinfo_endpoint: `${base}/me`, end_session_endpoint: `${base}/logout` }))
     if (u.pathname === '/token') {
       verifier = new URLSearchParams(body).get('code_verifier') ?? ''
-      return res.end(JSON.stringify(new URLSearchParams(body).get('code') === 'good' ? { access_token: 'at' } : {}))
+      return res.end(JSON.stringify(new URLSearchParams(body).get('code') === 'good' ? { access_token: 'at', id_token: 'idt' } : {}))
     }
     if (u.pathname === '/me') return res.end(JSON.stringify({ email: 'SSO@Corp.co', email_verified: true, name: 'Sso User' }))
     res.statusCode = 404
@@ -562,6 +562,11 @@ test('OIDC single sign-on creates and signs in an account by email', async () =>
     // Environment variables take over, and the screen becomes read-only.
     process.env.OIDC_ISSUER = issuer
     process.env.OIDC_CLIENT_ID = 'from-env'
+    // Signing out also ends the provider's session.
+    const idt = cb.headers.getSetCookie().find((h) => h.startsWith('oidc_idt='))!.split(';')[0]
+    const out = await (await sapp.request('/api/auth/logout', { method: 'POST', headers: { cookie: `${sid}; ${idt}` } })).json()
+    assert.match(out.redirect, /\/logout\?id_token_hint=idt&client_id=.+&post_logout_redirect_uri=http%3A%2F%2F/)
+    assert.equal((await (await sapp.request('/api/auth/logout', { method: 'POST', headers: { cookie: sid } })).json()).redirect, null)
     const env = await (await sapp.request('/api/admin/sso', { headers: { cookie: admin.cookie } })).json()
     assert.deepEqual([env.source, env.clientId], ['env', 'from-env'])
     assert.equal((await put({ enabled: false })).status, 409)

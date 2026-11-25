@@ -320,7 +320,7 @@ function Workspace({ me, route, onLogout }: { me: User; route: Route; onLogout: 
         onNewPage={(parent) => createPage(parent)}
         onSearch={() => (setNavOpen(false), setPalette(true))}
         onMoved={loadPages}
-        onLogout={() => api('/api/auth/logout', { method: 'POST' }).then(onLogout)}
+        onLogout={() => api<{ redirect?: string | null }>('/api/auth/logout', { method: 'POST' }).then((r) => (r.redirect ? location.assign(r.redirect) : onLogout()))}
         onClose={() => setNavOpen(false)}
         onSpaceSettings={() => setSpaceSettings(true)}
       />
