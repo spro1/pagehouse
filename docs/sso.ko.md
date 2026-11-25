@@ -2,7 +2,7 @@
 
 [English](sso.md)
 
-Pagehouse는 OpenID Connect를 지원하는 SSO라면 어떤 것과도 연결할 수 있습니다. Keycloak, Microsoft Entra ID, Google Workspace, Okta, Authentik 등이 해당됩니다. 이 문서는 SSO 서버 쪽과 위키 쪽 설정, 그리고 자주 생기는 문제를 다룹니다.
+Pagehouse는 OpenID Connect 방식의 SSO와 연결합니다. **지금까지 Keycloak과만 연동을 테스트했기 때문에** 이 문서는 Keycloak을 기준으로 설명합니다. 다른 OpenID Connect 서비스(Entra ID, Okta, Authentik 등)도 같은 표준이라 같은 설정으로 동작할 것으로 보지만, 테스트하지는 않았습니다.
 
 ## 동작 방식
 
@@ -40,30 +40,6 @@ Pagehouse는 OpenID Connect를 지원하는 SSO라면 어떤 것과도 연결할
 4. 시크릿은 **Credentials** 탭에 있습니다.
 5. Issuer는 `https://<keycloak 주소>/realms/<realm>`.
 6. 사용자에게 이메일이 있어야 하고 **Email verified**가 켜져 있어야 합니다.
-
-### Microsoft Entra ID
-
-1. **앱 등록 → 새 등록**. 리디렉션 URI 플랫폼은 *웹*, 값은 리디렉션 URI.
-2. **인증서 및 비밀 → 새 클라이언트 암호**. 표시되는 *값*이 시크릿입니다.
-3. **인증 → 웹 → 리디렉션 URI**에 `/`로 끝나는 위키 주소도 추가합니다. 로그아웃 뒤 위키로 돌아오려면 필요합니다.
-4. Client ID는 *애플리케이션(클라이언트) ID*, Issuer는 `https://login.microsoftonline.com/<테넌트 ID>/v2.0`.
-5. Entra ID는 `email_verified`를 보내지 않는 경우가 많습니다. 로그인할 때 "SSO 서버가 확인된 이메일을 주지 않았습니다"가 나오면 **확인 표시 없는 이메일도 믿기**를 켜세요. 단, 사용자가 디렉터리에서 자기 이메일을 직접 바꿀 수 없을 때만 켜야 합니다.
-
-### Google Workspace
-
-1. Google Cloud 콘솔 → **API 및 서비스 → 사용자 인증 정보 → OAuth 클라이언트 ID 만들기**, 유형은 *웹 애플리케이션*.
-2. **승인된 리디렉션 URI**에 리디렉션 URI.
-3. Issuer는 `https://accounts.google.com`.
-4. 개인 Google 계정을 막으려면 OAuth 동의 화면을 *내부*로 설정합니다.
-
-Google은 로그아웃 엔드포인트가 없어서 위키에서 로그아웃해도 Google 로그인은 유지됩니다.
-
-### Okta
-
-1. **Applications → Create App Integration**에서 *OIDC*, *Web Application*.
-2. **Sign-in redirect URIs**에 리디렉션 URI, **Sign-out redirect URIs**에 `/`로 끝나는 위키 주소.
-3. 사용할 사람이나 그룹을 할당합니다.
-4. Issuer는 `https://<조직>.okta.com`. 커스텀 authorization server를 쓰면 `https://<조직>.okta.com/oauth2/default` 같은 형태입니다.
 
 ## 2. 위키에서 켜기
 

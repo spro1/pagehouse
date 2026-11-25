@@ -36,7 +36,7 @@ Weekly reports, meeting notes and technical docs in one place, inside your own n
 | **Moving parts** | The app, PostgreSQL and a backup job: three containers, no external services |
 | **Data safety** | Trash that never empties itself, version history, daily automatic backups, a backup before every upgrade and restore |
 | **Leaving** | Export any space as Markdown or as HTML you can open in a browser, with attachments. Your data isn't tied to a format |
-| **Sign-in** | Local accounts with invite links, or SSO with any OpenID Connect provider (Keycloak, Entra ID, Google Workspace, Okta). Forgotten passwords: an email reset link, or a temporary password from an admin |
+| **Sign-in** | Local accounts with invite links, or OpenID Connect SSO (tested with Keycloak). Forgotten passwords: an email reset link, or a temporary password from an admin |
 
 ## Features
 
@@ -195,7 +195,7 @@ No. Installing (from the offline bundle), using and upgrading all work without i
 There is no seat limit. A single-server setup is aimed at a few hundred people; on Kubernetes the app can scale out.
 
 **Can people sign in with company accounts (SSO)?**
-Yes, with any OpenID Connect provider. Turn it on in **Admin → SSO** with the issuer URL, client ID and secret (or set `OIDC_*` in `.env`). Step-by-step setup for Keycloak, Entra ID, Google and Okta: [SSO guide](docs/sso.md). Accounts are matched by email.
+Yes, with any OpenID Connect provider. Turn it on in **Admin → SSO** with the issuer URL, client ID and secret (or set `OIDC_*` in `.env`). Tested with Keycloak; setup steps in the [SSO guide](docs/sso.md). Accounts are matched by email.
 
 **I forgot my password.**
 With email set up, use "Forgot your password?" on the sign-in page. Otherwise an admin creates a reset link or a temporary password in **Admin → People**; signing in with a temporary password asks you to choose your own straight away.

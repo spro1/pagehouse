@@ -2,7 +2,7 @@
 
 [한국어](sso.ko.md)
 
-Pagehouse signs people in with any OpenID Connect provider: Keycloak, Microsoft Entra ID, Google Workspace, Okta, Authentik and others. This guide covers the setup on both sides and the usual problems.
+Pagehouse signs people in through an OpenID Connect provider. **It has been tested with Keycloak only**, so this guide uses Keycloak. Other OpenID Connect providers (Entra ID, Okta, Authentik, …) follow the same standard and should work with the same settings, but haven't been tested.
 
 ## How it works
 
@@ -40,30 +40,6 @@ Note the **issuer URL**, **client ID** and **client secret**.
 4. Secret: **Credentials** tab.
 5. Issuer: `https://<keycloak-host>/realms/<realm>`.
 6. Users need an email, and **Email verified** on (or use a realm that verifies emails).
-
-### Microsoft Entra ID
-
-1. **App registrations → New registration**. Redirect URI: platform *Web*, the redirect URI.
-2. **Certificates & secrets → New client secret**: the secret (copy the *Value*).
-3. **Authentication → Web → Redirect URIs**: also add the wiki address ending in `/`, so signing out can come back to the wiki.
-4. Client ID: *Application (client) ID*. Issuer: `https://login.microsoftonline.com/<tenant-id>/v2.0`.
-5. Entra ID often doesn't send `email_verified`. If sign-in says the provider didn't give a verified email, tick **Trust emails the provider doesn't mark verified**, but only if users can't change their own email in your directory.
-
-### Google Workspace
-
-1. Google Cloud console → **APIs & Services → Credentials → Create credentials → OAuth client ID**, type *Web application*.
-2. **Authorized redirect URIs**: the redirect URI.
-3. Issuer: `https://accounts.google.com`.
-4. To keep out personal Google accounts, set the OAuth consent screen to *Internal*.
-
-Google has no sign-out endpoint, so signing out of the wiki doesn't sign out of Google.
-
-### Okta
-
-1. **Applications → Create App Integration**: *OIDC*, *Web Application*.
-2. **Sign-in redirect URIs**: the redirect URI. **Sign-out redirect URIs**: the wiki address with `/`.
-3. Assign the people or groups who may use it.
-4. Issuer: `https://<your-org>.okta.com` (or your custom authorization server, e.g. `https://<your-org>.okta.com/oauth2/default`).
 
 ## 2. Turn it on in the wiki
 

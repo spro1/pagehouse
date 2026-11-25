@@ -253,7 +253,7 @@ At the limit new uploads are refused, but text always saves.
 | Block access | **Disable**: signs them out at once. **Enable** lets them back in |
 | Reset a password | A **reset link** (once, within a day) or a **temporary password** (sign in right away; choose a new password at first sign-in). Both sign the person out everywhere |
 
-**SSO:** let people sign in with a company account (Keycloak, Entra ID, Google Workspace, Okta or any OpenID Connect provider).
+**SSO:** let people sign in with a company account through an OpenID Connect provider (tested with Keycloak).
 1. Register the **redirect URI** shown on the screen with the provider.
 2. Enter the issuer URL, client ID and client secret, and click **Test connection**.
 3. Click **Turn on SSO**. It applies as soon as it's saved, and the sign-in page gets the button.
