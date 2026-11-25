@@ -34,6 +34,7 @@
 
 No database or settings changes.
 - **Sidebar**: hide it with the button at its top right or Cmd/Ctrl+\\, and drag its edge to make it wider (up to 40% of the window). Both are remembered per browser.
+- **Text keeps its width**: when the page area gets narrow (for example a wider sidebar), the table of contents on the right hides first; pages without one no longer reserve its column.
 - **Scrollbars** appear only while hovering the sidebar or scrolling the page.
 - **Fixed:** on laptop-sized windows the toolbar's **+ Insert**, color and link menus opened under the sidebar.
 
