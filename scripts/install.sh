@@ -67,9 +67,11 @@ existing=false
 
 # 4. Existing install: back up before changing anything.
 if $existing && [ -f "$DIR/scripts/backup.sh" ]; then
-  if (cd "$DIR" && $COMPOSE ps --status running --services 2>/dev/null | grep -qx app); then
+  # Every command that could read stdin gets </dev/null: under `curl | sh` stdin is the rest of this script,
+  # and a command reading it (compose exec does) would swallow it, ending the install early without an error.
+  if (cd "$DIR" && $COMPOSE ps --status running --services 2>/dev/null </dev/null | grep -qx app); then
     say "Existing install found in $DIR. Backing up before upgrading..."
-    (cd "$DIR" && COMPOSE="$COMPOSE" sh scripts/backup.sh backups/before-upgrade) || die "backup failed; nothing was changed"
+    (cd "$DIR" && COMPOSE="$COMPOSE" sh scripts/backup.sh backups/before-upgrade </dev/null) || die "backup failed; nothing was changed"
   fi
 fi
 
@@ -104,15 +106,15 @@ fi
 # 7. Images: load them from an offline bundle, otherwise pull.
 cd "$DIR"
 if ls "$bundle"/images/*.tar >/dev/null 2>&1; then
-  for img in "$bundle"/images/*.tar; do say "Loading $(basename "$img")"; $CLI load -q -i "$img" >/dev/null; done
+  for img in "$bundle"/images/*.tar; do say "Loading $(basename "$img")"; $CLI load -q -i "$img" >/dev/null </dev/null; done
 else
   say "Pulling images"
-  $COMPOSE pull -q 2>/dev/null || $COMPOSE pull
+  $COMPOSE pull -q 2>/dev/null </dev/null || $COMPOSE pull </dev/null
 fi
 
 # 8. Start and wait until healthy.
 say "Starting Pagehouse $BUNDLE_VERSION"
-$COMPOSE up -d --remove-orphans
+$COMPOSE up -d --remove-orphans </dev/null
 port=$(sed -n 's/^PORT=//p' .env); port=${port:-3000}
 i=0
 until curl -fsS "http://127.0.0.1:$port/healthz" >/dev/null 2>&1; do

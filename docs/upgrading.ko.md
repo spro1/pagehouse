@@ -6,7 +6,7 @@
 
 | 설치 방식 | 업그레이드 방법 |
 |---|---|
-| 한 줄 설치(Docker·Podman) | 설치 폴더에서 `scripts/upgrade.sh <버전>`. 예: `scripts/upgrade.sh 0.2.0-beta.4` |
+| 한 줄 설치(Docker·Podman) | 설치 폴더에서 `scripts/upgrade.sh <버전>`. 예: `scripts/upgrade.sh 0.2.0-beta.5` |
 | 오프라인 번들 | 새 번들을 풀고 `sh pagehouse-<버전>/install.sh --dir <설치 폴더>` |
 | 쿠버네티스(Helm) | `helm upgrade <이름> pagehouse-<버전>.tgz -n <네임스페이스> --reuse-values` |
 
@@ -29,6 +29,12 @@
 **건너뛰기:** 중간 버전을 건너뛰어도 됩니다. 마이그레이션은 빠진 것부터 순서대로 모두 적용됩니다. 다만 아래에서 **건너뛴 버전들의 확인 사항을 모두** 읽어 보세요.
 
 ## 버전별 확인 사항
+
+### 0.2.0-beta.4 → 0.2.0-beta.5
+
+버그 수정만 있습니다. DB와 설정은 바뀌지 않습니다.
+- **`scripts/upgrade.sh`가 업그레이드 전 백업만 하고 멈추던 문제**를 고쳤습니다. 오류 없이 끝나서 버전이 그대로였습니다(백업 단계가 파이프로 받은 설치 스크립트의 나머지를 읽어 버렸음). 업그레이드했는데 버전이 그대로라면 `scripts/upgrade.sh 0.2.0-beta.5`를 다시 실행하세요. 새 설치 스크립트는 예전 `upgrade.sh`로도 정상 동작하고, 그때 `backups/before-upgrade/`에 쌓인 백업은 지워도 됩니다.
+- **새로 설치한 뒤 첫 자동 백업이 실패하던 문제**를 고쳤습니다. 아직 올린 파일이 없으면 실패했고, 다음 시도는 하루 뒤였습니다. 수동 백업(`scripts/backup.sh`)과 Kubernetes 백업 작업도 같은 문제가 있었습니다.
 
 ### 0.2.0-beta.3 → 0.2.0-beta.4
 

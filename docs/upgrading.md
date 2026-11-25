@@ -6,7 +6,7 @@
 
 | Installed with | Upgrade |
 |---|---|
-| One-line install (Docker, Podman) | In the install folder: `scripts/upgrade.sh <version>`, e.g. `scripts/upgrade.sh 0.2.0-beta.4` |
+| One-line install (Docker, Podman) | In the install folder: `scripts/upgrade.sh <version>`, e.g. `scripts/upgrade.sh 0.2.0-beta.5` |
 | Offline bundle | Extract the new bundle and run `sh pagehouse-<version>/install.sh --dir <install folder>` |
 | Kubernetes (Helm) | `helm upgrade <name> pagehouse-<version>.tgz -n <namespace> --reuse-values` |
 
@@ -29,6 +29,12 @@
 **Skipping versions:** you can upgrade across several versions at once; every missing migration applies in order. Read the notes for **every version you skip** below.
 
 ## Notes per version
+
+### 0.2.0-beta.4 → 0.2.0-beta.5
+
+Fixes only; no database or settings changes.
+- **`scripts/upgrade.sh` stopped right after the pre-upgrade backup** and reported nothing, so the version didn't change (the backup step swallowed the rest of the piped installer). If an upgrade left you on the old version, just run `scripts/upgrade.sh 0.2.0-beta.5`: the new installer works with the old script, and the extra backups it left in `backups/before-upgrade/` are harmless.
+- **The first automatic backup of a new install failed** when nothing had been uploaded yet; the next try came a day later. Manual backups (`scripts/backup.sh`) and the Kubernetes backup job had the same problem.
 
 ### 0.2.0-beta.3 → 0.2.0-beta.4
 
