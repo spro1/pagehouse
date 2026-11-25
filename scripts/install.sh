@@ -42,7 +42,10 @@ case "$0" in
   *install.sh) here=$(cd "$(dirname "$0")" 2>/dev/null && pwd || echo "") ;;
   *) here="" ;;
 esac
-if [ -n "$here" ] && [ -f "$here/docker-compose.yml" ] && [ -f "$here/VERSION" ]; then
+if [ -n "${PAGEHOUSE_BUNDLE:-}" ]; then
+  # An unpacked bundle given explicitly (tests run the installer from stdin, like `curl | sh`, with a local build).
+  bundle=$(cd "$PAGEHOUSE_BUNDLE" && pwd)
+elif [ -n "$here" ] && [ -f "$here/docker-compose.yml" ] && [ -f "$here/VERSION" ]; then
   bundle=$here
 else
   command -v curl >/dev/null 2>&1 || die "curl is required to download Pagehouse"
@@ -64,6 +67,19 @@ mkdir -p "$DIR"
 DIR=$(cd "$DIR" && pwd)
 existing=false
 [ -f "$DIR/.env" ] && existing=true
+
+# A new install into a folder whose earlier install left its volumes behind: the old database keeps its old
+# password, which the new .env wouldn't know, and the app would fail to sign in to it. Stop and explain.
+if ! $existing; then
+  project=$(basename "$DIR" | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9_-')
+  if $CLI volume inspect "${project}_db" >/dev/null 2>&1 </dev/null; then
+    die "a database volume from an earlier install (${project}_db) still exists, but $DIR/.env with its password is gone.
+  To keep that data: put the old .env back into $DIR and run this again (it then upgrades).
+  To start over: delete the old data for good with
+    $CLI volume rm ${project}_db ${project}_files
+  and run this again."
+  fi
+fi
 
 # 4. Existing install: back up before changing anything.
 if $existing && [ -f "$DIR/scripts/backup.sh" ]; then

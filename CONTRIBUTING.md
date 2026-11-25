@@ -25,7 +25,7 @@ only moves when a version is released, so `main` always matches the latest relea
 
 1. Fork the repository (or create a branch, if you're a maintainer) and open a pull request against the current
    `release/*` branch. Fixes that must go out on their own get a new release branch for a patch version.
-2. CI (`test` and `image`) must pass, and the branch must be up to date with its target.
+2. CI (`test`, `image` and `e2e`) must pass, and the branch must be up to date with its target.
 3. A maintainer (see `.github/CODEOWNERS`) reviews it, and every review thread must be resolved. Approvals aren't
    enforced yet because there is one maintainer; raise `required_approving_review_count` in the ruleset when
    there are more.
@@ -45,6 +45,16 @@ gh api -X POST repos/spro1/pagehouse/rulesets --input .github/rulesets/tags.json
 ## Pull requests
 
 - `npm run typecheck` and `npm test` must pass. Add a test for server changes.
+- CI also runs end-to-end tests (`e2e` job): it installs the latest release, upgrades it to your build the way
+  users do, checks the data survived, and drives the app in a browser. To run them yourself:
+  ```sh
+  docker build --build-arg VERSION=0.0.0-ci -t ghcr.io/spro1/pagehouse:0.0.0-ci .
+  docker build -t ghcr.io/spro1/pagehouse-postgres:17 docker/postgres
+  sh e2e/upgrade.sh                 # prints E2E_EMAIL, E2E_PASSWORD and BASE_URL at the end
+  npx playwright install chromium
+  E2E_EMAIL=… E2E_PASSWORD=… BASE_URL=… npm run e2e
+  ```
+  The browser tests also run against `npm run dev` with any admin account.
 - Never lose user data: deletes are soft, history is never rewritten, migrations only add. Migrations live in
   `server/migrations/NNN_name.sql`; never edit one that was released.
 - Every UI string goes in `web/i18n.ts`, in both `en` and `ko` (a test checks that every key exists in every language).

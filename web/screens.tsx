@@ -83,7 +83,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
     const timer = setTimeout(() => api(`/api/search?limit=8&q=${encodeURIComponent(q)}`).then((r) => (setResults(r.results), setTotal(r.total), setSearched(q), setSel(0))), 160)
     return () => clearTimeout(timer)
   }, [q])
-  useEffect(() => document.querySelector('.palette-results .on')?.scrollIntoView({ block: 'nearest' }), [sel])
+  useEffect(() => { document.querySelector('.palette-results .on')?.scrollIntoView({ block: 'nearest' }) }, [sel])
   const go = (id: number) => ((location.hash = `#/p/${id}`), onClose())
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>

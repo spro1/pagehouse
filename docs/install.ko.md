@@ -118,6 +118,7 @@ docker compose up -d --build
 | `TRUST_PROXY` | `0` | 앞단 리버스 프록시 수. 프록시 뒤라면 `1`로 두어야 로그인 시도 제한과 감사 로그가 실제 접속 주소를 씁니다. 직접 접속이면 `0`(Helm은 인그레스를 켜면 자동으로 `1`) |
 | `OIDC_TRUST_EMAIL` | `0` | SSO 계정은 이메일로 연결되므로 제공자가 확인(verified)한 이메일만 받습니다. `email_verified`를 보내지 않는 제공자(일부 Entra ID)에서 `1`. 사용자가 제공자 쪽 이메일을 직접 바꿀 수 없을 때만 쓰세요 |
 | `SMTP_URL`, `SMTP_FROM` | 비어 있음 | 읽지 않은 알림 메일과 "비밀번호를 잊으셨나요?" 재설정 메일. 예: `smtp://user:pass@mail.example.com:587`. 메일 속 링크는 `PUBLIC_URL`이 있어야 함 |
+| `METRICS_TOKEN` | 비어 있음 | 넣으면 `/metrics`(Prometheus)가 켜지고, 이 값을 bearer 토큰으로 보내야 볼 수 있습니다. [모니터링](monitoring.ko.md) 참고 |
 | `WEBHOOK_ALLOW` | 비어 있음 | 개인 알림 웹훅이 보낼 수 있는 내부망 호스트. 예: `chat.corp.local,.corp.local`. 목록에 없으면 사설·루프백 주소는 막힙니다. 관리자 웹훅은 어디로든 보낼 수 있습니다 |
 | `LINK_PREVIEW` / `LINK_PREVIEW_ALLOW` | `1` / 비어 있음 | 링크 카드: 서버가 붙여 넣은 링크의 제목과 이미지를 가져옴. 사설·루프백 주소는 목록에 있어야 허용. 예: `jira.corp.local,.gitlab.corp.local` |
 | `PAGEHOUSE_VERSION` | 설치 스크립트가 지정 | 이미지 버전. 업그레이드가 바꿉니다 |
@@ -226,6 +227,7 @@ scripts/upgrade.sh 0.2.0      # 특정 버전
 |---|---|
 | 페이지가 안 열림 | `docker compose ps`에서 컨테이너가 `healthy`인지, `docker compose logs app` |
 | `POSTGRES_PASSWORD` 오류 | `.env`가 있는 설치 폴더에서 compose를 실행했는지 |
+| 설치가 "a database volume from an earlier install … still exists"로 멈춤 | 같은 이름의 폴더에 했던 예전 설치의 데이터가 남아 있고 그 `.env`는 없는 상태입니다. 그 데이터를 살리려면 예전 `.env`를 되돌려 놓고, 새로 시작하려면 메시지에 나온 볼륨을 지운 뒤 다시 실행하세요 |
 | 포트가 이미 사용 중 | `.env`의 `PORT`를 바꾸세요 |
 | 로그인해도 다시 로그인 화면 | HTTPS인데 프록시가 `X-Forwarded-Proto`를 안 넘기거나, 두 주소로 번갈아 접속 |
 | 큰 파일 업로드 실패 | 프록시 업로드 크기 제한(nginx `client_max_body_size`)을 올리세요 |

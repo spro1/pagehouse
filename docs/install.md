@@ -118,6 +118,7 @@ Restart after changing it: `docker compose up -d`.
 | `TRUST_PROXY` | `0` | Number of reverse proxies in front. Set `1` behind a proxy so sign-in throttling and the audit log see real client addresses; `0` for direct connections (the Helm chart sets `1` when ingress is on) |
 | `OIDC_TRUST_EMAIL` | `0` | SSO accounts are matched by email, so only emails the provider marks verified are accepted. `1` for providers that never send `email_verified` (some Entra ID setups) — only if users can't change their email there |
 | `SMTP_URL`, `SMTP_FROM` | empty | Notification emails and "Forgot your password?" reset links. For example `smtp://user:pass@mail.example.com:587`. Links in mail need `PUBLIC_URL` |
+| `METRICS_TOKEN` | empty | Turns on `/metrics` (Prometheus) for scrapers that send it as a bearer token. See [Monitoring](monitoring.md) |
 | `WEBHOOK_ALLOW` | empty | Internal hosts that personal notification webhooks may post to, e.g. `chat.corp.local,.corp.local`. Private and loopback addresses are refused otherwise. Admin webhooks may reach any host |
 | `LINK_PREVIEW` / `LINK_PREVIEW_ALLOW` | `1` / empty | Link cards fetch a pasted link's title and image from the server. Private and loopback addresses are refused unless listed, e.g. `jira.corp.local,.gitlab.corp.local` |
 | `PAGEHOUSE_VERSION` | set by the installer | Image version. Upgrades change it |
@@ -226,6 +227,7 @@ PostgreSQL 14+ with the `pg_trgm` extension available. The first start runs `CRE
 |---|---|
 | Page does not load | `docker compose ps` shows the containers `healthy`; `docker compose logs app` |
 | `POSTGRES_PASSWORD` error | Run compose from the install folder, where `.env` is |
+| Installer stops: "a database volume from an earlier install … still exists" | A previous install in a folder of the same name left its data behind, and its `.env` is gone. Put the old `.env` back to keep that data, or delete the volumes the message names to start over |
 | Port already in use | Change `PORT` in `.env` |
 | Signed in, then sent back to sign-in | HTTPS without `X-Forwarded-Proto` from the proxy, or the site opened under two host names |
 | Large uploads fail | Raise the proxy body limit (nginx `client_max_body_size`) |

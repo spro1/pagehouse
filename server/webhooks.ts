@@ -11,6 +11,7 @@ import type { Db } from './db.ts'
 import { guardedLookup, privateAddress } from './preview.ts'
 import { openSecret, sealSecret } from './sso.ts'
 import { TEXT } from './mail.ts'
+import { inc } from './metrics.ts'
 
 export const EVENTS = ['page.created', 'page.updated', 'page.deleted', 'comment.created'] as const
 type Event = (typeof EVENTS)[number]
@@ -77,8 +78,11 @@ export function startPersonalHooks(db: Db) {
         const line = (L[r.kind as 'mention'] ?? r.kind).replace('{actor}', r.actor ?? '?').replace('{page}', `“${r.page}”`)
         const url = pageUrl(Number(r.page_id))
         await postJson(r.webhook_url, chat(`${line}\n${url}`, { kind: r.kind, page: { id: Number(r.page_id), title: r.page, url }, actor: r.actor }), {}, true)
-          .then((s) => s >= 300 && console.error(`webhook for user ${r.user_id} answered ${s}`))
-          .catch((e) => console.error(`webhook for user ${r.user_id} failed:`, e.message))
+          .then((s) => {
+            inc('pagehouse_webhook_deliveries_total', { kind: 'personal', result: s >= 200 && s < 300 ? 'ok' : 'failed' })
+            if (s >= 300) console.error(`webhook for user ${r.user_id} answered ${s}`)
+          })
+          .catch((e) => (inc('pagehouse_webhook_deliveries_total', { kind: 'personal', result: 'failed' }), console.error(`webhook for user ${r.user_id} failed:`, e.message)))
       }
       }
     } catch (e) {
@@ -114,6 +118,7 @@ export function createWebhooks(db: Db) {
       }
       if (!error) break
     }
+    inc('pagehouse_webhook_deliveries_total', { kind: 'admin', result: error ? 'failed' : 'ok' })
     await db.query('UPDATE webhooks SET last_at = now(), last_status = $1, last_error = $2 WHERE id = $3', [status || null, error, hook.id])
     return { status, error }
   }

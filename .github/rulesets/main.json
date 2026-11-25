@@ -50,6 +50,9 @@
           },
           {
             "context": "image"
+          },
+          {
+            "context": "e2e"
           }
         ]
       }

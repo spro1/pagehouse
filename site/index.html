@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pagehouse · The team wiki you install on your own server</title>
+<meta name="description" content="Pagehouse is an open-source team wiki that small companies and teams run on their own server. Air-gapped installs, Confluence import, live co-editing and SSO.">
+<meta property="og:title" content="Pagehouse · The team wiki you install on your own server">
+<meta property="og:description" content="An open-source team wiki that keeps your documents inside your network. One server, one command.">
+<meta property="og:image" content="images/screenshot-light.png">
+<link rel="icon" href="images/logo.svg" type="image/svg+xml">
+<link rel="alternate" hreflang="ko" href="ko.html">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#"><img src="images/logo.svg" alt="">Pagehouse</a>
+    <nav class="links">
+      <a class="opt" href="#features">Features</a>
+      <a class="opt" href="#security">Data &amp; security</a>
+      <a class="opt" href="#install">Install</a>
+      <a class="opt" href="#faq">FAQ</a>
+      <a href="https://github.com/spro1/pagehouse">GitHub</a>
+      <a class="lang" href="ko.html" hreflang="ko">한국어</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="wrap">
+      <span class="eyebrow">Open source · Apache-2.0 · No user limits</span>
+      <h1>Your team's docs,<br><span class="grad">on your own server</span></h1>
+      <p class="lead">Pagehouse is a team wiki that small companies and teams install on their own server. Keep weekly reports, meeting notes and technical docs in one place, without sending them outside your network.</p>
+      <div class="cta">
+        <a class="btn primary" href="#install">Install</a>
+        <a class="btn" href="https://github.com/spro1/pagehouse">View on GitHub</a>
+      </div>
+      <div class="badges"><span>Docker · Podman</span><span>Kubernetes (Helm)</span><span>Air-gapped install</span><span>English · 한국어</span></div>
+      <img class="shot" src="images/screenshot-light.png" width="1440" height="900" alt="A Pagehouse page with a checklist, a table, a code block and a panel">
+    </div>
+  </section>
+
+  <section class="block soft">
+    <div class="wrap">
+      <h2>Built for teams like these</h2>
+      <p class="sub">If a wiki has meant contracts, seat counts and approvals to store data outside.</p>
+      <div class="who">
+        <div class="card"><h3>Organizations of 5 to 200</h3><p>No license fees and no counting seats at every renewal.</p></div>
+        <div class="card"><h3>Docs that can't leave</h3><p>Security policy, customer requirements or an air-gapped network rule out SaaS. Everything stays on your server.</p></div>
+        <div class="card"><h3>No one to run it full time</h3><p>Three containers on one server. Install, upgrade and backup are one script each.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="features">
+    <div class="wrap">
+      <h2>What a wiki people like to use needs</h2>
+      <p class="sub">Made so that anyone used to Confluence feels at home.</p>
+      <div class="grid">
+        <div class="card"><div class="ico">✍️</div><h3>Editor</h3><p>A formatting toolbar and <code>/</code> menu, text colors, tables with merged and colored cells, images you resize and caption, code highlighting for 45 languages, Mermaid diagrams, panels, to-dos, <code>@</code> mentions.</p></div>
+        <div class="card"><div class="ico">💬</div><h3>Live collaboration</h3><p>Co-editing with visible cursors, inline comments on a passage, replies and resolving, version history you can compare and restore.</p></div>
+        <div class="card"><div class="ico">🔎</div><h3>Search</h3><p>⌘K quick search and a full search page that also finds comments and attachment names, with space, author and date filters.</p></div>
+        <div class="card"><div class="ico">🔒</div><h3>Permissions</h3><p>Per-space visibility, roles for people and groups, view and edit restrictions per page. What you can't open never shows up in search, attachments or history.</p></div>
+        <div class="card"><div class="ico">🗂️</div><h3>Organizing</h3><p>Spaces and a drag-and-drop page tree, copying with subpages, labels, favorites, team templates, and a trash you can restore from.</p></div>
+        <div class="card"><div class="ico">🔔</div><h3>Notifications</h3><p>Mentions, replies and edits to pages you watch, in the app, by email, and in chat through Slack, Mattermost or Teams webhooks.</p></div>
+        <div class="card"><div class="ico">🔑</div><h3>Sign-in</h3><p>Accounts from invite links, or OpenID Connect SSO turned on from the admin screen (tested with Keycloak). Signing out ends the SSO session too.</p></div>
+        <div class="card"><div class="ico">🔗</div><h3>Integrations</h3><p>Webhooks that send page and comment events as signed JSON, a REST API with personal tokens, and an MCP server for AI agents.</p></div>
+        <div class="card"><div class="ico">📦</div><h3>Import and export</h3><p>Import from Confluence (CSV, HTML), Notion, Markdown and HTML. Export a space as Markdown or as an HTML ZIP that opens in any browser.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block soft">
+    <div class="wrap">
+      <div class="screens">
+        <figure><img src="images/screenshot-dark.png" width="1440" height="900" alt="A Pagehouse page in the dark theme" loading="lazy"><figcaption>Dark theme</figcaption></figure>
+        <figure><img src="images/screenshot-search.png" width="1440" height="900" alt="The ⌘K quick search" loading="lazy"><figcaption>⌘K quick search</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="security">
+    <div class="wrap">
+      <h2>Your data never leaves your server</h2>
+      <p class="sub">No external fonts, CDNs or telemetry. The only outbound requests are features you turn on.</p>
+      <table class="facts">
+        <tr><th>Where data lives</th><td>PostgreSQL and a file volume, all on your server. Outbound requests only for the SSO, email and webhooks you configure, and link-card previews (which you can turn off).</td></tr>
+        <tr><th>No internet</th><td>Install and upgrade from an offline bundle that carries the container images.</td></tr>
+        <tr><th>Nothing lost</th><td>Deleting moves to the trash and every edit stays in the history. Automatic daily backups, plus one before every upgrade and restore, with a retention policy set by admins.</td></tr>
+        <tr><th>Security</th><td>Sign-in throttling, an audit log (failed sign-ins, permission changes, deletions, exports), encrypted SSO and webhook secrets, and requests aimed at your internal network refused.</td></tr>
+        <tr><th>Leaving</th><td>Export whole spaces as Markdown or HTML. Your data isn't tied to any format.</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <section class="block soft" id="install">
+    <div class="wrap">
+      <h2>One server, one command</h2>
+      <p class="sub">A Linux server with Docker 24+ or Podman 4+. You can start with 1 vCPU and 1 GB of memory.</p>
+      <div class="tabs">
+        <div class="card">
+          <h3>Online server <span class="tag">Simplest</span></h3>
+          <p>Creates the database password and encryption key, pulls the images and starts the service.</p>
+<pre class="cmd"><code>curl -fsSL https://github.com/spro1/pagehouse/releases/latest/download/install.sh | sh -s -- --dir /opt/pagehouse</code></pre>
+        </div>
+        <div class="card">
+          <h3>Air-gapped</h3>
+          <p>Download the offline bundle from the releases page, carry it over, and run it. Nothing is downloaded.</p>
+<pre class="cmd"><code>tar xzf pagehouse-&lt;version&gt;-offline-amd64.tar.gz
+sh pagehouse-&lt;version&gt;/install.sh --dir /opt/pagehouse</code></pre>
+        </div>
+        <div class="card">
+          <h3>Kubernetes</h3>
+          <p>Installs PostgreSQL, a daily backup CronJob and the database password along with it.</p>
+<pre class="cmd"><code>helm install wiki pagehouse-&lt;version&gt;.tgz -n wiki --create-namespace \
+  --set ingress.enabled=true --set ingress.host=wiki.example.com</code></pre>
+        </div>
+      </div>
+      <p class="note">To upgrade, run <code>scripts/upgrade.sh &lt;version&gt;</code> in the install folder. See the <a href="https://github.com/spro1/pagehouse/blob/main/docs/install.md">install guide</a> and the <a href="https://github.com/spro1/pagehouse/blob/main/docs/upgrading.md">upgrade guide</a>.</p>
+    </div>
+  </section>
+
+  <section class="block">
+    <div class="wrap">
+      <h2>Moving from Confluence</h2>
+      <p class="sub">Upload the space export as it is; the page tree and attachments come along.</p>
+      <div class="steps">
+        <div class="card"><h3>Export</h3><p>In Confluence, Space settings → Export, as HTML or CSV.</p></div>
+        <div class="card"><h3>Import</h3><p>Upload the ZIP under <b>Import</b> on the Pagehouse home screen. Preview the pages, then confirm.</p></div>
+        <div class="card"><h3>Check</h3><p>Page order, folders, attachments, labels and macros such as code, panels and Jira are converted. Pages that need a look are marked.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block soft" id="faq">
+    <div class="wrap">
+      <h2>Questions</h2>
+      <details><summary>Is it really free?</summary><p>Yes. It's open source under Apache-2.0 with no user limits. You only pay for the server.</p></details>
+      <details><summary>How many people can use it?</summary><p>About 200 on 2 to 4 vCPUs and 4 GB of memory. Larger organizations can run several app instances on Kubernetes with an external PostgreSQL.</p></details>
+      <details><summary>Can people sign in with company accounts (SSO)?</summary><p>Yes, with OpenID Connect, turned on in Admin → SSO. It has been tested with Keycloak.</p></details>
+      <details><summary>Is it ready to use?</summary><p>Yes, teams use it for real work. Until 1.0 some things may still change between versions, so read the upgrade guide before upgrading. Automatic backups are on by default, and every release is tested by installing the previous one and upgrading it.</p></details>
+      <details><summary>Found a problem or have an idea?</summary><p>Open a <a href="https://github.com/spro1/pagehouse/issues">GitHub issue</a>. Report security issues <a href="https://github.com/spro1/pagehouse/security">privately</a>.</p></details>
+    </div>
+  </section>
+
+  <section class="final">
+    <div class="wrap">
+      <h2>Install it today, use it tomorrow</h2>
+      <p class="sub" style="margin: 0 auto 28px">The first account becomes the administrator. Send invite links and your team is in.</p>
+      <div class="cta">
+        <a class="btn primary" href="#install">Install</a>
+        <a class="btn" href="https://github.com/spro1/pagehouse/releases">See releases</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© Pagehouse contributors · Apache-2.0</span>
+    <div class="right">
+      <a href="https://github.com/spro1/pagehouse">GitHub</a>
+      <a href="https://github.com/spro1/pagehouse/blob/main/docs/user-guide.md">User guide</a>
+      <a href="ko.html" hreflang="ko">한국어</a>
+    </div>
+  </div>
+</footer>
+<script src="copy.js"></script>
+</body>
+</html>

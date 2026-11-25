@@ -6,7 +6,7 @@
 
 | 설치 방식 | 업그레이드 방법 |
 |---|---|
-| 한 줄 설치(Docker·Podman) | 설치 폴더에서 `scripts/upgrade.sh <버전>`. 예: `scripts/upgrade.sh 0.2.0-beta.5` |
+| 한 줄 설치(Docker·Podman) | 설치 폴더에서 `scripts/upgrade.sh <버전>`. 예: `scripts/upgrade.sh 0.3.0` |
 | 오프라인 번들 | 새 번들을 풀고 `sh pagehouse-<버전>/install.sh --dir <설치 폴더>` |
 | 쿠버네티스(Helm) | `helm upgrade <이름> pagehouse-<버전>.tgz -n <네임스페이스> --reuse-values` |
 
@@ -30,10 +30,19 @@
 
 ## 버전별 확인 사항
 
+### 0.2.0-beta.5 → 0.3.0
+
+DB 변경은 없고, 선택으로 쓸 수 있는 설정이 하나 생겼습니다.
+- **모니터링.** 관리 → 개요에 **서버 상태**가 생겼습니다(DB, 메모리, 서버 지연, 최근 오류, 대기 중인 알림, 늦어진 백업). Prometheus를 쓴다면 `.env`에 `METRICS_TOKEN`을 넣고 `/metrics`를 수집하세요. 자세한 내용은 [모니터링](monitoring.ko.md)에 있습니다. 토큰을 넣지 않으면 `/metrics`는 꺼져 있습니다.
+- **버그 수정: 최신 Chrome·Edge에서 `/` 메뉴로 블록(예: 표)을 넣거나 ⌘K 검색을 닫을 때 화면이 "화면을 표시하지 못했습니다"로 멈추던 문제**를 고쳤습니다. 데이터는 잃지 않았고 새로 고치면 돌아왔습니다.
+- **설치 스크립트:** 예전 설치의 DB가 남아 있는 폴더에 새로 설치하면, 나중에 `auth_failed`로 실패하는 대신 처음에 멈추고 해결 방법을 알려 줍니다.
+- **소개 페이지**: https://spro1.github.io/pagehouse/
+- 이 버전부터 `releases/latest`가 이 버전을 가리키므로, 한 줄 설치에 `--version`을 붙이지 않아도 됩니다.
+
 ### 0.2.0-beta.4 → 0.2.0-beta.5
 
 버그 수정만 있습니다. DB와 설정은 바뀌지 않습니다.
-- **`scripts/upgrade.sh`가 업그레이드 전 백업만 하고 멈추던 문제**를 고쳤습니다. 오류 없이 끝나서 버전이 그대로였습니다(백업 단계가 파이프로 받은 설치 스크립트의 나머지를 읽어 버렸음). 업그레이드했는데 버전이 그대로라면 `scripts/upgrade.sh 0.2.0-beta.5`를 다시 실행하세요. 새 설치 스크립트는 예전 `upgrade.sh`로도 정상 동작하고, 그때 `backups/before-upgrade/`에 쌓인 백업은 지워도 됩니다.
+- **`scripts/upgrade.sh`가 업그레이드 전 백업만 하고 멈추던 문제**를 고쳤습니다. 오류 없이 끝나서 버전이 그대로였습니다(백업 단계가 파이프로 받은 설치 스크립트의 나머지를 읽어 버렸음). 업그레이드했는데 버전이 그대로라면 `scripts/upgrade.sh 0.3.0`를 다시 실행하세요. 새 설치 스크립트는 예전 `upgrade.sh`로도 정상 동작하고, 그때 `backups/before-upgrade/`에 쌓인 백업은 지워도 됩니다.
 - **새로 설치한 뒤 첫 자동 백업이 실패하던 문제**를 고쳤습니다. 아직 올린 파일이 없으면 실패했고, 다음 시도는 하루 뒤였습니다. 수동 백업(`scripts/backup.sh`)과 Kubernetes 백업 작업도 같은 문제가 있었습니다.
 
 ### 0.2.0-beta.3 → 0.2.0-beta.4

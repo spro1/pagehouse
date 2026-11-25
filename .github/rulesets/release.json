@@ -41,6 +41,9 @@
           },
           {
             "context": "image"
+          },
+          {
+            "context": "e2e"
           }
         ],
         "strict_required_status_checks_policy": true
