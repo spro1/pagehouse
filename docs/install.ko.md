@@ -191,6 +191,8 @@ scripts/restore.sh backups/pagehouse-auto-20261124-030000.tar.gz
 
 ## 업그레이드
 
+버전마다 확인할 것(DB 변경, 새 설정, 동작 변경)은 [업그레이드 가이드](upgrading.ko.md)에 있습니다.
+
 ```sh
 cd /opt/pagehouse
 scripts/upgrade.sh            # 최신 버전

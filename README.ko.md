@@ -135,7 +135,7 @@ PostgreSQL, 일일 백업 CronJob, 생성된 DB 비밀번호가 함께 설치됩
 |---|---|
 | 백업 | 자동: 24시간마다 `backups/pagehouse-auto-*.tar.gz`(14개 보관). 수동: `scripts/backup.sh` |
 | 복원 | `scripts/restore.sh <백업 파일>`. 현재 상태를 먼저 백업하고 되돌리는 명령을 알려 줍니다 |
-| 업그레이드 | `scripts/upgrade.sh [버전]`. 먼저 백업하고 `.env`와 데이터는 그대로 둡니다. 폐쇄망은 새 번들의 `install.sh --dir`로 합니다 |
+| 업그레이드 | [버전별 확인 사항](docs/upgrading.ko.md)을 먼저 보고 `scripts/upgrade.sh [버전]`. 먼저 백업하고 `.env`와 데이터는 그대로 둡니다. 폐쇄망은 새 번들의 `install.sh --dir`로 합니다 |
 | 상태 확인 | `curl localhost:3000/healthz`(버전 포함), 관리 화면의 저장 공간·백업·활동·감사 로그 |
 | 여러 대로 늘리기 | 쿠버네티스에서 `replicaCount`를 올리고 첨부 볼륨을 ReadWriteMany로. 실시간 공동 편집은 PostgreSQL을 거쳐 인스턴스 사이에서도 동작합니다 |
 | 로그 | `docker compose logs app` |
@@ -215,6 +215,7 @@ PostgreSQL, 일일 백업 CronJob, 생성된 DB 비밀번호가 함께 설치됩
 ## 문서
 
 - [설치 가이드](docs/install.ko.md): 설치 방법, HTTPS, 백업·복원, 업그레이드, 쿠버네티스, 문제 해결
+- [업그레이드 가이드](docs/upgrading.ko.md): 버전별 DB 변경, 새 설정, 동작 변경, 되돌리는 방법
 - [사용 가이드](docs/user-guide.ko.md): 에디터, 검색, 권한, 멘션·알림, 가져오기·내보내기, 관리
 - [기여하기](CONTRIBUTING.md) · [보안 정책](SECURITY.md) · [릴리스](docs/releasing.md)
 
