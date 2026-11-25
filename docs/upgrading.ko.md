@@ -6,7 +6,7 @@
 
 | 설치 방식 | 업그레이드 방법 |
 |---|---|
-| 한 줄 설치(Docker·Podman) | 설치 폴더에서 `scripts/upgrade.sh <버전>`. 예: `scripts/upgrade.sh 0.2.0-beta.3` |
+| 한 줄 설치(Docker·Podman) | 설치 폴더에서 `scripts/upgrade.sh <버전>`. 예: `scripts/upgrade.sh 0.2.0-beta.4` |
 | 오프라인 번들 | 새 번들을 풀고 `sh pagehouse-<버전>/install.sh --dir <설치 폴더>` |
 | 쿠버네티스(Helm) | `helm upgrade <이름> pagehouse-<버전>.tgz -n <네임스페이스> --reuse-values` |
 
@@ -30,7 +30,7 @@
 
 ## 버전별 확인 사항
 
-### 0.2.0-beta.3 → 다음 버전 (아직 릴리스 전)
+### 0.2.0-beta.3 → 0.2.0-beta.4
 
 - DB 변경: 마이그레이션 `023`(웹훅)이 시작할 때 자동으로 적용됩니다. 나머지 설정은 기존 `settings` 테이블에 저장됩니다.
 - **SSO를 관리 화면(관리 → SSO)에서 설정**할 수 있습니다. 저장하면 재시작 없이 바로 적용됩니다.
