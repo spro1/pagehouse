@@ -4,7 +4,7 @@
 
 # Pagehouse
 
-**An on-premises team wiki that small companies and teams run on their own servers.**<br>
+**An on-premises team wiki that small organizations and teams run on their own servers.**<br>
 Weekly reports, meeting notes and technical docs in one place, inside your own network.<br>
 An open-source, self-hosted alternative to Confluence. **[pagehouse website](https://spro1.github.io/pagehouse/)**
 
