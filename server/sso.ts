@@ -71,7 +71,11 @@ export function registerSso(app: Hono<any>, db: Db, cfg: OidcConfig, startSessio
       const info = await fetch(d.userinfo_endpoint, { headers: { authorization: `Bearer ${tok.access_token}` }, signal: AbortSignal.timeout(10_000) })
         .then((r) => (r.ok ? r.json() : null))
       const email = typeof info?.email === 'string' ? info.email.toLowerCase() : ''
-      if (!email || info.email_verified === false) return back(c, 'no_email')
+      // Accounts are matched by email, so the provider must vouch for it: otherwise anyone able to set an email at the
+      // provider could sign in as that person here. Providers that never send the claim (some Entra ID setups)
+      // can be trusted explicitly with OIDC_TRUST_EMAIL=1.
+      const verified = info?.email_verified === true || info?.email_verified === 'true' || (process.env.OIDC_TRUST_EMAIL === '1' && info?.email_verified !== false)
+      if (!email || !verified) return back(c, 'no_email')
       let user = (await db.query('SELECT id, disabled_at FROM users WHERE email = $1', [email])).rows[0]
       if (!user) {
         if (!cfg.autoCreate) return back(c, 'no_account')

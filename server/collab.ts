@@ -283,6 +283,8 @@ export function createCollab(deps: CollabDeps) {
       if (kind === 'u') Y.applyUpdate(r.doc, data, REMOTE)
       else aw.applyAwarenessUpdate(r.awareness, data, REMOTE)
     },
+    /** Edits in this instance's room for the page that aren't saved yet. */
+    hasUnsaved: (pageId: number) => !!rooms.get(pageId)?.dirty,
     /** Saves the page's room now, if it has unsaved edits. */
     flush: (pageId: number) => (rooms.has(pageId) ? persist(pageId, rooms.get(pageId)!) : Promise.resolve()),
     /** Saves every open room; used on shutdown. */

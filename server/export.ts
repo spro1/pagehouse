@@ -1,9 +1,9 @@
 // ZIP export of a page with its subpages, or a whole space: Markdown files in folders that mirror the page tree,
 // the attachments next to them, and pagehouse.json with the lossless original for re-import.
 import type { Hono, Context } from 'hono'
-import { existsSync, readFileSync } from 'node:fs'
+import { createReadStream, existsSync } from 'node:fs'
 import { join, posix } from 'node:path'
-import { zipSync, type Zippable } from 'fflate'
+import { Zip, ZipDeflate, ZipPassThrough, type Zippable } from 'fflate'
 import type { Db } from './db.ts'
 import { toMarkdown } from './markdown.ts'
 import { EXPORT_CSS, toHtmlPage, type NavItem } from './html.ts'
@@ -88,13 +88,9 @@ export function registerExport(app: Hono<any>, { db, filesDir, fail, guard, visi
         nav: navFor(rootRows, -1, (p) => posix.relative(rootName, p)),
       })), { level: 6 }]
     }
-    let missing = 0
-    for (const a of atts) {
-      const file = join(filesDir, a.sha256)
-      // shortcut: files are read into memory; fine for team wikis, stream the ZIP if exports reach several GB.
-      if (existsSync(file)) zip[attPath.get(Number(a.id))!] = [readFileSync(file), { level: /^(image|video|audio)\/|zip|pdf/.test(a.mime) ? 0 : 6 }]
-      else missing++
-    }
+    // Attachments are streamed into the archive below, not read into memory: a space can hold gigabytes.
+    const present = atts.filter((a) => existsSync(join(filesDir, a.sha256)))
+    const missing = atts.length - present.length
     const manifest = {
       format: 'pagehouse-export',
       version: 1,
@@ -108,12 +104,38 @@ export function registerExport(app: Hono<any>, { db, filesDir, fail, guard, visi
       missingFiles: missing,
     }
     zip[posix.join(rootName, 'pagehouse.json')] = [new TextEncoder().encode(JSON.stringify(manifest, null, 1)), { level: 6 }]
-    const data = zipSync(zip)
-    return new Response(data, {
+    const body = new ReadableStream<Uint8Array>({
+      async start(out) {
+        const z = new Zip((err, chunk, final) => (err ? out.error(err) : (out.enqueue(chunk), final && out.close())))
+        // Wait while the reader is behind, so a slow download doesn't pile the whole archive up in memory.
+        const drain = async () => { while ((out.desiredSize ?? 1) <= 0) await new Promise((r) => setTimeout(r, 20)) }
+        const entry = (name: string, level: number) => {
+          const f = level ? new ZipDeflate(name, { level: level as 6 }) : new ZipPassThrough(name)
+          z.add(f)
+          return f
+        }
+        try {
+          for (const [name, v] of Object.entries(zip)) {
+            const [data, opts] = v as [Uint8Array, { level: number }]
+            entry(name, opts.level).push(data, true)
+            await drain()
+          }
+          for (const a of present) {
+            // Already-compressed media go in as they are.
+            const f = entry(attPath.get(Number(a.id))!, /^(image|video|audio)\/|zip|pdf/.test(a.mime) ? 0 : 6)
+            for await (const chunk of createReadStream(join(filesDir, a.sha256))) (f.push(chunk as Uint8Array), await drain())
+            f.push(new Uint8Array(0), true)
+          }
+          z.end()
+        } catch (e) {
+          out.error(e)
+        }
+      },
+    }, { highWaterMark: 16 })
+    return new Response(body, {
       headers: {
         'Content-Type': 'application/zip',
         'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(format === 'html' ? `${rootName}-html` : rootName)}.zip`,
-        'Content-Length': String(data.byteLength),
         'Cache-Control': 'no-store',
       },
     })

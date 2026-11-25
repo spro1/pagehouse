@@ -12,6 +12,7 @@ import { registerAdmin, uploadAllowed } from './admin.ts'
 import { registerExport } from './export.ts'
 import { oidcConfig, registerSso } from './sso.ts'
 import { createCollab } from './collab.ts'
+import { relayDownSince } from './cluster.ts'
 import { auditMiddleware, registerAudit } from './audit.ts'
 import { mailEnabled, sendMail } from './mail.ts'
 import { registerMcp } from './mcp.ts'
@@ -50,6 +51,7 @@ const ERRORS = {
   page_not_found: 'Page not found.',
   no_edit_permission: 'You do not have permission to edit this page.',
   move_into_self: 'A page cannot be moved inside itself.',
+  move_drops_restrictions: 'Moving it there would lift the restrictions it inherits. Ask an administrator to move it.',
   not_in_trash: 'That page is not in the trash.',
   empty_comment: 'Comment body is empty.',
   comment_not_found: 'Comment not found.',
@@ -80,9 +82,10 @@ const sha256 = (v: string | Buffer) => createHash('sha256').update(v).digest('he
 function hashPassword(password: string, salt = randomBytes(16).toString('hex')) {
   return `${salt}:${scryptSync(password, salt, 64).toString('hex')}`
 }
-function checkPassword(password: string, stored: string) {
+// No account (or an SSO-only one) takes as long to refuse as a wrong password, so timing doesn't tell who has one.
+function checkPassword(password: string, stored = '') {
   const [salt, hash] = stored.split(':')
-  if (!hash) return false // SSO-only account
+  if (!hash) return (scryptSync(password, 'no-account-padding', 64), false)
   return timingSafeEqual(scryptSync(password, salt, 64), Buffer.from(hash, 'hex'))
 }
 
@@ -159,6 +162,8 @@ export function createApp(db: Db, dataDir: string) {
   app.get('/healthz', async (c) => {
     try {
       await db.query('SELECT 1')
+      // Cut off from the other instances for over a minute: let the orchestrator restart this one.
+      if (relayDownSince && Date.now() - relayDownSince > 60_000) return c.json({ ok: false, relay: 'down' }, 503)
       return c.json({ ok: true, version: process.env.APP_VERSION ?? 'dev' })
     } catch {
       return c.json({ ok: false }, 503)
@@ -186,21 +191,31 @@ export function createApp(db: Db, dataDir: string) {
   const gzip = compress()
   app.use('/api/*', (c, next) => (c.req.path.startsWith('/api/files/') ? next() : gzip(c, next)))
 
-  // Sign-in throttling: 10 failures per account per address, or 50 per address, in 15 minutes.
-  // shortcut: kept in memory, so it resets on restart and is per process; enough for a single-instance wiki.
+  // Sign-in throttling: 10 failures per account per address, 50 per address, or 30 per account from anywhere, in 15 minutes.
+  // shortcut: kept in memory, so it resets on restart and is per process; move it to Postgres for several replicas.
   const failures = new Map<string, number[]>()
   const WINDOW = 15 * 60 * 1000
-  const clientIp = (c: Context) =>
-    c.req.header('x-forwarded-for')?.split(',')[0].trim() || (c.env as any)?.incoming?.socket?.remoteAddress || 'local'
+  // The caller's address. X-Forwarded-For is anyone's to write, so it only counts behind proxies we were told about
+  // (TRUST_PROXY = how many), and then only the hop our own proxy added, counting from the right.
+  const clientIp = (c: Context) => {
+    const socket = (c.env as any)?.incoming?.socket?.remoteAddress as string | undefined
+    const proxies = Math.max(0, Math.floor(Number(process.env.TRUST_PROXY) || 0))
+    if (proxies) {
+      const hops = (c.req.header('x-forwarded-for') ?? '').split(',').map((s) => s.trim()).filter(Boolean)
+      const ip = hops[hops.length - proxies]
+      if (ip) return ip
+    }
+    return socket || 'local'
+  }
   app.use('/api/*', auditMiddleware(db, clientIp))
   const recent = (key: string) => (failures.get(key) ?? []).filter((t) => Date.now() - t < WINDOW)
   const throttled = (c: Context, account: string) => {
     const ip = clientIp(c)
-    return recent(`${ip}|${account}`).length >= 10 || recent(ip).length >= 50
+    return recent(`${ip}|${account}`).length >= 10 || recent(ip).length >= 50 || recent(`account|${account}`).length >= 30
   }
   const failed = (c: Context, account: string) => {
     const ip = clientIp(c)
-    for (const k of [`${ip}|${account}`, ip]) failures.set(k, [...recent(k), Date.now()])
+    for (const k of [`${ip}|${account}`, ip, `account|${account}`]) failures.set(k, [...recent(k), Date.now()])
     if (failures.size > 10_000) for (const [k] of failures) if (!recent(k).length) failures.delete(k)
   }
   const tooMany = (c: Context) => (c.header('Retry-After', '900'), fail(c, 429, 'too_many_attempts'))
@@ -272,7 +287,7 @@ export function createApp(db: Db, dataDir: string) {
     if (throttled(c, email)) return tooMany(c)
     // With SSO and PASSWORD_LOGIN=0 only admins may still use a password (a way back in if the provider is down).
     const row = await one('SELECT * FROM users WHERE email = $1', [email])
-    if (!row || typeof b.password !== 'string' || !checkPassword(b.password, row.password_hash)) {
+    if (typeof b.password !== 'string' || !checkPassword(b.password, row?.password_hash) || !row) {
       failed(c, email)
       return fail(c, 401, 'bad_credentials')
     }
@@ -293,14 +308,16 @@ export function createApp(db: Db, dataDir: string) {
             [sha256(b.token)])).rows[0]
         : undefined
       if (!inv) return null
-      await q.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, inv.user_id])
+      // A disabled account keeps its password: the link stays unused and nothing changes.
+      if ((await q.query('SELECT disabled_at FROM users WHERE id = $1', [inv.user_id])).rows[0]?.disabled_at) return 'disabled' as const
+      await q.query('UPDATE users SET password_hash = $1, must_change_password = false WHERE id = $2', [hash, inv.user_id])
       await q.query('UPDATE invites SET used_by = $1 WHERE token_hash = $2', [inv.user_id, inv.token_hash])
       await q.query('DELETE FROM sessions WHERE user_id = $1', [inv.user_id])
       return inv.user_id as number
     })
     if (!userId) return failed(c, 'reset'), fail(c, 403, 'reset_invalid')
-    const u = await one('SELECT id, email, name, role, locale, disabled_at FROM users WHERE id = $1', [userId])
-    if (u.disabled_at) return fail(c, 403, 'account_disabled')
+    if (userId === 'disabled') return fail(c, 403, 'account_disabled')
+    const u = await one('SELECT id, email, name, role, locale FROM users WHERE id = $1', [userId])
     await startSession(c, userId)
     return c.json({ id: u.id, email: u.email, name: u.name, role: u.role, locale: u.locale })
   })
@@ -592,42 +609,51 @@ export function createApp(db: Db, dataDir: string) {
         )).rows
       : [src]
     for (const r of rows) await collab.flush(Number(r.id))
-    // The top page goes through the normal create route, so its permission checks apply.
-    const res = await app.request('/api/pages', {
-      method: 'POST',
-      headers: { authorization: c.req.header('authorization') ?? '', cookie: c.req.header('cookie') ?? '', 'content-type': 'application/json' },
-      body: JSON.stringify({ spaceId: src.space_id, parentId: src.parent_id, kind: src.kind, title }),
-    })
-    if (!res.ok) return res
-    const page = await res.json()
-    const newId = new Map<number, number>()
-    // Old file id -> its copy, across the tree, so a subpage showing its parent's image points at the copied parent's file.
-    const files = new Map<string, string>()
-    for (const [i, r0] of rows.entries()) {
-      // Re-read after the flush above so the latest edits are copied.
-      const r = await livePage(Number(r0.id))
-      if (!r || (i > 0 && !newId.has(Number(r.parent_id)))) continue
-      const to = i === 0 ? Number(page.id) : (await one(
-        `INSERT INTO pages (space_id, parent_id, kind, title, doc, text, position, created_by, updated_by)
-         VALUES ($1, $2, $3, $4, $5, '', $6, $7, $7) RETURNING id`,
-        [r.space_id, newId.get(Number(r.parent_id)), r.kind, r.title, EMPTY_DOC, r.position, uid],
-      )).id
-      newId.set(Number(r.id), Number(to))
-      // Attachments are content-addressed, so a copy is just a new row pointing at the same bytes.
-      for (const a of (await db.query('SELECT * FROM attachments WHERE page_id = $1', [r.id])).rows)
-        files.set(String(a.id), String((await one(
-          'INSERT INTO attachments (page_id, name, mime, size, sha256, created_by) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-          [to, a.name, a.mime, a.size, a.sha256, uid],
-        )).id))
-      const doc = JSON.parse(JSON.stringify(r.doc).replace(/\/api\/files\/(\d+)/g, (m, f) => (files.has(f) ? `/api/files/${files.get(f)}` : m)))
-      const t = i === 0 ? title : r.title
-      await db.query('UPDATE pages SET doc = $2, text = $3, icon = $4 WHERE id = $1', [to, doc, docText(doc), r.icon])
-      if (i === 0) await db.query('UPDATE page_versions SET doc = $2 WHERE page_id = $1', [to, doc])
-      else await db.query('INSERT INTO page_versions (page_id, version, title, doc, author_id) VALUES ($1, 1, $2, $3, $4)', [to, t, doc, uid])
-      await db.query('INSERT INTO page_restrictions (page_id, user_id, group_id, level) SELECT $1, user_id, group_id, level FROM page_restrictions WHERE page_id = $2', [to, r.id])
-      await db.query('INSERT INTO page_labels (page_id, label) SELECT $1, label FROM page_labels WHERE page_id = $2', [to, r.id])
+    // Creating next to the original needs the same rights as creating a page there.
+    if (src.parent_id !== null) {
+      const d = await guard(c, Number(src.parent_id), 'edit')
+      if (d) return d
+    } else if (!admin) {
+      const role = (await one('SELECT space_access($1, $2) AS r', [src.space_id, uid]))?.r
+      if (!role) return fail(c, 404, 'space_not_found')
+      if (role === 'view') return fail(c, 403, 'no_edit_permission')
     }
-    return c.json({ ...page, count: newId.size })
+    // All or nothing: a half-made copy could exist for a moment without the restrictions it should carry.
+    const newId = new Map<number, number>()
+    await tx(db, async (q) => {
+      const one1 = async (sql: string, params: unknown[]) => (await q.query(sql, params)).rows[0]
+      // Old file id -> its copy, across the tree, so a subpage showing its parent's image points at the copied parent's file.
+      const files = new Map<string, string>()
+      for (const [i, r0] of rows.entries()) {
+        const r = await one1('SELECT * FROM pages WHERE id = $1 AND deleted_at IS NULL', [r0.id]) // latest, after the flush
+        if (!r || (i > 0 && !newId.has(Number(r.parent_id)))) continue
+        const parent = i === 0 ? r.parent_id : newId.get(Number(r.parent_id))
+        const position = i === 0
+          ? (await one1('SELECT COALESCE(MAX(position), 0) + 1 AS p FROM pages WHERE space_id = $1 AND parent_id IS NOT DISTINCT FROM $2', [r.space_id, parent])).p
+          : r.position
+        const t = i === 0 ? title : r.title
+        const to = Number((await one1(
+          `INSERT INTO pages (space_id, parent_id, kind, title, doc, text, position, icon, created_by, updated_by)
+           VALUES ($1, $2, $3, $4, $5, '', $6, $7, $8, $8) RETURNING id`,
+          [r.space_id, parent, r.kind, t, EMPTY_DOC, position, r.icon, uid],
+        )).id)
+        newId.set(Number(r.id), to)
+        await q.query('INSERT INTO page_restrictions (page_id, user_id, group_id, level) SELECT $1, user_id, group_id, level FROM page_restrictions WHERE page_id = $2', [to, r.id])
+        await q.query('INSERT INTO page_labels (page_id, label) SELECT $1, label FROM page_labels WHERE page_id = $2', [to, r.id])
+        // Attachments are content-addressed, so a copy is just a new row pointing at the same bytes.
+        for (const a of (await q.query('SELECT * FROM attachments WHERE page_id = $1', [r.id])).rows)
+          files.set(String(a.id), String((await one1(
+            'INSERT INTO attachments (page_id, name, mime, size, sha256, created_by) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+            [to, a.name, a.mime, a.size, a.sha256, uid],
+          )).id))
+        const doc = JSON.parse(JSON.stringify(r.doc).replace(/\/api\/files\/(\d+)/g, (m, f) => (files.has(f) ? `/api/files/${files.get(f)}` : m)))
+        await q.query('UPDATE pages SET doc = $2, text = $3 WHERE id = $1', [to, doc, docText(doc)])
+        await q.query('INSERT INTO page_versions (page_id, version, title, doc, author_id) VALUES ($1, 1, $2, $3, $4)', [to, t, doc, uid])
+        if (i === 0) await q.query('INSERT INTO page_watches (user_id, page_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [uid, to])
+      }
+    })
+    const top = newId.get(pageId)!
+    return c.json({ id: top, parentId: src.parent_id, kind: src.kind, title, count: newId.size })
   })
 
   app.get('/api/pages/:id', async (c) => {
@@ -746,6 +772,17 @@ export function createApp(db: Db, dataDir: string) {
         )
         if (cycle.rowCount) return { status: 400 as const, error: 'move_into_self' }
       }
+      // Restrictions are inherited from ancestors, so a move can lift them. Only an admin may move a page out from
+      // under a restricted page; anyone else would be widening access they don't control.
+      if (c.get('user').role !== 'admin') {
+        const restrictedAbove = async (start: number | null) => start === null ? new Set<number>() : new Set<number>((await q.query(
+          `WITH RECURSIVE a(id, parent_id) AS (SELECT id, parent_id FROM pages WHERE id = $1
+             UNION ALL SELECT x.id, x.parent_id FROM pages x JOIN a ON x.id = a.parent_id)
+           SELECT DISTINCT a.id FROM a JOIN page_restrictions r ON r.page_id = a.id`, [start])).rows.map((r) => Number(r.id)))
+        const before = await restrictedAbove(p.parent_id === null ? null : Number(p.parent_id))
+        const after = await restrictedAbove(parentId)
+        if ([...before].some((x) => !after.has(x))) return { status: 403 as const, error: 'move_drops_restrictions' }
+      }
       const siblings: number[] = (await q.query(
         `SELECT id FROM pages WHERE space_id = $1 AND parent_id IS NOT DISTINCT FROM $2 AND deleted_at IS NULL AND id <> $3
          ORDER BY position, id`,
@@ -835,8 +872,10 @@ export function createApp(db: Db, dataDir: string) {
   app.patch('/api/comments/:id', async (c) => {
     const b = await c.req.json().catch(() => ({}))
     if (typeof b.resolved !== 'boolean') return fail(c, 400, 'bad_request')
-    const cm = await one('SELECT page_id FROM comments WHERE id = $1 AND deleted_at IS NULL', [id(c)])
-    const denied = cm ? await guard(c, cm.page_id, 'view') : fail(c, 404, 'comment_not_found')
+    const cm = await one('SELECT page_id, author_id FROM comments WHERE id = $1 AND deleted_at IS NULL', [id(c)])
+    // Whoever started the thread, or anyone who may edit the page, can close it; readers only read.
+    const denied = !cm ? fail(c, 404, 'comment_not_found')
+      : await guard(c, cm.page_id, Number(cm.author_id) === c.get('user').id ? 'view' : 'edit')
     if (denied) return denied
     const r = await db.query(
       `UPDATE comments SET resolved_at = CASE WHEN $1 THEN now() ELSE NULL END WHERE id = $2 AND parent_id IS NULL`,
@@ -910,14 +949,15 @@ export function createApp(db: Db, dataDir: string) {
 
   // One-time rebuild of search text after docText changed (formatting no longer splits words). Runs in the background.
   void (async () => {
-    const claimed = await db.query(`INSERT INTO settings (key, value) VALUES ('search_text_v2', 'true') ON CONFLICT DO NOTHING`)
-    if (!claimed.rowCount) return
+    // Marked done only after it finished, so a crash halfway means it runs again (rebuilding twice is harmless).
+    if ((await db.query(`SELECT 1 FROM settings WHERE key = 'search_text_v2'`)).rowCount) return
     for (let after = 0; ; ) {
       const rows = (await db.query('SELECT id, doc FROM pages WHERE id > $1 ORDER BY id LIMIT 200', [after])).rows
       if (!rows.length) break
       for (const r of rows) await db.query('UPDATE pages SET text = $1 WHERE id = $2', [docText(r.doc), r.id])
       after = rows[rows.length - 1].id
     }
+    await db.query(`INSERT INTO settings (key, value) VALUES ('search_text_v2', 'true') ON CONFLICT DO NOTHING`)
   })().catch((e) => console.error('search text rebuild failed', e))
 
   const collab = createCollab({
@@ -959,6 +999,12 @@ export function createApp(db: Db, dataDir: string) {
     if (denied) return denied
     // Unsaved live edits go in first, so this save is checked against them (and gets a conflict instead of erasing them).
     await collab.flush(id(c))
+    // Someone typed in the live room since the flush: replacing the content now would drop those keystrokes.
+    // shortcut: a few milliseconds remain between this check and the replace below; a room-level lock would close it.
+    if (collab.hasUnsaved(id(c))) {
+      const cur = await livePage(id(c))
+      return c.json({ error: ERRORS.conflict, code: 'conflict', version: cur?.version }, 409)
+    }
     const r = await savePage(id(c), c.get('user').id, title, b.doc, { version: b.version, checkpoint: !!b.checkpoint })
     if (r) {
       await collab.replace(id(c), b.doc, title)
@@ -972,22 +1018,28 @@ export function createApp(db: Db, dataDir: string) {
     const denied = await guard(c, id(c), 'edit')
     if (denied) return denied
     const user = c.get('user')
-    if (user.role !== 'admin') {
-      const blocked = await one(
-        `WITH RECURSIVE t(id) AS (SELECT $1::bigint UNION ALL SELECT p.id FROM pages p JOIN t ON p.parent_id = t.id WHERE p.deleted_at IS NULL)
-         SELECT 1 FROM t WHERE page_access(t.id, $2) IS DISTINCT FROM 'edit' LIMIT 1`,
-        [id(c), user.id],
+    // Check and delete together, with the page locked, so a move or a restriction change can't slip in between.
+    const r = await tx(db, async (q) => {
+      if (!(await q.query('SELECT 1 FROM pages WHERE id = $1 AND deleted_at IS NULL FOR UPDATE', [id(c)])).rowCount) return { rowCount: 0, blocked: false }
+      if (user.role !== 'admin') {
+        const blocked = await q.query(
+          `WITH RECURSIVE t(id) AS (SELECT $1::bigint UNION ALL SELECT p.id FROM pages p JOIN t ON p.parent_id = t.id WHERE p.deleted_at IS NULL)
+           SELECT 1 FROM t WHERE page_access(t.id, $2) IS DISTINCT FROM 'edit' LIMIT 1`,
+          [id(c), user.id],
+        )
+        if (blocked.rowCount) return { rowCount: 0, blocked: true }
+      }
+      // Soft delete the whole subtree so nothing is orphaned and it stays recoverable.
+      const u = await q.query(
+        `WITH RECURSIVE t(id) AS (
+           SELECT id FROM pages WHERE id = $1 AND deleted_at IS NULL
+           UNION ALL SELECT p.id FROM pages p JOIN t ON p.parent_id = t.id WHERE p.deleted_at IS NULL)
+         UPDATE pages SET deleted_at = now() WHERE id IN (SELECT id FROM t)`,
+        [id(c)],
       )
-      if (blocked) return fail(c, 403, 'delete_blocked')
-    }
-    // Soft delete the whole subtree so nothing is orphaned and it stays recoverable.
-    const r = await db.query(
-      `WITH RECURSIVE t(id) AS (
-         SELECT id FROM pages WHERE id = $1 AND deleted_at IS NULL
-         UNION ALL SELECT p.id FROM pages p JOIN t ON p.parent_id = t.id WHERE p.deleted_at IS NULL)
-       UPDATE pages SET deleted_at = now() WHERE id IN (SELECT id FROM t)`,
-      [id(c)],
-    )
+      return { rowCount: u.rowCount ?? 0, blocked: false }
+    })
+    if (r.blocked) return fail(c, 403, 'delete_blocked')
     return r.rowCount ? c.json({ ok: true }) : fail(c, 404, 'page_not_found')
   })
 

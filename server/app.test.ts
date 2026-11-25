@@ -6,6 +6,8 @@ import { join } from 'node:path'
 import { createApp } from './app.ts'
 import { openDb } from './db.ts'
 
+// The tests stand behind one pretend proxy, so X-Forwarded-For names the caller.
+process.env.TRUST_PROXY = '1'
 const url = process.env.TEST_DATABASE_URL ?? 'postgres://pagehouse:pagehouse@localhost:55432/pagehouse_test'
 
 // The test wipes the database, so refuse anything not named *_test.
@@ -386,6 +388,9 @@ test('security: sign-in throttling, cross-site writes refused, inert attachments
   const blocked = await login('newpassword')
   assert.equal(blocked.status, 429)
   assert.equal((await blocked.json()).code, 'too_many_attempts')
+  // Writing a fresh address in front of X-Forwarded-For doesn't help: only the hop our proxy added counts.
+  const forged = await app.request('/api/auth/login', { method: 'POST', headers: { ...ip, 'x-forwarded-for': '192.0.2.77, 203.0.113.9' }, body: JSON.stringify({ email: 'bob@b.co', password: 'newpassword' }) })
+  assert.equal(forged.status, 429)
   // Another address is not affected.
   const other = await app.request('/api/auth/login', { method: 'POST', headers: { ...ip, 'x-forwarded-for': '198.51.100.7' }, body: JSON.stringify({ email: 'bob@b.co', password: 'newpassword' }) })
   assert.equal(other.status, 200)
@@ -917,6 +922,30 @@ test('profile: name, photo; admin temporary password must be replaced; forgot ne
   assert.equal((await client().json('GET', '/api/auth/status')).mail, false)
 })
 
+test('security: moving out from under a restricted page and resolving threads need the right to', async () => {
+  const admin = client()
+  await admin.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  const space = (await admin.json('GET', '/api/spaces')).find((x: any) => x.key === 'GENERAL')
+  const bob = client()
+  const bobId = (await bob.json('POST', '/api/auth/login', { email: 'bob@b.co', password: 'newpassword' })).id
+  const locked = await admin.json('POST', '/api/pages', { spaceId: space.id, title: 'Locked parent' })
+  const inner = await admin.json('POST', '/api/pages', { spaceId: space.id, parentId: locked.id, title: 'Inner' })
+  await admin.call('PUT', `/api/pages/${locked.id}/restrictions`, { entries: [{ userId: bobId, level: 'edit' }] })
+  // Bob may edit Inner, but moving it to the top would make it visible to everyone.
+  const r = await bob.call('POST', `/api/pages/${inner.id}/move`, { parentId: null })
+  assert.equal(r.status, 403)
+  assert.equal((await r.json()).code, 'move_drops_restrictions')
+  assert.equal((await admin.call('POST', `/api/pages/${inner.id}/move`, { parentId: null })).status, 200)
+  // A reader can't close someone else's thread; its author (or an editor) can.
+  const page = await admin.json('POST', '/api/pages', { spaceId: space.id, title: 'Read only for Bob' })
+  await admin.call('PUT', `/api/pages/${page.id}/restrictions`, { entries: [{ userId: bobId, level: 'view' }] })
+  const cm = await admin.json('POST', `/api/pages/${page.id}/comments`, { body: 'Open question' })
+  assert.equal((await bob.call('PATCH', `/api/comments/${cm.id}`, { resolved: true })).status, 403)
+  const mine = await bob.json('POST', `/api/pages/${page.id}/comments`, { body: 'Mine' })
+  assert.equal((await bob.call('PATCH', `/api/comments/${mine.id}`, { resolved: true })).status, 200)
+  assert.equal((await admin.call('PATCH', `/api/comments/${cm.id}`, { resolved: true })).status, 200)
+})
+
 test('templates: saved from a page, per space or global, removable', async () => {
   const admin = client()
   await admin.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
@@ -994,6 +1023,9 @@ test('link previews: metadata parsing, and no fetching of internal addresses', a
   for (const ip of ['8.8.8.8', '172.32.0.1', '2606:4700::1111']) assert.ok(!privateAddress(ip), ip)
   const a = client()
   await a.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
-  for (const u of ['http://127.0.0.1:55432/', 'http://localhost:3000/', 'http://[::1]/', 'file:///etc/passwd'])
+  // IPv4 hidden in IPv6, in the forms the URL parser produces (hex) and NAT64.
+  for (const ip of ['::ffff:7f00:1', '[::ffff:7f00:1]', '::ffff:a9fe:a9fe', '64:ff9b::a00:1', '2002:7f00:1::']) assert.ok(privateAddress(ip), ip)
+  assert.ok(!privateAddress('::ffff:808:808'))
+  for (const u of ['http://127.0.0.1:55432/', 'http://localhost:3000/', 'http://[::1]/', 'file:///etc/passwd', 'http://[::ffff:127.0.0.1]:55432/'])
     assert.ok([400, 404].includes((await a.call('GET', `/api/link-preview?url=${encodeURIComponent(u)}`)).status), u)
 })

@@ -12,15 +12,39 @@ export type Preview = { url: string; title: string; description: string; image: 
 const MAX_BYTES = 512 * 1024
 const cache = new Map<string, { at: number; p: Preview | null }>()
 
-export function privateAddress(ip: string): boolean {
-  if (ip.startsWith('::ffff:')) ip = ip.slice(7)
-  if (isIP(ip) === 4) {
-    const [a, b] = ip.split('.').map(Number)
-    return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) ||
-      (a === 100 && b >= 64 && b <= 127) || a >= 224
+/** The eight 16-bit groups of an IPv6 address (handles "::" and a dotted IPv4 tail). */
+function groups6(ip: string): number[] | null {
+  let v = ip.toLowerCase().replace(/^\[|\]$/g, '').split('%')[0]
+  const tail = v.match(/(\d+\.\d+\.\d+\.\d+)$/)
+  if (tail) {
+    const [a, b, c, d] = tail[1].split('.').map(Number)
+    v = v.slice(0, -tail[1].length) + `${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`
   }
-  const v = ip.toLowerCase()
-  return v === '::' || v === '::1' || v.startsWith('fc') || v.startsWith('fd') || v.startsWith('fe80') || v.startsWith('ff')
+  const [head, rest] = v.split('::')
+  const h = head ? head.split(':') : []
+  const r = rest !== undefined && rest ? rest.split(':') : []
+  const fill = rest !== undefined ? 8 - h.length - r.length : 0
+  const all = [...h, ...Array(Math.max(fill, 0)).fill('0'), ...r].map((x) => parseInt(x, 16))
+  return all.length === 8 && all.every((n) => n >= 0 && n <= 0xffff) ? all : null
+}
+
+function private4(ip: string): boolean {
+  const [a, b] = ip.split('.').map(Number)
+  return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) ||
+    (a === 100 && b >= 64 && b <= 127) || (a === 198 && (b === 18 || b === 19)) || a >= 224
+}
+
+export function privateAddress(ip: string): boolean {
+  if (isIP(ip) === 4) return private4(ip)
+  const g = groups6(ip)
+  if (!g) return true // can't tell what it is: refuse
+  // IPv4 inside IPv6 — mapped (::ffff:a.b.c.d, in any spelling), compatible (::a.b.c.d), NAT64 (64:ff9b::/96):
+  // judge the IPv4 address it reaches.
+  const v4 = () => `${g[6] >> 8}.${g[6] & 255}.${g[7] >> 8}.${g[7] & 255}`
+  if (g.slice(0, 5).every((x) => x === 0) && (g[5] === 0xffff || g[5] === 0)) return g[5] === 0 && g[6] === 0 ? true : private4(v4())
+  if (g[0] === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((x) => x === 0)) return private4(v4())
+  return (g[0] & 0xfe00) === 0xfc00 || (g[0] & 0xffc0) === 0xfe80 || (g[0] & 0xff00) === 0xff00 || g.every((x) => x === 0) ||
+    (g[0] === 0x2002) /* 6to4 can wrap any IPv4 */
 }
 
 const allowed = (host: string) =>

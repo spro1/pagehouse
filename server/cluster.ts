@@ -9,17 +9,19 @@ import type { Relay } from './collab.ts'
 const CHANNEL = 'pagehouse_collab'
 const MAX_NOTIFY = 7000 // Postgres caps a payload at 8000 bytes
 
-export async function startRelay(db: Db, url: string, collab: { setRelay: (r: Relay | null) => void; receive: (pageId: number, kind: 'u' | 'a', data: Uint8Array) => void }) {
+/** When the relay lost its Postgres connection (0 while it's fine). /healthz fails after a minute of that. */
+export let relayDownSince = 0
+
+export async function startRelay(db: Db, url: string, collab: { setRelay: (r: Relay | null) => void; receive: (pageId: number, kind: 'u' | 'a', data: Uint8Array) => void; rooms: Map<number, unknown> }) {
   const me = randomUUID().slice(0, 8)
-  const listener = new pg.Client({ connectionString: url })
+  let listener: pg.Client
   let closed = false
-  const connect = async () => {
-    await listener.connect()
-    await listener.query(`LISTEN ${CHANNEL}`)
-  }
-  listener.on('notification', async (n) => {
+  let lastId = 0 // newest relayed update seen, to catch up after a reconnect
+  let started = false
+  const onNotify = async (n: pg.Notification) => {
     // payload: "<instance> <kind> <page> <row id | base64 awareness>"
     const [from, kind, page, rest] = (n.payload ?? '').split(' ')
+    if (kind === 'u') lastId = Math.max(lastId, Number(rest))
     if (from === me) return
     try {
       if (kind === 'a') return collab.receive(Number(page), 'a', Buffer.from(rest, 'base64'))
@@ -28,11 +30,38 @@ export async function startRelay(db: Db, url: string, collab: { setRelay: (r: Re
     } catch (e) {
       console.error('collab relay:', (e as Error).message)
     }
-  })
-  listener.on('error', (e) => {
-    // shortcut: on a lost listen connection rooms here stop hearing other instances until restart; reconnect if it shows up in practice.
-    if (!closed) console.error('collab relay connection lost:', e.message)
-  })
+  }
+  // A dropped connection means this instance stops hearing the others: reconnect (backing off), then replay what
+  // was missed for the rooms open here. Without that, two instances would keep saving diverging copies.
+  const connect = async (attempt = 0): Promise<void> => {
+    if (closed) return
+    listener = new pg.Client({ connectionString: url })
+    listener.on('notification', onNotify)
+    listener.on('error', (e) => {
+      if (closed) return
+      console.error('collab relay connection lost:', e.message)
+      relayDownSince ||= Date.now()
+      listener.removeAllListeners('error')
+      listener.on('error', () => {})
+      void listener.end().catch(() => {})
+      setTimeout(() => void connect(), 1000)
+    })
+    try {
+      await listener.connect()
+      await listener.query(`LISTEN ${CHANNEL}`)
+      if (relayDownSince && collab.rooms.size) {
+        const missed = await db.query('SELECT id, page_id, data FROM collab_updates WHERE id > $1 AND page_id = ANY($2::bigint[]) ORDER BY id', [lastId, [...collab.rooms.keys()]])
+        for (const r of missed.rows) (collab.receive(Number(r.page_id), 'u', new Uint8Array(r.data)), (lastId = Math.max(lastId, Number(r.id))))
+      }
+      relayDownSince = 0
+      started = true
+    } catch (e) {
+      relayDownSince ||= Date.now()
+      if (!started) throw e // the very first connect failing is a startup error
+      console.error('collab relay reconnect failed:', (e as Error).message)
+      setTimeout(() => void connect(attempt + 1), Math.min(30_000, 1000 * 2 ** attempt))
+    }
+  }
   await connect()
   const notify = (payload: string) => db.query('SELECT pg_notify($1, $2)', [CHANNEL, payload])
   collab.setRelay({
