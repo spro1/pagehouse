@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useEditorState, type Editor } from '@tiptap/react'
 import { t, type Key } from '../i18n.ts'
 import { SLASH_ITEMS } from './extensions.tsx'
@@ -15,9 +15,26 @@ export const BG_COLORS: [Key, string][] = [
   ['color.purple', 'rgba(168, 85, 247, 0.25)'], ['color.pink', 'rgba(236, 72, 153, 0.25)'],
 ]
 
+/** Which way a menu under `wrap` should open so it stays inside the page area. Menus open leftwards from the
+ *  button's right edge by default; near the left edge (a narrow window wraps the toolbar) that would put them
+ *  under the sidebar, so they open rightwards there. */
+function useSide(open: boolean, wrap: React.RefObject<HTMLElement | null>) {
+  const [side, setSide] = useState<'left' | 'right'>('right')
+  useLayoutEffect(() => {
+    const el = wrap.current
+    const menu = el?.querySelector<HTMLElement>('.dropdown')
+    if (!open || !el || !menu) return
+    const area = (el.closest('main') ?? document.body).getBoundingClientRect()
+    const b = el.getBoundingClientRect()
+    setSide(b.right - menu.offsetWidth < area.left + 8 ? 'left' : 'right')
+  }, [open])
+  return side
+}
+
 /** A button that opens a small panel under it; clicking outside closes it. */
 function Popover({ label, tip, children, open, setOpen }: { label: ReactNode; tip: string; children: ReactNode; open: boolean; setOpen: (o: boolean) => void }) {
   const wrap = useRef<HTMLDivElement>(null)
+  const side = useSide(open, wrap)
   useEffect(() => {
     if (!open) return
     const close = (e: MouseEvent) => !wrap.current?.contains(e.target as Node) && setOpen(false)
@@ -30,7 +47,7 @@ function Popover({ label, tip, children, open, setOpen }: { label: ReactNode; ti
         onMouseDown={(e) => (e.preventDefault(), setOpen(!open))}>
         {label}
       </button>
-      {open && <div className="dropdown pop-panel" role="dialog" aria-label={tip}>{children}</div>}
+      {open && <div className={`dropdown pop-panel open-${side}`} role="dialog" aria-label={tip}>{children}</div>}
     </div>
   )
 }
@@ -56,6 +73,7 @@ export function Toolbar({ editor }: { editor: Editor }) {
   const [linking, setLinking] = useState(false)
   const [href, setHref] = useState('')
   const insertWrap = useRef<HTMLDivElement>(null)
+  const insertSide = useSide(insert, insertWrap)
   useEffect(() => {
     if (!insert) return
     const close = (e: MouseEvent) => !insertWrap.current?.contains(e.target as Node) && setInsert(false)
@@ -145,7 +163,7 @@ export function Toolbar({ editor }: { editor: Editor }) {
           + {t('toolbar.insert')}
         </button>
         {insert && (
-          <div className="dropdown" role="menu">
+          <div className={`dropdown open-${insertSide}`} role="menu">
             {SLASH_ITEMS.map((i) => (
               <button key={i.title} role="menuitem" type="button" onMouseDown={(e) => (e.preventDefault(), setInsert(false), i.run(editor, here()))}>
                 <span className="slash-icon">{i.icon}</span>
