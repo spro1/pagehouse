@@ -2,7 +2,7 @@
 
 [English](install.md)
 
-Pagehouse는 앱, PostgreSQL, 백업 작업, 이렇게 컨테이너 세 개로 동작합니다. 설정은 `.env` 파일 하나에 들어갑니다.
+Pagehouse는 컨테이너 세 개(앱, PostgreSQL, 백업 작업)로 동작합니다. 설정은 `.env` 파일 하나에 들어갑니다.
 
 | 방법 | 이럴 때 |
 |---|---|
@@ -22,8 +22,8 @@ Pagehouse는 앱, PostgreSQL, 백업 작업, 이렇게 컨테이너 세 개로 �
 | **권장** (~200명) | 2~4 vCPU | 4GB | 50GB SSD + 첨부 × 15 | 동시 편집과 대량 가져오기가 잦은 팀 |
 | **더 큰 조직** | 앱 여러 대 | 앱당 1~2GB | 외부 PostgreSQL + 공유 스토리지 | 쿠버네티스 `replicaCount`, ReadWriteMany 볼륨 |
 
-- **실측:** 대기 상태에서 앱은 메모리 약 50MB, DB 약 50MB를 씁니다. 이미지는 앱 약 190MB, DB 약 300MB입니다. 남는 메모리는 PostgreSQL 캐시와 내보내기·가져오기 때 씁니다. 3,000쪽 기준으로 페이지 트리 6ms, 검색 3ms에 응답했습니다.
-- **디스크:** 백업은 매번 전체 사본(DB + 첨부)이고 기본 14개를 보관하므로 `(DB + 첨부) × 15`를 잡으세요. 백업을 서버 밖으로 옮긴다면 줄여도 됩니다.
+- **실측:** 대기 상태에서 앱은 메모리 약 50MB, DB 약 50MB를 씁니다. 이미지는 앱 약 190MB, DB 약 300MB입니다. 남는 메모리는 PostgreSQL 캐시와 내보내기·가져오기에 쓰입니다. 3,000쪽 기준으로 페이지 트리 6ms, 검색 3ms에 응답했습니다.
+- **디스크:** 백업은 매번 전체 사본(DB + 첨부)을 만들고 기본으로 14개를 보관하므로 `(DB + 첨부) × 15`만큼 잡으세요. 백업을 서버 밖으로 옮긴다면 줄여도 됩니다.
 - **CPU 아키텍처:** amd64(x86_64), arm64
 
 | 소프트웨어 | 지원 | 비고 |
@@ -39,7 +39,7 @@ Pagehouse는 앱, PostgreSQL, 백업 작업, 이렇게 컨테이너 세 개로 �
 curl -fsSL https://github.com/spro1/pagehouse/releases/latest/download/install.sh | sh
 ```
 
-`./pagehouse` 폴더를 만들고, 무작위 DB 비밀번호로 `.env`를 쓰고, 이미지를 받아 실행한 뒤 정상이 될 때까지 기다립니다. 옵션:
+스크립트는 `./pagehouse` 폴더를 만들고 무작위 DB 비밀번호로 `.env`를 작성한 다음 이미지를 받아 실행하고 정상 상태가 될 때까지 기다립니다. 옵션은 이렇게 줍니다.
 
 ```sh
 curl -fsSL .../install.sh | sh -s -- --dir /opt/pagehouse --port 8080 --version 0.2.0
@@ -47,16 +47,16 @@ curl -fsSL .../install.sh | sh -s -- --dir /opt/pagehouse --port 8080 --version 
 
 스크립트를 먼저 읽어 보고 싶다면 내려받아 확인한 뒤 `sh install.sh`로 실행하세요.
 
-`http://<서버>:3000`에 접속합니다. **처음 만든 계정이 관리자가 되고**, 그 직후 가입이 닫힙니다. 다른 사람은 **관리 → 팀원 초대**로 초대합니다.
+`http://<서버>:3000`에 접속합니다. **처음 만든 계정이 관리자가 되고** 그 직후 가입이 닫힙니다. 다른 사람은 **관리 → 팀원 초대**로 초대합니다.
 
 ## 2. 오프라인 설치 (폐쇄망)
 
-인터넷이 되는 PC에서 릴리스 페이지의 파일을 받습니다.
+인터넷이 되는 PC에서 릴리스 페이지의 다음 파일을 받습니다.
 
 - `pagehouse-<버전>-offline-amd64.tar.gz` (대부분의 서버) 또는 `-arm64` (ARM 서버)
 - `SHA256SUMS` (복사 후 파일 확인용)
 
-서버로 옮긴 뒤:
+서버로 옮긴 뒤 다음을 실행합니다.
 
 ```sh
 sha256sum -c SHA256SUMS --ignore-missing     # 선택: 복사본 확인
@@ -123,7 +123,7 @@ docker compose up -d --build
 
 ## HTTPS
 
-TLS를 처리하는 리버스 프록시 뒤에 둡니다. 프록시는 `X-Forwarded-Proto`를 넘겨야 하고(로그인 쿠키에 `Secure`가 붙도록), 50MB까지 업로드를 허용해야 합니다. `BIND_ADDRESS=127.0.0.1`로 두면 평문 포트가 밖에서 보이지 않습니다.
+TLS를 처리하는 리버스 프록시 뒤에 둡니다. 프록시는 로그인 쿠키에 `Secure`가 붙도록 `X-Forwarded-Proto`를 넘겨야 하고 업로드를 50MB까지 허용해야 합니다. `BIND_ADDRESS=127.0.0.1`로 두면 평문 포트가 밖에서 보이지 않습니다.
 
 **Caddy** (인증서 자동):
 
@@ -163,9 +163,9 @@ Pagehouse는 사용자가 원하지 않는 한 쓴 내용이 사라지지 않도
 |---|---|
 | 페이지 삭제 | 하위 페이지와 함께 휴지통으로 갑니다. 언제든 복원할 수 있고 자동으로 비워지지 않습니다. 삭제 직후 **실행 취소**가 뜹니다 |
 | 댓글 삭제 | 숨겨질 뿐 지워지지 않습니다. 삭제 직후 **실행 취소** |
-| 실수로 본문을 지움 | 내용이 눈에 띄게 줄어드는 저장은 항상 새 이력을 만들므로, 지우기 전 내용이 **이력**에 남습니다 |
+| 실수로 본문을 지움 | 내용이 눈에 띄게 줄어드는 저장은 항상 새 이력을 만들어서 지우기 전 내용이 **이력**에 남습니다 |
 | 이전 버전으로 되돌림 | 지금 내용이 먼저 별도 이력으로 남습니다 |
-| 네트워크 끊김, 탭 닫힘, 동시 수정 충돌 | 저장되지 못한 수정은 브라우저에 보관되고, 다음에 페이지를 열면 복원할지 묻습니다 |
+| 네트워크 끊김, 탭 닫힘, 동시 수정 충돌 | 저장하지 못한 수정은 브라우저에 보관됩니다. 다음에 페이지를 열면 복원할지 묻습니다 |
 | 서버·디스크 장애, `docker compose down -v` | 24시간마다 서버의 `./backups`에 자동 백업(14개 보관). 이 폴더는 서버 밖으로도 복사하세요 |
 | 업그레이드 실패 | 업그레이드 전에 자동 백업합니다 (`backups/before-upgrade/`) |
 | 잘못된 백업으로 복원 | `restore.sh`가 현재 상태를 먼저 백업하고(`backups/before-restore/`) 되돌리는 명령을 알려 줍니다 |
@@ -175,13 +175,13 @@ Pagehouse는 사용자가 원하지 않는 한 쓴 내용이 사라지지 않도
 
 자동 백업은 따로 할 일이 없습니다. 실행될 때 한 번, 그 뒤 `BACKUP_INTERVAL_HOURS`마다 만들어집니다. 파일 이름은 `backups/pagehouse-auto-<시각>.tar.gz`이고 시각은 UTC 기준입니다. NAS로 매일 `rsync` 하는 식으로 서버 밖에도 복사해 두세요.
 
-직접 백업하려면:
+직접 백업하려면 다음을 실행합니다.
 
 ```sh
 scripts/backup.sh                    # backups/pagehouse-<시각>.tar.gz
 ```
 
-복원은 현재의 페이지·이력·계정을 바꿉니다. 바꾸기 전에 현재 상태를 먼저 백업합니다.
+복원하면 지금의 페이지·이력·계정을 덮어씁니다. 덮어쓰기 전에 현재 상태를 먼저 백업합니다.
 
 ```sh
 scripts/restore.sh backups/pagehouse-auto-20261124-030000.tar.gz
@@ -197,13 +197,13 @@ scripts/upgrade.sh            # 최신 버전
 scripts/upgrade.sh 0.2.0      # 특정 버전
 ```
 
-먼저 백업하고, `.env`와 모든 데이터를 그대로 둔 채 새 이미지를 받아 다시 띄웁니다. DB 구조 변경은 앱이 시작할 때 자동으로 적용됩니다. 문제가 생기면 `.env`의 `PAGEHOUSE_VERSION`을 이전 버전으로 되돌리고 `scripts/restore.sh backups/before-upgrade/<파일>`을 실행하세요.
+스크립트는 먼저 백업한 뒤 `.env`와 모든 데이터를 그대로 둔 채 새 이미지를 받아 다시 띄웁니다. DB 구조 변경은 앱이 시작할 때 자동으로 적용됩니다. 문제가 생기면 `.env`의 `PAGEHOUSE_VERSION`을 이전 버전으로 되돌리고 `scripts/restore.sh backups/before-upgrade/<파일>`을 실행하세요.
 
-오프라인: 새 오프라인 번들의 `install.sh --dir /opt/pagehouse`를 실행합니다.
+오프라인 환경에서는 새 오프라인 번들의 `install.sh --dir /opt/pagehouse`를 실행합니다.
 
 ## 외부 PostgreSQL 사용 (compose)
 
-`pg_trgm` 확장을 쓸 수 있는 PostgreSQL 14 이상이 필요합니다. 첫 실행 때 `CREATE EXTENSION pg_trgm`을 실행하므로, 그 계정에 확장 생성 권한을 주거나 슈퍼유저로 미리 한 번 실행해 두세요. `docker-compose.yml`에서 앱의 `DATABASE_URL`을 바꾸고 `db` 서비스와 `depends_on` 부분을 지웁니다. 자동 백업 서비스와 스크립트는 함께 뜨는 DB만 다룹니다. 외부 DB는 `pg_dump`로, `files` 볼륨은 따로 백업하세요.
+`pg_trgm` 확장을 쓸 수 있는 PostgreSQL 14 이상이 필요합니다. 앱이 첫 실행 때 `CREATE EXTENSION pg_trgm`을 실행하므로 그 계정에 확장 생성 권한을 주거나 슈퍼유저로 미리 한 번 실행해 두세요. `docker-compose.yml`에서 앱의 `DATABASE_URL`을 바꾸고 `db` 서비스와 `depends_on` 부분을 지웁니다. 자동 백업 서비스와 스크립트는 함께 뜨는 DB만 다룹니다. 외부 DB는 `pg_dump`로, `files` 볼륨은 따로 백업하세요.
 
 ## 데이터 위치
 
@@ -236,4 +236,4 @@ scripts/upgrade.sh 0.2.0      # 특정 버전
 docker compose down        # 모두 멈춤, 데이터와 백업은 남음
 ```
 
-`docker compose down -v`는 DB와 첨부 볼륨까지 지웁니다. `backups` 폴더는 남지만, 하기 전에 최근 백업이 있는지 꼭 확인하세요.
+`docker compose down -v`는 DB와 첨부 볼륨까지 지웁니다. `backups` 폴더는 남지만 실행하기 전에 최근 백업이 있는지 꼭 확인하세요.
