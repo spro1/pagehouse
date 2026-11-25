@@ -61,7 +61,7 @@ export function ssoSource(db: Db) {
 }
 export type SsoSource = ReturnType<typeof ssoSource>
 
-type Discovery = { issuer?: string; authorization_endpoint: string; token_endpoint: string; userinfo_endpoint: string }
+type Discovery = { issuer?: string; authorization_endpoint: string; token_endpoint: string; userinfo_endpoint: string; end_session_endpoint?: string }
 const discoveries = new Map<string, { at: number; d: Discovery }>()
 /** The provider's endpoints from /.well-known/openid-configuration, cached for an hour per issuer. */
 export async function discover(issuer: string): Promise<Discovery> {
@@ -139,11 +139,26 @@ export function registerSso(app: Hono<any>, db: Db, source: SsoSource, startSess
       }
       if (user.disabled_at) return back(c, 'account_disabled')
       await startSession(c, user.id)
+      // Kept so signing out here can also end the session at the provider (else the next SSO click signs straight back in).
+      if (typeof tok.id_token === 'string') setCookie(c, 'oidc_idt', tok.id_token, { httpOnly: true, sameSite: 'Lax', path: '/api/auth', maxAge: 30 * 86400 })
       return back(c)
     } catch {
       return back(c, 'failed')
     }
   })
+}
+
+/** Where to send the browser after signing out here so the provider's session ends too, or null if not an SSO sign-in. */
+export async function ssoLogoutUrl(c: Context, source: SsoSource): Promise<string | null> {
+  const idToken = getCookie(c, 'oidc_idt')
+  if (!idToken) return null
+  deleteCookie(c, 'oidc_idt', { path: '/api/auth' })
+  const cfg = await source.current()
+  const d = cfg && (await discover(cfg.issuer).catch(() => null))
+  if (!cfg || !d?.end_session_endpoint) return null
+  // The provider must allow this address as a post-logout redirect (Keycloak: "Valid post logout redirect URIs").
+  const home = redirectUri(c, cfg).replace(/\/api\/auth\/oidc\/callback$/, '/')
+  return `${d.end_session_endpoint}?${new URLSearchParams({ id_token_hint: idToken, client_id: cfg.clientId, post_logout_redirect_uri: home })}`
 }
 
 /** Admin → SSO. Registered behind the session check, so only admins reach it. */

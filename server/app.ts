@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { tx, type Db } from './db.ts'
 import { registerAdmin, uploadAllowed } from './admin.ts'
 import { registerExport } from './export.ts'
-import { registerSso, registerSsoAdmin, ssoSource } from './sso.ts'
+import { registerSso, registerSsoAdmin, ssoLogoutUrl, ssoSource } from './sso.ts'
 import { createCollab } from './collab.ts'
 import { relayDownSince } from './cluster.ts'
 import { auditMiddleware, registerAudit } from './audit.ts'
@@ -349,7 +349,7 @@ export function createApp(db: Db, dataDir: string) {
     const token = getCookie(c, 'sid')
     if (token) await db.query('DELETE FROM sessions WHERE token_hash = $1', [sha256(token)])
     deleteCookie(c, 'sid', { path: '/' })
-    return c.json({ ok: true })
+    return c.json({ ok: true, redirect: await ssoLogoutUrl(c, sso) })
   })
 
   // Everything below requires a session.
