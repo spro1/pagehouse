@@ -53,6 +53,8 @@ test('formatting from the toolbar and the slash menu', async ({ page }) => {
   await page.keyboard.press('End')
   await page.keyboard.press('Enter')
   await page.keyboard.type('/table')
+  // Enter picks the highlighted item, so wait until the menu has filtered down to it.
+  await expect(page.locator('.slash-menu .active')).toContainText('Table')
   await page.keyboard.press('Enter')
   await expect(editor.locator('table')).toBeVisible()
 })
