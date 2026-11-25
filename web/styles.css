@@ -178,7 +178,7 @@ input[type='radio'], input[type='checkbox'] { width: auto; height: auto; accent-
 .modal-body { padding: 16px 24px 20px; overflow-y: auto; }
 .modal-body > p:first-child { margin-top: 0; }
 .modal-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 20px 14px 24px; border-top: 1px solid var(--line); background: var(--bg-soft); border-radius: 0 0 var(--r-xl) var(--r-xl); }
-.modal-foot button { min-width: 76px; }
+.modal-foot button { min-width: 88px; }
 .modal-foot .note-text { flex: 1; min-width: 0; font-size: 12.5px; color: var(--muted); line-height: 1.4; }
 @keyframes fade { from { opacity: 0; } }
 @keyframes pop { from { opacity: 0; transform: translateY(-6px) scale(0.985); } }

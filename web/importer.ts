@@ -12,6 +12,9 @@ import { unzipSync } from 'fflate'
 import { api } from './api.ts'
 import { extensions } from './editor/extensions.tsx'
 import { ALERT_TO_CALLOUT } from '../server/markdown.ts'
+import { t } from './i18n.ts'
+
+const ATTACHMENTS_HEADING = () => t('import.attachments')
 
 type Json = { type: string; attrs?: Record<string, any>; content?: Json[]; text?: string; marks?: { type: string; attrs?: Record<string, any> }[] }
 type Item = { path: string; data: Uint8Array }
@@ -36,7 +39,22 @@ function editor() {
   return converter
 }
 
-const decode = (b: Uint8Array) => new TextDecoder().decode(b)
+const utf8 = new TextDecoder('utf-8', { fatal: true })
+const cp949 = new TextDecoder('euc-kr')
+/** UTF-8, or Korean Windows' CP949 (EUC-KR) when the bytes aren't valid UTF-8 (Notepad, older Office exports). */
+const decode = (b: Uint8Array) => {
+  try {
+    return utf8.decode(b).replace(/^\uFEFF/, '')
+  } catch {
+    return cp949.decode(b)
+  }
+}
+/** ZIPs made by Windows' built-in compression store Korean names in CP949 without the UTF-8 flag; fflate then reads
+ *  them as Latin-1. Recover the bytes and decode them properly. */
+const fixName = (name: string) => {
+  if (!/[\u0080-\u00ff]/.test(name) || /[^\u0000-\u00ff]/.test(name)) return name
+  return decode(Uint8Array.from(name, (c) => c.charCodeAt(0)))
+}
 const norm = (p: string) => {
   const out: string[] = []
   for (const part of p.replace(/\\/g, '/').split('/')) {
@@ -59,7 +77,7 @@ export async function readFiles(files: File[]): Promise<Item[]> {
     const data = new Uint8Array(await f.arrayBuffer())
     if (/\.zip$/i.test(f.name)) {
       const entries = unzipSync(data, { filter: (e) => !e.name.endsWith('/') && !/(^|\/)(__MACOSX|\.DS_Store)/.test(e.name) })
-      for (const [path, bytes] of Object.entries(entries)) items.push({ path: norm(path), data: bytes })
+      for (const [path, bytes] of Object.entries(entries)) items.push({ path: norm(fixName(path)), data: bytes })
     } else items.push({ path: norm(f.name), data })
     if (items.length > MAX_FILES) throw new Error(`more than ${MAX_FILES} files`)
   }
@@ -69,6 +87,12 @@ export async function readFiles(files: File[]): Promise<Item[]> {
 // ---------- converting one document ----------
 
 function fromMarkdown(md: string): Json {
+  md = md
+    // Obsidian / wiki style: ![[image.png]], [[Page]], [[Page|label]], [[Page#Heading]]
+    .replace(/!\[\[([^\]|]+?)(?:\|[^\]]*)?\]\]/g, (_, f) => `![](<${f.trim()}>)`)
+    .replace(/\[\[([^\]|#]+?)(?:#[^\]|]*)?(?:\|([^\]]+))?\]\]/g, (_, page, label) => `[${(label ?? page).trim()}](<wiki:${page.trim()}>)`)
+    // <details><summary>Title</summary>body</details> → the title in bold, then the body (no fold in the editor).
+    .replace(/<details[^>]*>\s*<summary[^>]*>([\s\S]*?)<\/summary>([\s\S]*?)<\/details>/gi, (_, s, b) => `\n**${s.trim()}**\n\n${b.trim()}\n`)
   const json = editor().markdown!.parse(md) as Json
   return alertsToCallouts(json)
 }
@@ -94,8 +118,10 @@ function alertsToCallouts(node: Json): Json {
 
 function fromHtml(html: string): { doc: Json; title: string | null; crumbs: string[] } {
   const dom = new DOMParser().parseFromString(html, 'text/html')
-  const title = dom.querySelector('#title-text, h1#title-heading')?.textContent?.trim()
-    ?? dom.title.replace(/^.*?\s:\s/, '').trim() ?? null
+  // The export writes "Space name : Page title"; the space name is also the first breadcrumb.
+  const space = dom.querySelector('#breadcrumbs li:first-child a')?.textContent?.trim()
+  const raw = (dom.querySelector('#title-text, h1#title-heading')?.textContent ?? dom.title).replace(/\s+/g, ' ').trim()
+  const title = (space && raw.startsWith(`${space} : `) ? raw.slice(space.length + 3) : raw).trim() || null
   // Confluence: page body lives in #main-content; breadcrumbs give the parent page.
   const crumbs = [...dom.querySelectorAll('#breadcrumbs li a')].map((a) => a.getAttribute('href') ?? '')
   const root = dom.querySelector('#main-content') ?? dom.body
@@ -118,6 +144,24 @@ function fromHtml(html: string): { doc: Json; title: string | null; crumbs: stri
     pre.replaceChildren(code)
   }
   confluenceMacros(dom, root)
+  // Files attached to the page but not shown in it are listed under "Attachments" outside #main-content.
+  const shown = new Set([...root.querySelectorAll('img[src], a[href]')].map((e) => e.getAttribute('src') ?? e.getAttribute('href')))
+  const attached = [...dom.querySelectorAll('.pageSection.group .greybox a[href^="attachments/"]')]
+    .filter((a) => !shown.has(a.getAttribute('href')))
+  if (attached.length) {
+    const ul = dom.createElement('ul')
+    for (const a of attached) {
+      const li = dom.createElement('li')
+      const link = dom.createElement('a')
+      link.setAttribute('href', a.getAttribute('href')!)
+      link.textContent = a.textContent?.trim() || a.getAttribute('href')!
+      li.append(link)
+      ul.append(li)
+    }
+    const h = dom.createElement('h3')
+    h.textContent = ATTACHMENTS_HEADING()
+    root.append(h, ul)
+  }
   root.querySelectorAll('script, style, .pageSection.group, #footer, .page-metadata').forEach((e) => e.remove())
   editor().commands.setContent(root.innerHTML, { emitUpdate: false })
   return { doc: editor().getJSON() as Json, title: title || null, crumbs }
@@ -134,7 +178,7 @@ function confluenceMacros(dom: Document, root: Element) {
   // Generated or interactive bits with nothing to keep.
   root.querySelectorAll('.toc-macro, .client-side-toc-macro, .plugin_pagetree, .recently-updated, .children-display').forEach((e) => e.remove())
   // Panels → info panel, with their title as a bold first line.
-  for (const p of root.querySelectorAll('.panel')) {
+  for (const p of root.querySelectorAll('.panel:not(.code)')) {
     const title = p.querySelector('.panelHeader')?.textContent?.trim()
     const body = p.querySelector('.panelContent')?.innerHTML ?? p.innerHTML
     p.replaceWith(el('div', (title ? `<p><strong>${escapeHtml(title)}</strong></p>` : '') + body, { 'data-callout': 'info' }))
@@ -249,7 +293,12 @@ export function plan(items: Item[]): Plan {
       const last = h.crumbs.filter((c) => c && !/index\.html?$/i.test(c)).pop()
       if (confluence) parent = tree.get(it.path)?.parent ?? (last ? norm(`${dirOf(it.path)}/${last}`) : null)
     } else if (/\.txt$/i.test(it.path)) doc = fromText(text)
-    else doc = fromMarkdown(text.replace(/^---\n[\s\S]*?\n---\n/, ''))
+    else {
+      const fm = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/)
+      const fmTitle = fm?.[1].match(/^title:\s*["']?(.+?)["']?\s*$/m)?.[1]
+      if (fmTitle) title = fmTitle
+      doc = fromMarkdown(fm ? text.slice(fm[0].length) : text)
+    }
     ;({ doc, title } = dropTitleHeading(doc, title, /\.(md|markdown)$/i.test(it.path)))
     docs.push({ key: it.path, path: rel(it.path), title: title.slice(0, 500) || 'Untitled', parent, doc, dir: dirOf(it.path) })
   }
@@ -383,7 +432,7 @@ export async function run(p: Plan, spaceId: number, parentId: number | null, onP
       created.push({ id: page.id, title: d.title })
       const uploaded = new Map<string, string>()
       const doc = await rewrite(d.doc, async (u) => {
-        if (/^(https?:|mailto:|#|\/api\/)/i.test(u)) return u
+        if (/^(https?:|mailto:|#|\/api\/|wiki:)/i.test(u)) return u
         if (u.startsWith('data:image/')) {
           const [, type, b64] = u.match(/^data:image\/(\w+);base64,(.*)$/) ?? []
           if (!b64) return u
@@ -410,14 +459,28 @@ export async function run(p: Plan, spaceId: number, parentId: number | null, onP
       warnings.push(`${d.title}: ${e.message}`)
     }
   }
-  // Links between imported pages (to .md/.html files) now point at the new pages.
+  // Links between imported pages (to .md/.html files, or [[wiki links]] by name) now point at the new pages.
+  const byName = new Map<string, number>()
   for (const d of p.docs) {
     const id = ids.get(d.key)
     if (!id) continue
+    for (const n of [d.title, stripNotionId(stripExt(baseName(d.path)))]) if (!byName.has(n.toLowerCase())) byName.set(n.toLowerCase(), id)
+  }
+  const internal = /"href":"(?!https?:|mailto:|#|\/api\/|data:)/
+  for (const d of p.docs) {
+    const id = ids.get(d.key)
+    // Only pages that link to other files need a second look; the rest are done.
+    if (!id || !internal.test(JSON.stringify(d.doc))) continue
     try {
       const cur = await api<{ doc: Json; title: string }>(`/api/pages/${id}`)
       const linked = await rewrite(cur.doc, async (u) => {
         if (/^(https?:|mailto:|#|\/api\/|data:)/i.test(u)) return u
+        if (u.startsWith('wiki:')) {
+          const name = u.slice(5)
+          const target = byName.get(name.toLowerCase())
+          // A page that wasn't in the upload: search for it instead of a dead link.
+          return target ? `#/p/${target}` : `#/search?q=${encodeURIComponent(name)}`
+        }
         try {
           const target = ids.get(norm(`${d.dir}/${decodeURIComponent(u.split(/[?#]/)[0])}`))
           return target ? `#/p/${target}` : u
