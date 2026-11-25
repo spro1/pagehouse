@@ -19,11 +19,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  # Upload and deploy are separate jobs, as in GitHub's own Pages workflow: in one job, deploy-pages looked the
+  # artifact up right after the upload and often didn't find it yet.
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
       - name: Assemble
@@ -31,8 +30,16 @@ jobs:
           mkdir -p _site/images
           cp site/*.html site/*.css site/*.js site/robots.txt site/sitemap.xml _site/
           cp docs/images/* _site/images/
-      - uses: actions/upload-pages-artifact@v4   # v5 uploads with upload-artifact v7, which deploy-pages v5 does not find
+      - uses: actions/upload-pages-artifact@v4
         with:
           path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v5
