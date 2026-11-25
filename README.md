@@ -139,7 +139,7 @@ This deploys PostgreSQL, a daily backup CronJob and a generated database passwor
 |---|---|
 | Backup | Automatic every 24 h into `backups/pagehouse-auto-*.tar.gz` (14 kept). Manual: `scripts/backup.sh` |
 | Restore | `scripts/restore.sh <backup>`. It backs up the current state first and prints the command to undo |
-| Upgrade | `scripts/upgrade.sh [version]`. It backs up first and keeps `.env` and all data. Air-gapped: run the new bundle's `install.sh --dir` |
+| Upgrade | Read the [notes per version](docs/upgrading.md), then `scripts/upgrade.sh [version]`. It backs up first and keeps `.env` and all data. Air-gapped: run the new bundle's `install.sh --dir` |
 | Health | `curl localhost:3000/healthz` (includes the version); the Admin page shows storage, backups, activity and the audit log |
 | Scale out | On Kubernetes, raise `replicaCount` with a ReadWriteMany attachment volume. Live co-editing works across instances through PostgreSQL |
 | Logs | `docker compose logs app` |
@@ -219,6 +219,7 @@ Yes. Export any space as standard Markdown files and attachments, or as HTML tha
 ## Documentation
 
 - [Installation guide](docs/install.md): install options, HTTPS, backup and restore, upgrades, Kubernetes, troubleshooting
+- [Upgrade guide](docs/upgrading.md): database changes, new settings, behaviour changes and rolling back, per version
 - [User guide](docs/user-guide.md): editor, search, permissions, mentions and notifications, import and export, admin
 - [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md) · [Releasing](docs/releasing.md)
 

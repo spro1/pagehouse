@@ -191,6 +191,8 @@ Test a restore on a spare machine now and then. A backup you have never restored
 
 ## Upgrade
 
+What to check for each version (database changes, new settings, behaviour changes) is in the [upgrade guide](upgrading.md).
+
 ```sh
 cd /opt/pagehouse
 scripts/upgrade.sh            # latest release
