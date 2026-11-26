@@ -1,6 +1,6 @@
 // Single sign-on with any OpenID Connect provider (Keycloak, Azure AD / Entra ID, Google Workspace, Okta, Authentik...).
 // Configured by an admin in Admin → SSO (stored in settings), or by environment variables, which then take over and
-// make the screen read-only. Accounts are matched by email.
+// make the screen read-only. Accounts are found by the provider's id (sub), linked once by verified email.
 import type { Context, Hono } from 'hono'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto'
@@ -171,25 +171,35 @@ export function registerSso(app: Hono<any>, db: Db, source: SsoSource, startSess
       const userinfo = await fetch(d.userinfo_endpoint, { headers: { authorization: `Bearer ${tok.access_token}` }, signal: AbortSignal.timeout(10_000) })
         .then((r) => (r.ok ? r.json() : null))
       const info = { ...claims, ...(userinfo?.sub === claims.sub ? userinfo : {}) }
+      const sub = String(claims.sub)
       const email = typeof info?.email === 'string' ? info.email.toLowerCase() : ''
-      // Accounts are matched by email, so the provider must vouch for it: otherwise anyone able to set an email at the
-      // provider could sign in as that person here. Providers that never send the claim (some Entra ID setups)
-      // can be trusted explicitly.
-      // Trusting covers only a claim that's missing; any other value than true ("false" as a string too) is a refusal.
+      // Only for linking an existing account by email: otherwise anyone able to set an email at the provider could
+      // sign in as that person here. Providers that never send the claim (some Entra ID setups) can be trusted
+      // explicitly; trusting covers only a claim that's missing, any other value than true ("false" too) is a refusal.
       const v = info?.email_verified
       const verified = v === true || v === 'true' || (cfg.trustEmail && v == null)
-      if (!email || !verified) return back(c, 'no_email')
-      let user = (await db.query('SELECT id, disabled_at FROM users WHERE email = $1', [email])).rows[0]
-      if (!user) {
-        if (!cfg.autoCreate) return back(c, 'no_account')
-        const name = String(info.name || info.preferred_username || email.split('@')[0]).slice(0, 100)
-        // No password: this account signs in through the provider only (an admin can still send a reset link).
-        user = (await db.query(`INSERT INTO users (email, name, password_hash) VALUES ($1, $2, '') ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email RETURNING id, disabled_at`,
-          [email, name])).rows[0]
-      }
-      if (user.disabled_at) return back(c, 'account_disabled')
-      await tx(db, (q) => syncGroups(q, user.id, info[cfg.groupsClaim], cfg.adminGroup))
-      await startSession(c, user.id)
+      const res = await tx(db, async (q) => {
+        // The provider's id first, so a changed email there still reaches the same account.
+        let user = (await q.query('SELECT id, disabled_at FROM users WHERE oidc_sub = $1', [sub])).rows[0]
+        // Accounts from before this version, or made with a password, are linked once by verified email.
+        if (!user && email && verified)
+          user = (await q.query('UPDATE users SET oidc_sub = $2 WHERE email = $1 AND oidc_sub IS NULL RETURNING id, disabled_at', [email, sub])).rows[0]
+        if (!user) {
+          if (!cfg.autoCreate) return 'no_account'
+          if (!email) return 'no_email'
+          const name = String(info.name || info.preferred_username || email.split('@')[0]).slice(0, 100)
+          // No password: this account signs in through the provider only (an admin can still send a reset link).
+          // An account with this email that isn't linkable (unverified email, or linked to another person) is refused.
+          user = (await q.query(`INSERT INTO users (email, name, password_hash, oidc_sub) VALUES ($1, $2, '', $3) ON CONFLICT (email) DO NOTHING RETURNING id, disabled_at`,
+            [email, name, sub])).rows[0]
+          if (!user) return 'email_taken'
+        }
+        if (user.disabled_at) return 'account_disabled'
+        await syncGroups(q, user.id, info[cfg.groupsClaim], cfg.adminGroup)
+        return user.id as number
+      })
+      if (typeof res === 'string') return back(c, res)
+      await startSession(c, res)
       // Kept so signing out here can also end the session at the provider (else the next SSO click signs straight back in).
       if (typeof tok.id_token === 'string') setCookie(c, 'oidc_idt', tok.id_token, { httpOnly: true, sameSite: 'Lax', path: '/api/auth', maxAge: 30 * 86400 })
       return back(c)

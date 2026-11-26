@@ -534,12 +534,14 @@ test('mentions and replies notify people who can see the page; home lists viewed
   assert.ok(!(await outsider.json('GET', '/api/home')).created.some((p: any) => p.id === secret.id), 'private pages not in others’ home')
 })
 
-test('OIDC single sign-on creates and signs in an account by email', async () => {
+test('OIDC single sign-on creates, links and signs in accounts by the provider id', async () => {
   const { createServer } = await import('node:http')
   let verifier = ''
   let nonce = ''
   let groups: string[] | undefined = ['/Engineering', 'wiki-admins']
   let emailVerified: unknown = true
+  let sub = 'sso-1'
+  let email = 'SSO@Corp.co'
   const jwt = (claims: object) => ['{"alg":"none"}', JSON.stringify(claims), ''].map((p) => Buffer.from(p).toString('base64url')).join('.')
   const idp = createServer(async (req, res) => {
     const u = new URL(req.url!, 'http://x')
@@ -551,10 +553,10 @@ test('OIDC single sign-on creates and signs in an account by email', async () =>
       return res.end(JSON.stringify({ authorization_endpoint: `${base}/auth`, token_endpoint: `${base}/token`, userinfo_endpoint: `${base}/me`, end_session_endpoint: `${base}/logout` }))
     if (u.pathname === '/token') {
       verifier = new URLSearchParams(body).get('code_verifier') ?? ''
-      const idt = jwt({ iss: base, aud: 'wiki', sub: 'sso-1', nonce, exp: Math.floor(Date.now() / 1000) + 60 })
+      const idt = jwt({ iss: base, aud: 'wiki', sub, nonce, exp: Math.floor(Date.now() / 1000) + 60 })
       return res.end(JSON.stringify(new URLSearchParams(body).get('code') === 'good' && new URLSearchParams(body).get('client_secret') === 's3cret-value' ? { access_token: 'at', id_token: idt } : {}))
     }
-    if (u.pathname === '/me') return res.end(JSON.stringify({ sub: 'sso-1', email: 'SSO@Corp.co', email_verified: emailVerified, name: 'Sso User', groups }))
+    if (u.pathname === '/me') return res.end(JSON.stringify({ sub, email, email_verified: emailVerified, name: 'Sso User', groups }))
     res.statusCode = 404
     res.end()
   })
@@ -623,17 +625,41 @@ test('OIDC single sign-on creates and signs in an account by email', async () =>
     await sapp.request(`/api/auth/oidc/callback?code=good&state=${third.state}`, { headers: { cookie: third.cookie } })
     assert.deepEqual(await groupsOf(), ['Manual:manual'])
     await sapp.request(`/api/admin/groups/${manual.id}`, { method: 'DELETE', headers: { cookie: admin.cookie } })
+    // As person `as` at the provider: where the callback sends the browser, and the account it signed in to.
+    const as = async (who: string, mail: string, verified: unknown = true) => {
+      ;[sub, email, emailVerified] = [who, mail, verified]
+      const s = await signIn()
+      const res = await sapp.request(`/api/auth/oidc/callback?code=good&state=${s.state}`, { headers: { cookie: s.cookie } })
+      const sidc = res.headers.getSetCookie().find((h) => h.startsWith('sid='))?.split(';')[0]
+      return { to: res.headers.get('location'), id: sidc ? (await (await sapp.request('/api/me', { headers: { cookie: sidc } })).json()).id : null }
+    }
+    const subOf = async (id: number) => (await db.query('SELECT email, oidc_sub FROM users WHERE id = $1', [id])).rows[0]
+    assert.deepEqual(await subOf(me.id), { email: 'sso@corp.co', oidc_sub: 'sso-1' })
+    // An account from before the upgrade (no provider id yet) is linked by verified email at its first SSO sign-in...
+    const legacy = (await db.query(`INSERT INTO users (email, name, password_hash) VALUES ('old@corp.co', 'Old', 'x') RETURNING id`)).rows[0].id
+    assert.deepEqual(await as('sso-2', 'Old@Corp.co'), { to: '/', id: legacy })
+    assert.equal((await subOf(legacy)).oidc_sub, 'sso-2')
+    // ...then found by that id: a changed email at the provider is the same account (its email here stays).
+    assert.deepEqual(await as('sso-2', 'renamed@corp.co'), { to: '/', id: legacy })
+    assert.equal((await subOf(legacy)).email, 'old@corp.co')
+    // Someone else at the provider with that email can't take the linked account.
+    assert.deepEqual(await as('sso-3', 'old@corp.co'), { to: '/?sso_error=email_taken', id: null })
+    // An unverified email never links an existing account, and creates a new one only for a free email.
+    const legacy2 = (await db.query(`INSERT INTO users (email, name, password_hash) VALUES ('old2@corp.co', 'Old 2', 'x') RETURNING id`)).rows[0].id
+    assert.equal((await as('sso-4', 'old2@corp.co', false)).to, '/?sso_error=email_taken')
+    assert.equal((await as('sso-4', 'old2@corp.co', null)).to, '/?sso_error=email_taken')
+    assert.equal((await as('sso-5', 'fresh@corp.co', false)).to, '/')
     // "Trust emails…" only covers a provider that sends no email_verified; "false", even as a string, is still a refusal.
     await put({ ...saved, clientSecret: '', trustEmail: true })
-    const tryVerified = async (value: unknown) => {
-      emailVerified = value
-      const s = await signIn()
-      return (await sapp.request(`/api/auth/oidc/callback?code=good&state=${s.state}`, { headers: { cookie: s.cookie } })).headers.get('location')
-    }
-    assert.match((await tryVerified('false'))!, /sso_error=no_email/)
-    assert.match((await tryVerified(false))!, /sso_error=no_email/)
-    assert.equal(await tryVerified(undefined), '/')
-    emailVerified = true
+    assert.equal((await as('sso-4', 'old2@corp.co', 'false')).to, '/?sso_error=email_taken')
+    assert.equal((await as('sso-4', 'old2@corp.co', false)).to, '/?sso_error=email_taken')
+    assert.deepEqual(await as('sso-4', 'old2@corp.co', null), { to: '/', id: legacy2 })
+    // With account creation off, linked and linkable accounts still get in; nobody else does.
+    await put({ ...saved, clientSecret: '', autoCreate: false })
+    assert.deepEqual(await as('sso-2', 'renamed@corp.co'), { to: '/', id: legacy })
+    assert.equal((await as('sso-3', 'old@corp.co')).to, '/?sso_error=no_account')
+    assert.equal((await as('sso-6', 'nobody@corp.co')).to, '/?sso_error=no_account')
+    ;[sub, email, emailVerified] = ['sso-1', 'SSO@Corp.co', true]
     await put({ ...saved, clientSecret: '' })
     // The SSO account has no password, so password sign-in can't be used to get in.
     assert.equal((await sapp.request('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'sso@corp.co', password: '' }) })).status, 401)
