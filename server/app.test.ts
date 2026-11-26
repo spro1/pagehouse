@@ -6,7 +6,7 @@ import { createHmac } from 'node:crypto'
 import { startPersonalHooks } from './webhooks.ts'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createApp } from './app.ts'
+import { createApp, hangulBigrams, setupToken } from './app.ts'
 import { pruneFiles } from './admin.ts'
 import { brandCss, brandHtml, contrastOnWhite } from './html.ts'
 import { openDb } from './db.ts'
@@ -45,7 +45,20 @@ test('register, edit with conflict detection, search, attachments', async () => 
   const call = a.call
   assert.equal((await call('GET', '/api/spaces')).status, 401)
   assert.equal((await call('POST', '/api/auth/register', { email: 'a@b.co', name: 'A', password: 'short' })).status, 400)
-  assert.equal((await call('POST', '/api/auth/register', { email: 'a@b.co', name: 'A', password: 'password1' })).status, 200)
+  // The first account (the admin) needs the setup token printed in the server log.
+  const setup = (await setupToken(db))!
+  assert.match(setup, /^[\w-]{20,}$/)
+  assert.equal(await setupToken(db), setup, 'every instance prints the same token')
+  assert.equal((await call('POST', '/api/auth/register', { email: 'a@b.co', name: 'A', password: 'password1' })).status, 403)
+  assert.equal((await call('POST', '/api/auth/register', { email: 'a@b.co', name: 'A', password: 'password1', setupToken: 'guess' })).status, 403)
+  // Guessing it is throttled like a password: after 10 wrong tries from one address, even the right token waits.
+  const fromGuesser = (setupToken: string) => app.request('/api/auth/register', { method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-forwarded-for': '10.9.9.9' }, body: JSON.stringify({ email: 'g@b.co', name: 'G', password: 'password1', setupToken }) })
+  for (let i = 0; i < 10; i++) assert.equal((await fromGuesser(`guess-${i}`)).status, 403)
+  assert.equal((await fromGuesser(setup)).status, 429)
+  assert.equal((await call('POST', '/api/auth/register', { email: 'a@b.co', name: 'A', password: 'password1', setupToken: setup })).status, 200)
+  assert.equal(await setupToken(db), null, 'gone once there is an admin')
+  assert.equal((await db.query(`SELECT 1 FROM settings WHERE key = 'setup_token'`)).rowCount, 0)
 
   const [space] = await (await call('GET', '/api/spaces')).json()
   const page = await (await call('POST', '/api/pages', { spaceId: space.id, title: '주간보고' })).json()
@@ -524,6 +537,10 @@ test('mentions and replies notify people who can see the page; home lists viewed
 test('OIDC single sign-on creates and signs in an account by email', async () => {
   const { createServer } = await import('node:http')
   let verifier = ''
+  let nonce = ''
+  let groups: string[] | undefined = ['/Engineering', 'wiki-admins']
+  let emailVerified: unknown = true
+  const jwt = (claims: object) => ['{"alg":"none"}', JSON.stringify(claims), ''].map((p) => Buffer.from(p).toString('base64url')).join('.')
   const idp = createServer(async (req, res) => {
     const u = new URL(req.url!, 'http://x')
     const base = `http://127.0.0.1:${(idp.address() as any).port}`
@@ -534,9 +551,10 @@ test('OIDC single sign-on creates and signs in an account by email', async () =>
       return res.end(JSON.stringify({ authorization_endpoint: `${base}/auth`, token_endpoint: `${base}/token`, userinfo_endpoint: `${base}/me`, end_session_endpoint: `${base}/logout` }))
     if (u.pathname === '/token') {
       verifier = new URLSearchParams(body).get('code_verifier') ?? ''
-      return res.end(JSON.stringify(new URLSearchParams(body).get('code') === 'good' && new URLSearchParams(body).get('client_secret') === 's3cret-value' ? { access_token: 'at', id_token: 'idt' } : {}))
+      const idt = jwt({ iss: base, aud: 'wiki', sub: 'sso-1', nonce, exp: Math.floor(Date.now() / 1000) + 60 })
+      return res.end(JSON.stringify(new URLSearchParams(body).get('code') === 'good' && new URLSearchParams(body).get('client_secret') === 's3cret-value' ? { access_token: 'at', id_token: idt } : {}))
     }
-    if (u.pathname === '/me') return res.end(JSON.stringify({ email: 'SSO@Corp.co', email_verified: true, name: 'Sso User' }))
+    if (u.pathname === '/me') return res.end(JSON.stringify({ sub: 'sso-1', email: 'SSO@Corp.co', email_verified: emailVerified, name: 'Sso User', groups }))
     res.statusCode = 404
     res.end()
   })
@@ -551,8 +569,9 @@ test('OIDC single sign-on creates and signs in an account by email', async () =>
     // An admin turns it on from the screen; an issuer that doesn't answer is refused instead of saved.
     assert.equal((await (await sapp.request('/api/auth/status')).json()).sso, null)
     assert.equal((await put({ enabled: true, issuer: 'http://127.0.0.1:1', clientId: 'wiki' })).status, 400)
-    const saved = await (await put({ enabled: true, issuer, clientId: 'wiki', clientSecret: 's3cret-value', label: 'SSO' })).json()
+    const saved = await (await put({ enabled: true, issuer, clientId: 'wiki', clientSecret: 's3cret-value', label: 'SSO', adminGroup: 'wiki-admins' })).json()
     assert.equal(saved.enabled, true)
+    assert.deepEqual([saved.groupsClaim, saved.adminGroup], ['groups', 'wiki-admins'])
     assert.equal(saved.hasSecret, true)
     assert.ok(!JSON.stringify(saved).includes('s3cret-value'), 'the secret never comes back')
     // Stored encrypted with SECRET_KEY, so a database dump or backup doesn't reveal it.
@@ -564,18 +583,58 @@ test('OIDC single sign-on creates and signs in an account by email', async () =>
     assert.equal((await (await sapp.request('/api/auth/status')).json()).sso, 'SSO')
     const audit = await (await sapp.request('/api/admin/audit?action=settings.sso', { headers: { cookie: admin.cookie } })).json()
     assert.ok(audit.length >= 1 && !JSON.stringify(audit).includes('s3cret-value'))
-    const start = await sapp.request('/api/auth/oidc/start')
-    const loc = new URL(start.headers.get('location')!)
-    const state = loc.searchParams.get('state')!
-    const cookie = start.headers.get('set-cookie')!.split(';')[0]
+    const signIn = async (idpNonce?: string) => {
+      const start = await sapp.request('/api/auth/oidc/start')
+      const loc = new URL(start.headers.get('location')!)
+      nonce = idpNonce ?? loc.searchParams.get('nonce')!
+      const cookie = start.headers.get('set-cookie')!.split(';')[0]
+      return { state: loc.searchParams.get('state')!, cookie, sent: loc.searchParams.get('nonce') }
+    }
+    const { state, cookie, sent } = await signIn()
+    assert.ok(sent && sent.length >= 20, 'a nonce goes with the request')
     // A forged state is refused.
     assert.match((await sapp.request(`/api/auth/oidc/callback?code=good&state=bad`, { headers: { cookie } })).headers.get('location')!, /sso_error=failed/)
+    // An ID token minted for another sign-in (its nonce doesn't match this browser's) is refused.
+    const replay = await signIn('someone-elses-nonce')
+    assert.match((await sapp.request(`/api/auth/oidc/callback?code=good&state=${replay.state}`, { headers: { cookie: replay.cookie } })).headers.get('location')!, /sso_error=failed/)
+    nonce = sent
     const cb = await sapp.request(`/api/auth/oidc/callback?code=good&state=${state}`, { headers: { cookie } })
     assert.equal(cb.headers.get('location'), '/')
     assert.ok(verifier.length > 40)
     const sid = cb.headers.getSetCookie().find((h) => h.startsWith('sid='))!.split(';')[0]
     const me = await (await sapp.request('/api/me', { headers: { cookie: sid } })).json()
     assert.equal(me.email, 'sso@corp.co')
+    // The provider's groups became Pagehouse groups (Keycloak's leading slash dropped), and the admin group made an admin.
+    const groupsOf = async () => (await db.query(`SELECT g.name, gm.source FROM group_members gm JOIN groups g ON g.id = gm.group_id
+      WHERE gm.user_id = $1 ORDER BY g.name`, [me.id])).rows.map((r) => `${r.name}:${r.source ?? 'manual'}`)
+    assert.deepEqual(await groupsOf(), ['Engineering:oidc', 'wiki-admins:oidc'])
+    assert.equal(me.role, 'admin')
+    // Next sign-in: left the provider groups. Synced memberships go, one an admin added by hand stays, admin goes.
+    const manual = await (await sapp.request('/api/admin/groups', { method: 'POST', headers: { cookie: admin.cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Manual', members: [me.id] }) })).json()
+    groups = []
+    const again = await signIn()
+    await sapp.request(`/api/auth/oidc/callback?code=good&state=${again.state}`, { headers: { cookie: again.cookie } })
+    assert.deepEqual(await groupsOf(), ['Manual:manual'])
+    assert.equal((await db.query('SELECT role FROM users WHERE id = $1', [me.id])).rows[0].role, 'member')
+    // A provider that sends no groups claim changes nothing.
+    groups = undefined
+    const third = await signIn()
+    await sapp.request(`/api/auth/oidc/callback?code=good&state=${third.state}`, { headers: { cookie: third.cookie } })
+    assert.deepEqual(await groupsOf(), ['Manual:manual'])
+    await sapp.request(`/api/admin/groups/${manual.id}`, { method: 'DELETE', headers: { cookie: admin.cookie } })
+    // "Trust emails…" only covers a provider that sends no email_verified; "false", even as a string, is still a refusal.
+    await put({ ...saved, clientSecret: '', trustEmail: true })
+    const tryVerified = async (value: unknown) => {
+      emailVerified = value
+      const s = await signIn()
+      return (await sapp.request(`/api/auth/oidc/callback?code=good&state=${s.state}`, { headers: { cookie: s.cookie } })).headers.get('location')
+    }
+    assert.match((await tryVerified('false'))!, /sso_error=no_email/)
+    assert.match((await tryVerified(false))!, /sso_error=no_email/)
+    assert.equal(await tryVerified(undefined), '/')
+    emailVerified = true
+    await put({ ...saved, clientSecret: '' })
     // The SSO account has no password, so password sign-in can't be used to get in.
     assert.equal((await sapp.request('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'sso@corp.co', password: '' }) })).status, 401)
     // Environment variables take over, and the screen becomes read-only.
@@ -584,7 +643,7 @@ test('OIDC single sign-on creates and signs in an account by email', async () =>
     // Signing out also ends the provider's session.
     const idt = cb.headers.getSetCookie().find((h) => h.startsWith('oidc_idt='))!.split(';')[0]
     const out = await (await sapp.request('/api/auth/logout', { method: 'POST', headers: { cookie: `${sid}; ${idt}` } })).json()
-    assert.match(out.redirect, /\/logout\?id_token_hint=idt&client_id=.+&post_logout_redirect_uri=http%3A%2F%2F/)
+    assert.match(out.redirect, /\/logout\?id_token_hint=[\w-]+\.[\w-]+\.&client_id=.+&post_logout_redirect_uri=http%3A%2F%2F/)
     assert.equal((await (await sapp.request('/api/auth/logout', { method: 'POST', headers: { cookie: sid } })).json()).redirect, null)
     const env = await (await sapp.request('/api/admin/sso', { headers: { cookie: admin.cookie } })).json()
     assert.deepEqual([env.source, env.clientId], ['env', 'from-env'])
@@ -1261,4 +1320,135 @@ test('branding: admins set name and logo; everyone, signed in or not, reads them
   await admin.call('PUT', '/api/admin/branding', { name: '' })
   assert.deepEqual(await anon.json('GET', '/api/auth/branding'), { name: null, logo: null, accent: null })
   assert.equal((await anon.call('GET', '/api/auth/branding/logo')).status, 404)
+})
+
+test('API tokens expire; tokens from before this version keep working; SSO accounts gone from the provider stop', async () => {
+  const admin = client()
+  await admin.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  const bearer = (token: string) => app.request('/api/me', { headers: { authorization: `Bearer ${token}` } })
+  assert.equal((await admin.call('POST', '/api/me/tokens', { name: 'x', days: 0 })).status, 400)
+  assert.equal((await admin.call('POST', '/api/me/tokens', { name: 'x', days: 366 })).status, 400)
+  const made = await admin.json('POST', '/api/me/tokens', { name: 'ninety' })
+  const days = (Date.parse(made.expiresAt) - Date.now()) / 86400_000
+  assert.ok(Math.abs(days - 90) < 0.01, `90 days by default, got ${days}`)
+  assert.equal((await bearer(made.token)).status, 200)
+  // Past its date: refused and no longer listed.
+  await db.query(`UPDATE api_tokens SET expires_at = now() - interval '1 second' WHERE id = $1`, [made.id])
+  assert.equal((await bearer(made.token)).status, 401)
+  assert.ok(!(await admin.json('GET', '/api/me/tokens')).some((t: any) => t.id === made.id))
+  // A token made before this version (no expiry) still works.
+  const old = await admin.json('POST', '/api/me/tokens', { name: 'legacy', days: 30 })
+  await db.query('UPDATE api_tokens SET expires_at = NULL WHERE id = $1', [old.id])
+  assert.equal((await bearer(old.token)).status, 200)
+  assert.equal((await admin.json('GET', '/api/me/tokens')).find((t: any) => t.id === old.id).expiresAt, null)
+  // Signed in by SSO, but not for longer than TOKEN_SSO_GRACE_DAYS (30): probably removed at the provider.
+  const me = (await admin.json('GET', '/api/me')).id
+  await db.query(`UPDATE users SET last_sso_at = now() - interval '29 days' WHERE id = $1`, [me])
+  assert.equal((await bearer(old.token)).status, 200)
+  await db.query(`UPDATE users SET last_sso_at = now() - interval '31 days' WHERE id = $1`, [me])
+  assert.equal((await bearer(old.token)).status, 401)
+  await db.query('UPDATE users SET last_sso_at = NULL WHERE id = $1', [me])
+  await admin.call('DELETE', `/api/me/tokens/${old.id}`)
+})
+
+test('webhook deliveries are queued in the database and retried with growing waits', async () => {
+  let fail = true
+  const got: { headers: Record<string, any>; raw: string }[] = []
+  const rx = createServer((req, res) => {
+    let b = ''
+    req.on('data', (d) => (b += d))
+    req.on('end', () => (got.push({ headers: req.headers, raw: b }), (res.statusCode = fail ? 503 : 200), res.end()))
+  })
+  await new Promise<void>((r) => rx.listen(0, '127.0.0.1', r))
+  const admin = client()
+  await admin.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  const [general] = await admin.json('GET', '/api/spaces')
+  const hook = await admin.json('POST', '/api/admin/webhooks', { name: 'Flaky', url: `http://127.0.0.1:${(rx.address() as any).port}/`, events: ['page.created'], spaceId: general.id })
+  const job = async () => (await db.query('SELECT attempts, done_at, last_error, run_at > now() AS later, round(extract(epoch FROM run_at - now()) / 60) AS mins FROM webhook_jobs WHERE hook_id = $1', [hook.id])).rows[0]
+  const due = () => db.query('UPDATE webhook_jobs SET run_at = now() WHERE hook_id = $1 AND done_at IS NULL', [hook.id])
+  try {
+    await admin.json('POST', '/api/pages', { spaceId: general.id, title: 'Retry me' })
+    for (let i = 0; i < 100 && (await job())?.attempts !== 1; i++) await new Promise((r) => setTimeout(r, 20))
+    let j = await job()
+    // First attempt failed: the job stays in the table (so a restart keeps it) and waits a minute.
+    assert.deepEqual([j.attempts, j.done_at, j.last_error, j.later, Number(j.mins)], [1, null, 'HTTP 503', true, 1])
+    assert.equal((await admin.json('GET', '/api/admin/webhooks')).hooks.find((h: any) => h.id === hook.id).lastError, 'HTTP 503')
+    // Both header names carry the same values.
+    const sig = `sha256=${createHmac('sha256', hook.secret).update(got[0].raw).digest('hex')}`
+    assert.deepEqual([got[0].headers['x-pagehouse-signature'], got[0].headers['x-signature']], [sig, sig])
+    assert.deepEqual([got[0].headers['x-pagehouse-event'], got[0].headers['x-event']], ['page.created', 'page.created'])
+    // Not due yet: nothing is sent.
+    assert.equal(await app.webhooks.runJobs(), 0)
+    await due()
+    await app.webhooks.runJobs()
+    assert.equal(Number((await job()).mins), 4, 'then 4 minutes')
+    // The receiver recovers: delivered, done, error cleared.
+    fail = false
+    await due()
+    await app.webhooks.runJobs()
+    j = await job()
+    assert.ok(j.done_at)
+    assert.equal(j.last_error, null)
+    assert.equal(got.length, 3)
+    // A receiver that never recovers: after 5 attempts the job gives up.
+    fail = true
+    await db.query('DELETE FROM webhook_jobs WHERE hook_id = $1', [hook.id])
+    await admin.json('POST', '/api/pages', { spaceId: general.id, title: 'Give up' })
+    for (let i = 0; i < 100 && (await job())?.attempts !== 1; i++) await new Promise((r) => setTimeout(r, 20))
+    for (let n = 2; n <= 5; n++) (await due(), await app.webhooks.runJobs())
+    j = await job()
+    assert.equal(j.attempts, 5)
+    assert.ok(j.done_at, 'given up')
+    assert.equal(j.last_error, 'HTTP 503')
+    // A secret that can't be decrypted (encrypted, but SECRET_KEY is gone) fails like any other attempt and gives up too.
+    delete process.env.SECRET_KEY
+    await db.query(`UPDATE webhooks SET secret = 'enc:v1:aaaa.bbbb.cccc' WHERE id = $1`, [hook.id])
+    await db.query('DELETE FROM webhook_jobs WHERE hook_id = $1', [hook.id])
+    await admin.json('POST', '/api/pages', { spaceId: general.id, title: 'No key' })
+    for (let i = 0; i < 100 && (await job())?.attempts !== 1; i++) await new Promise((r) => setTimeout(r, 20))
+    for (let n = 2; n <= 5; n++) (await due(), await app.webhooks.runJobs())
+    j = await job()
+    assert.deepEqual([j.attempts, !!j.done_at], [5, true])
+    assert.match(j.last_error, /SECRET_KEY/)
+    assert.match((await admin.json('GET', '/api/admin/webhooks')).hooks.find((h: any) => h.id === hook.id).lastError, /SECRET_KEY/)
+  } finally {
+    await admin.call('DELETE', `/api/admin/webhooks/${hook.id}`)
+    rx.close()
+  }
+})
+
+test('two-syllable Korean search goes through the Hangul pair index, in pages and comments', async () => {
+  assert.deepEqual(hangulBigrams('장애 대응'), ['장애', '대응'])
+  assert.deepEqual(hangulBigrams('배포a'), ['배포'])
+  assert.deepEqual(hangulBigrams('ab 한'), [])
+  const sql = (await db.query(`SELECT hangul_bigrams('장애 대응 a장애')`)).rows[0].hangul_bigrams.sort()
+  assert.deepEqual(sql, ['대응', '장애'], 'the database cuts the same pairs')
+  const admin = client()
+  await admin.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  const [general] = await admin.json('GET', '/api/spaces')
+  const page = await admin.json('POST', '/api/pages', { spaceId: general.id, title: 'Postmortem' })
+  await admin.json('POST', `/api/pages/${page.id}/comments`, { body: '어제 장애는 디스크 때문' })
+  const hits = await admin.json('GET', `/api/search?q=${encodeURIComponent('장애')}`)
+  assert.ok(hits.results.some((r: any) => r.id === page.id), 'found through the comment')
+  assert.ok(!(await admin.json('GET', `/api/search?q=${encodeURIComponent('장애')}&scope=title`)).results.some((r: any) => r.id === page.id))
+  // With a sequential scan ruled out, the plan uses the pair indexes (small test tables would otherwise be scanned).
+  const plan = await db.connect()
+  try {
+    await plan.query('SET enable_seqscan = off')
+    const text = (await plan.query(`EXPLAIN SELECT x.id FROM pages x WHERE x.grams @> '{장애}'::text[] AND x.text ILIKE '%장애%'
+      UNION SELECT cm.page_id FROM comments cm WHERE cm.grams @> '{장애}'::text[] AND cm.body ILIKE '%장애%'`)).rows.map((r) => r['QUERY PLAN']).join('\n')
+    assert.match(text, /pages_grams/)
+    assert.match(text, /comments_grams/)
+  } finally {
+    await plan.query('RESET enable_seqscan')
+    plan.release()
+  }
+})
+
+test('sessions last a day unless SESSION_HOURS says otherwise', async () => {
+  const res = await app.request('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'a@b.co', password: 'password1' }) })
+  assert.match(res.headers.get('set-cookie')!, /Max-Age=86400/)
+  const sid = res.headers.get('set-cookie')!.split(';')[0].slice(4)
+  const { hours } = (await db.query(`SELECT round(extract(epoch FROM expires_at - now()) / 3600) AS hours FROM sessions WHERE token_hash = encode(sha256($1::bytea), 'hex')`, [sid])).rows[0]
+  assert.equal(Number(hours), 24)
 })

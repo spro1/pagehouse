@@ -47,7 +47,7 @@ curl -fsSL .../install.sh | sh -s -- --dir /opt/pagehouse --port 8080 --version 
 
 Prefer to read the script first? Download it, read it, then run `sh install.sh`.
 
-Open `http://<server>:3000`. **The first account you create becomes the administrator**, and sign-up closes right after. Invite everyone else from **Admin → Invite people**.
+Open `http://<server>:3000`. **The first account you create becomes the administrator**, and sign-up closes right after. Creating it asks for the **setup token**: the installer prints it at the end, and it is in the app's log (`docker compose logs app | grep 'setup token'`). Set `SETUP_TOKEN` in `.env` beforehand to choose it yourself. It is only needed for that first account. Invite everyone else from **Admin → Invite people**.
 
 ## 2. Offline install (no internet)
 
@@ -115,6 +115,11 @@ Restart after changing it: `docker compose up -d`.
 | `OIDC_LABEL` | `SSO` | Text on the sign-in button |
 | `OIDC_AUTO_CREATE` | `1` | `0` lets in only people who already have an account with that email |
 | `PASSWORD_LOGIN` | `1` | `0` with SSO on: only administrators can still sign in with a password |
+| `OIDC_GROUPS_CLAIM` | `groups` | Claim with the person's groups at the provider; copied to wiki groups at each sign-in ([SSO guide](sso.md#groups-and-administrators)) |
+| `OIDC_ADMIN_GROUP` | empty | Members of this provider group become administrators |
+| `TOKEN_SSO_GRACE_DAYS` | `30` | API tokens of someone who signs in by SSO stop working after this many days without an SSO sign-in (they were probably removed at the provider) |
+| `SETUP_TOKEN` | generated | Token the first (administrator) account needs. Without it one is generated and printed in the log |
+| `SESSION_HOURS` | `24` (one day) | How long a sign-in lasts. `720` keeps people signed in for 30 days, as before 0.5.0 |
 | `TRUST_PROXY` | `0` | Number of reverse proxies in front. Set `1` behind a proxy so sign-in throttling and the audit log see real client addresses; `0` for direct connections (the Helm chart sets `1` when ingress is on) |
 | `OIDC_TRUST_EMAIL` | `0` | SSO accounts are matched by email, so only emails the provider marks verified are accepted. `1` for providers that never send `email_verified` (some Entra ID setups) — only if users can't change their email there |
 | `SMTP_URL`, `SMTP_FROM` | empty | Notification emails and "Forgot your password?" reset links. For example `smtp://user:pass@mail.example.com:587`. Links in mail need `PUBLIC_URL` |

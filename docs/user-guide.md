@@ -231,12 +231,13 @@ The address keeps your words and filters, so you can bookmark a search or share 
 
 ## AI agents (MCP)
 
-1. Create a token in **Your account → API tokens**.
+1. Create a token in **Your account → API tokens**, choosing how long it lasts (30, 90 or 365 days).
 2. Paste the command shown there into an MCP client such as Claude Code. Agents can then search, read, write and comment on pages.
 
 Keep in mind:
 - Agents act with **exactly your permissions**.
 - The token is shown once. Treat it like a password and revoke it when unused.
+- It stops working on its expiry date; create a new one then. If you sign in by SSO, it also stops after 30 days without an SSO sign-in.
 
 ## For administrators
 
@@ -264,14 +265,14 @@ At the limit new uploads are refused, but text always saves.
 2. Enter the issuer URL, client ID and client secret, and click **Test connection**.
 3. Click **Turn on SSO**. It applies as soon as it's saved, and the sign-in page gets the button.
 
-This is also where you choose whether first sign-ins create accounts and whether password sign-in stays allowed. If the server's `.env` sets `OIDC_ISSUER`, that wins and the screen is read-only. Signing out of the wiki also signs out of the provider. Provider-side steps: [SSO guide](sso.md).
+This is also where you choose whether first sign-ins create accounts and whether password sign-in stays allowed, and which provider groups become wiki groups and administrators ([details](sso.md#groups-and-administrators)). If the server's `.env` sets `OIDC_ISSUER`, that wins and the screen is read-only. Signing out of the wiki also signs out of the provider. Provider-side steps: [SSO guide](sso.md).
 
 **Webhooks:** send page and comment events to another system (CI, a bot, a search index).
 1. **Add webhook**: a name, the URL, all spaces or one, and the events (page created, edited, deleted, comment added).
-2. Copy the **signing secret** shown once. Each request is a JSON `POST` with headers `X-Pagehouse-Event` and `X-Pagehouse-Signature: sha256=<HMAC-SHA256 of the body with the secret>`; check it on the receiving side.
+2. Copy the **signing secret** shown once. Each request is a JSON `POST` with headers `X-Pagehouse-Event` and `X-Pagehouse-Signature: sha256=<HMAC-SHA256 of the body with the secret>`; check it on the receiving side. The same values also come as `X-Event` and `X-Signature`, the names Taskhouse uses.
 3. **Send test** posts a `ping` event. The list shows the last delivery and its result.
 
-Restricted pages are never sent. Edits are sent at most every 10 minutes per page. Failed deliveries are retried twice (after 5 and 30 seconds).
+Restricted pages are never sent. Edits are sent at most every 10 minutes per page. Failed deliveries are retried after 1, 4, 16 and 64 minutes, then given up; pending retries survive a restart.
 
 **Branding:** your organization's name, logo and color instead of Pagehouse's.
 - The **name** is the browser tab title and appears on the sign-in screen, at the top of the sidebar, and in email subjects (`[Name] …`) and the sender name (unless `SMTP_FROM` is set). Leave it empty for the default.

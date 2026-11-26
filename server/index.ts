@@ -2,7 +2,7 @@ import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { compress } from 'hono/compress'
 import type { Context } from 'hono'
-import { createApp } from './app.ts'
+import { createApp, setupToken } from './app.ts'
 import { openDb } from './db.ts'
 import { branding, startFileSweep } from './admin.ts'
 import { join } from 'node:path'
@@ -22,6 +22,10 @@ const app = createApp(db, dataDir)
 startFileSweep(db, join(dataDir, 'files'))
 startMailer(db)
 startPersonalHooks(db)
+app.webhooks.start()
+const setup = await setupToken(db)
+if (setup) console.log(process.env.SETUP_TOKEN ? 'No account yet. Create the administrator with SETUP_TOKEN from the environment.'
+  : `No account yet. Create the administrator with this setup token: ${setup}`)
 await startRelay(db, process.env.DATABASE_URL, app.collab)
 
 app.use('/assets/*', compress())

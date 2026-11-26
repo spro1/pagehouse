@@ -9,6 +9,8 @@ Try it locally:
 {{- end }}
 
 The first account you create becomes the administrator.
+It needs the setup token from the app's log (or SETUP_TOKEN, if set in extraEnv):
+  kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "pagehouse.fullname" . }} | grep "setup token"
 
 Data safety:
   - The database volume, the attachments volume{{ if .Values.backup.enabled }}, the backup volume{{ end }} and the database Secret

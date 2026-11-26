@@ -144,7 +144,9 @@ say "Pagehouse $BUNDLE_VERSION is running: http://$(hostname 2>/dev/null || echo
 if $existing; then
   echo "    Upgraded. The pre-upgrade backup is in $DIR/backups/before-upgrade/"
 else
+  setup=$($COMPOSE logs app 2>/dev/null </dev/null | sed -n 's/.*setup token: //p' | tail -1 | tr -d '\r')
   echo "    Open it and create the first account; it becomes the administrator."
+  [ -n "$setup" ] && echo "    Setup token for that first account: $setup"
 fi
 echo "    Folder: $DIR   Backups: $DIR/backups (automatic, every ${BACKUP_INTERVAL_HOURS:-24}h)"
 echo "    Guides: $DIR/docs/install.md, $DIR/docs/user-guide.md"

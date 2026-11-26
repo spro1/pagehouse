@@ -3,7 +3,7 @@ import { Audit } from './Audit.tsx'
 import { SsoSettings } from './SsoSettings.tsx'
 import { Webhooks } from './Webhooks.tsx'
 import { useEffect, useRef, useState } from 'react'
-import { api, ago, fullDate, toast, type User } from './api.ts'
+import { api, ago, fullDate, shortDate, toast, type User } from './api.ts'
 import { LANGS, lang, setLang, t, type Lang } from './i18n.ts'
 import { Icon } from './icons.tsx'
 import { TEMPLATES, type Template } from './templates.ts'
@@ -478,8 +478,9 @@ export function LangSelect({ account }: { account?: boolean }) {
 
 /** Personal API tokens, for the REST API and AI agents over MCP. */
 function Tokens() {
-  const [list, setList] = useState<{ id: number; name: string; createdAt: string; lastUsedAt: string | null }[]>([])
+  const [list, setList] = useState<{ id: number; name: string; createdAt: string; expiresAt: string | null; lastUsedAt: string | null }[]>([])
   const [name, setName] = useState('')
+  const [days, setDays] = useState(90)
   const [fresh, setFresh] = useState<string | null>(null)
   const load = () => api('/api/me/tokens').then(setList)
   useEffect(() => void load(), [])
@@ -491,7 +492,7 @@ function Tokens() {
       <form className="row" onSubmit={async (e) => {
         e.preventDefault()
         try {
-          const r = await api('/api/me/tokens', { json: { name } })
+          const r = await api('/api/me/tokens', { json: { name, days } })
           setFresh(r.token)
           setName('')
           load()
@@ -500,6 +501,9 @@ function Tokens() {
         }
       }}>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('tokens.name')} aria-label={t('tokens.name')} maxLength={100} style={{ flex: 1 }} />
+        <select value={days} onChange={(e) => setDays(Number(e.target.value))} aria-label={t('tokens.days')} style={{ flex: 'none', width: 'auto' }}>
+          {[30, 90, 365].map((d) => <option key={d} value={d}>{t('tokens.days.n', { n: d })}</option>)}
+        </select>
         <button className="primary" disabled={!name.trim()}>{t('tokens.create')}</button>
       </form>
       {fresh && (
@@ -516,7 +520,8 @@ function Tokens() {
         {list.map((k) => (
           <li key={k.id}>
             <span className="person"><b><span>{k.name}</span></b>
-              <small>{t('tokens.meta', { created: ago(k.createdAt), used: k.lastUsedAt ? ago(k.lastUsedAt) : t('tokens.never') })}</small></span>
+              <small>{t('tokens.meta', { created: ago(k.createdAt), used: k.lastUsedAt ? ago(k.lastUsedAt) : t('tokens.never') })}
+                {' · '}{k.expiresAt ? t('tokens.expires', { date: shortDate(k.expiresAt) }) : t('tokens.noExpiry')}</small></span>
             <button className="link small danger" onClick={async () => {
               if (!(await confirmDialog({ title: t('tokens.revoke.title', { name: k.name }), body: t('tokens.revoke.body'), ok: t('tokens.revoke'), danger: true }))) return
               api(`/api/me/tokens/${k.id}`, { method: 'DELETE' }).then(load, (e) => toast(e.message))

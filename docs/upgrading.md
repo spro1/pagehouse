@@ -30,6 +30,17 @@
 
 ## Notes per version
 
+### 0.4.0 → 0.5.0
+
+Database changes apply automatically. Read the sign-in length change below (set `SESSION_HOURS=720` to keep 30 days); the changes:
+- **API tokens expire.** New tokens last 30, 90 (default) or 365 days. Tokens made before this version keep working until revoked. Tokens of people who sign in by SSO stop after 30 days without an SSO sign-in (`TOKEN_SSO_GRACE_DAYS`).
+- **SSO groups.** At each sign-in, the provider's `groups` claim (`OIDC_GROUPS_CLAIM`) becomes the person's wiki groups; groups that don't exist are created. Memberships added by hand stay. An optional administrator group (`OIDC_ADMIN_GROUP` or Admin → SSO) grants admin. Providers that don't send the claim see no change. See the [SSO guide](sso.md#groups-and-administrators).
+- **SSO checks the ID token** (issuer, audience, expiry and a per-sign-in nonce). Providers that follow OpenID Connect need no change.
+- **Webhook retries survive restarts** and wait 1, 4, 16 and 64 minutes. Requests also carry `X-Event` and `X-Signature` (same values as `X-Pagehouse-Event` and `X-Pagehouse-Signature`, which stay).
+- **Two-syllable Korean searches** ("배포", "장애") use an index. The upgrade builds it once, which can take a moment on a large wiki.
+- **New installs** ask for a setup token when creating the first account (printed in the log, or `SETUP_TOKEN`).
+- **Sign-ins last one day by default** instead of 30 days, so people sign in again daily. To keep the old behavior, set `SESSION_HOURS=720` in `.env`. Sessions started before the upgrade keep their original expiry.
+
 ### 0.3.1 → 0.4.0
 
 No database or settings changes.

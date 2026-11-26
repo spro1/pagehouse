@@ -4,11 +4,15 @@
 import type { Context, Hono } from 'hono'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto'
-import type { Db } from './db.ts'
+import { tx, type Db } from './db.ts'
 
 export type OidcConfig = {
   issuer: string; clientId: string; clientSecret: string; label: string
   autoCreate: boolean; trustEmail: boolean; passwordLogin: boolean; publicUrl?: string
+  /** Claim listing the person's groups at the provider, copied to Pagehouse groups on each sign-in. */
+  groupsClaim: string
+  /** Members of this provider group become administrators. Empty = roles aren't taken from the provider. */
+  adminGroup: string
 }
 /** What the admin screen edits. The secret is never sent back, only whether there is one. */
 export type SsoSettings = Omit<OidcConfig, 'publicUrl'> & { enabled: boolean }
@@ -24,6 +28,8 @@ export function oidcConfig(env = process.env): OidcConfig | null {
     autoCreate: env.OIDC_AUTO_CREATE !== '0',
     trustEmail: env.OIDC_TRUST_EMAIL === '1',
     passwordLogin: env.PASSWORD_LOGIN !== '0',
+    groupsClaim: env.OIDC_GROUPS_CLAIM || 'groups',
+    adminGroup: env.OIDC_ADMIN_GROUP ?? '',
     publicUrl: env.PUBLIC_URL?.replace(/\/$/, ''),
   }
 }
@@ -84,7 +90,7 @@ export function ssoSource(db: Db) {
       if (cache && Date.now() - cache.at < 30_000) return cache.cfg
       const s = await fromDb()
       const cfg = s?.enabled && s.issuer && s.clientId
-        ? { ...s, issuer: s.issuer.replace(/\/$/, ''), label: s.label || 'SSO', publicUrl: process.env.PUBLIC_URL?.replace(/\/$/, '') }
+        ? { ...s, issuer: s.issuer.replace(/\/$/, ''), label: s.label || 'SSO', groupsClaim: s.groupsClaim || 'groups', adminGroup: s.adminGroup ?? '', publicUrl: process.env.PUBLIC_URL?.replace(/\/$/, '') }
         : null
       cache = { at: Date.now(), cfg }
       return cfg
@@ -125,28 +131,28 @@ export function registerSso(app: Hono<any>, db: Db, source: SsoSource, startSess
     if (!cfg) return back(c, 'unavailable')
     const d = await discover(cfg.issuer).catch(() => null)
     if (!d) return back(c, 'unavailable')
-    const state = b64url(randomBytes(24))
-    const verifier = b64url(randomBytes(32))
+    const [state, verifier, nonce] = [24, 32, 16].map((n) => b64url(randomBytes(n)))
     // Lax so the cookie comes back on the provider's top-level redirect to the callback.
-    setCookie(c, 'oidc', `${state}.${verifier}`, { httpOnly: true, sameSite: 'Lax', path: '/api/auth/oidc', maxAge: 600 })
+    setCookie(c, 'oidc', `${state}.${verifier}.${nonce}`, { httpOnly: true, sameSite: 'Lax', path: '/api/auth/oidc', maxAge: 600 })
     const q = new URLSearchParams({
       response_type: 'code', client_id: cfg.clientId, redirect_uri: redirectUri(c, cfg),
-      scope: 'openid email profile', state,
+      scope: 'openid email profile', state, nonce,
       code_challenge: b64url(createHash('sha256').update(verifier).digest()), code_challenge_method: 'S256',
     })
     return c.redirect(`${d.authorization_endpoint}?${q}`)
   })
 
   app.get('/api/auth/oidc/callback', async (c) => {
-    const [state, verifier] = (getCookie(c, 'oidc') ?? '').split('.')
+    const [state, verifier, nonce] = (getCookie(c, 'oidc') ?? '').split('.')
     deleteCookie(c, 'oidc', { path: '/api/auth/oidc' })
     const code = c.req.query('code')
-    if (!state || !verifier || c.req.query('state') !== state || !code) return back(c, 'failed')
+    if (!state || !verifier || !nonce || c.req.query('state') !== state || !code) return back(c, 'failed')
     const cfg = await source.current()
     if (!cfg) return back(c, 'unavailable')
     try {
       const d = await discover(cfg.issuer)
-      // The code goes straight to the provider over TLS, so the tokens that come back need no further signature check.
+      // The code goes straight to the provider over TLS, so the ID token that comes back needs no signature check
+      // (OIDC Core 3.1.3.7); the claims that bind it to this sign-in still do.
       const tok = await fetch(d.token_endpoint, {
         method: 'POST',
         headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -156,14 +162,22 @@ export function registerSso(app: Hono<any>, db: Db, source: SsoSource, startSess
         }),
         signal: AbortSignal.timeout(10_000),
       }).then((r) => (r.ok ? r.json() : null))
-      if (!tok?.access_token) return back(c, 'failed')
-      const info = await fetch(d.userinfo_endpoint, { headers: { authorization: `Bearer ${tok.access_token}` }, signal: AbortSignal.timeout(10_000) })
+      if (!tok?.access_token || typeof tok.id_token !== 'string') return back(c, 'failed')
+      const claims = idTokenClaims(tok.id_token)
+      const aud = Array.isArray(claims?.aud) ? claims.aud : [claims?.aud]
+      if (!claims?.sub || String(claims.iss ?? '').replace(/\/$/, '') !== cfg.issuer || !aud.includes(cfg.clientId)
+        || claims.nonce !== nonce || !(Number(claims.exp) * 1000 > Date.now())) return back(c, 'failed')
+      // Email and groups are often only in userinfo (Keycloak by default); it must be about the same person.
+      const userinfo = await fetch(d.userinfo_endpoint, { headers: { authorization: `Bearer ${tok.access_token}` }, signal: AbortSignal.timeout(10_000) })
         .then((r) => (r.ok ? r.json() : null))
+      const info = { ...claims, ...(userinfo?.sub === claims.sub ? userinfo : {}) }
       const email = typeof info?.email === 'string' ? info.email.toLowerCase() : ''
       // Accounts are matched by email, so the provider must vouch for it: otherwise anyone able to set an email at the
       // provider could sign in as that person here. Providers that never send the claim (some Entra ID setups)
       // can be trusted explicitly.
-      const verified = info?.email_verified === true || info?.email_verified === 'true' || (cfg.trustEmail && info?.email_verified !== false)
+      // Trusting covers only a claim that's missing; any other value than true ("false" as a string too) is a refusal.
+      const v = info?.email_verified
+      const verified = v === true || v === 'true' || (cfg.trustEmail && v == null)
       if (!email || !verified) return back(c, 'no_email')
       let user = (await db.query('SELECT id, disabled_at FROM users WHERE email = $1', [email])).rows[0]
       if (!user) {
@@ -174,6 +188,7 @@ export function registerSso(app: Hono<any>, db: Db, source: SsoSource, startSess
           [email, name])).rows[0]
       }
       if (user.disabled_at) return back(c, 'account_disabled')
+      await tx(db, (q) => syncGroups(q, user.id, info[cfg.groupsClaim], cfg.adminGroup))
       await startSession(c, user.id)
       // Kept so signing out here can also end the session at the provider (else the next SSO click signs straight back in).
       if (typeof tok.id_token === 'string') setCookie(c, 'oidc_idt', tok.id_token, { httpOnly: true, sameSite: 'Lax', path: '/api/auth', maxAge: 30 * 86400 })
@@ -182,6 +197,34 @@ export function registerSso(app: Hono<any>, db: Db, source: SsoSource, startSess
       return back(c, 'failed')
     }
   })
+}
+
+/** The payload of a JWT, unchecked (see the callback for why that is enough here). */
+export function idTokenClaims(jwt: string): Record<string, any> | null {
+  try {
+    return JSON.parse(Buffer.from(jwt.split('.')[1] ?? '', 'base64url').toString('utf8'))
+  } catch {
+    return null
+  }
+}
+
+/** Copies the provider's groups to the account: memberships sign-in added before are replaced, ones an admin made
+ *  stay. A missing claim means "this provider doesn't send groups" and changes nothing. Also notes the SSO sign-in. */
+export async function syncGroups(q: Pick<Db, 'query'>, userId: number, claim: unknown, adminGroup: string) {
+  await q.query('UPDATE users SET last_sso_at = now() WHERE id = $1', [userId])
+  if (!Array.isArray(claim)) return
+  // Keycloak sends paths ("/engineering"); Pagehouse group names have no slash in front.
+  const groups = [...new Set(claim.map((g) => String(g).trim().replace(/^\//, '').slice(0, 100)).filter(Boolean))].slice(0, 200)
+  await q.query(`DELETE FROM group_members WHERE user_id = $1 AND source = 'oidc'`, [userId])
+  if (groups.length) {
+    await q.query('INSERT INTO groups (name) SELECT unnest($1::text[]) ON CONFLICT (name) DO NOTHING', [groups])
+    await q.query(`INSERT INTO group_members (group_id, user_id, source) SELECT id, $2, 'oidc' FROM groups WHERE name = ANY($1) ON CONFLICT DO NOTHING`, [groups, userId])
+  }
+  // The admin group grants admin and, once left, takes it back; never from an admin with a password (the way back in
+  // when the provider is down).
+  if (adminGroup)
+    await q.query(`UPDATE users SET role = CASE WHEN $2 THEN 'admin' WHEN role = 'admin' AND password_hash = '' THEN 'member' ELSE role END WHERE id = $1`,
+      [userId, groups.includes(adminGroup.replace(/^\//, ''))])
 }
 
 /** Where to send the browser after signing out here so the provider's session ends too, or null if not an SSO sign-in. */
@@ -207,6 +250,7 @@ export function registerSsoAdmin(app: Hono<any>, source: SsoSource) {
       enabled: !!s?.enabled,
       issuer: s?.issuer ?? '', clientId: s?.clientId ?? '', hasSecret: !!s?.clientSecret,
       label: s?.label ?? '', autoCreate: s?.autoCreate ?? true, trustEmail: s?.trustEmail ?? false, passwordLogin: s?.passwordLogin ?? true,
+      groupsClaim: s?.groupsClaim || 'groups', adminGroup: s?.adminGroup ?? '',
       redirectUri: redirectUri(c, { publicUrl: process.env.PUBLIC_URL?.replace(/\/$/, '') }),
       encrypted: !!process.env.SECRET_KEY,
     }
@@ -236,6 +280,8 @@ export function registerSsoAdmin(app: Hono<any>, source: SsoSource) {
       autoCreate: b.autoCreate !== false,
       trustEmail: b.trustEmail === true,
       passwordLogin: b.passwordLogin !== false,
+      groupsClaim: String(b.groupsClaim ?? '').trim().slice(0, 100) || 'groups',
+      adminGroup: String(b.adminGroup ?? '').trim().slice(0, 100),
     }
     if (s.enabled && (!s.issuer || !s.clientId)) return c.json({ error: 'Turning SSO on needs an issuer and a client ID.', code: 'sso_incomplete' }, 400)
     if (s.enabled) {

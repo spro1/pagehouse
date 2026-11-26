@@ -57,13 +57,20 @@ Pagehouse는 OpenID Connect 방식의 SSO와 연결합니다. **지금까지 Key
 
 Client secret은 `.env`의 `SECRET_KEY`로 암호화해서 서버에만 저장합니다. 그래서 DB 백업이 새어 나가도 시크릿은 드러나지 않습니다. 화면에 다시 보여 주지 않고, 칸을 비워 두고 저장하면 기존 값이 유지됩니다. 설정을 바꾸면 감사 로그에 남는데, 시크릿은 기록하지 않습니다.
 
+### 그룹과 관리자
+
+로그인할 때마다 **그룹 클레임**(SSO 화면에서 바꾸지 않았다면 `groups`)에서 사용자의 그룹을 읽어 위키 그룹으로 맞춥니다. 없는 그룹은 새로 만듭니다. Keycloak의 `/Engineering` 같은 경로는 `Engineering`이 됩니다.
+- 이렇게 추가된 구성원은 다음 로그인 때 다시 맞춰집니다. 관리자가 **관리 → 그룹**에서 직접 넣은 구성원은 건드리지 않습니다.
+- SSO 서비스가 이 클레임을 아예 보내지 않으면 아무것도 바뀌지 않습니다. Keycloak은 *Group Membership* 매퍼가 필요합니다. Entra ID는 따로 설정하지 않으면 그룹 이름 대신 ID를 보냅니다.
+- **관리자 그룹**(선택): 구성원은 관리자가 되고, 그룹에서 빠지면 관리자에서도 빠집니다. 위키 비밀번호가 있는 관리자는 그대로 유지되므로 들어올 길은 항상 남습니다.
+
 ### 비밀번호와 SSO 계정
 
 위키의 **비밀번호 재설정 링크**와 **임시 비밀번호**는 위키 안의 비밀번호만 바꿉니다. SSO 서버의 비밀번호는 건드리지 않으니, 그쪽 비밀번호는 SSO 서버에서 바꿔야 합니다. SSO로 만들어진 계정에 쓰면 위키 비밀번호가 하나 생깁니다. *비밀번호 로그인 허용*이 켜져 있으면 그 사람은 두 방법 중 아무거나로 로그인할 수 있고, 꺼져 있으면 관리자만 그 비밀번호를 쓸 수 있습니다.
 
 ### `.env`로 설정하기
 
-자동 설치라면 환경 변수로도 같은 설정을 할 수 있습니다(`OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_LABEL`, `OIDC_AUTO_CREATE`, `PASSWORD_LOGIN`, `OIDC_TRUST_EMAIL`, [설치 안내](install.ko.md) 참고). 환경 변수가 있으면 그쪽이 우선하고 화면은 읽기 전용이 됩니다. 값을 바꾼 뒤에는 재시작해야 합니다.
+자동 설치라면 환경 변수로도 같은 설정을 할 수 있습니다(`OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_LABEL`, `OIDC_AUTO_CREATE`, `PASSWORD_LOGIN`, `OIDC_TRUST_EMAIL`, `OIDC_GROUPS_CLAIM`, `OIDC_ADMIN_GROUP`, [설치 안내](install.ko.md) 참고). 환경 변수가 있으면 그쪽이 우선하고 화면은 읽기 전용이 됩니다. 값을 바꾼 뒤에는 재시작해야 합니다.
 
 ## 문제 해결
 
