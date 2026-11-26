@@ -191,6 +191,9 @@ PostgreSQL, 일일 백업 CronJob, 생성된 DB 비밀번호가 함께 설치됩
 **몇 명까지 쓸 수 있나요?**
 사용자 수 제한은 없습니다. 서버 한 대 구성으로 수백 명 규모를 목표로 합니다. 더 크게 쓰려면 쿠버네티스에서 앱을 여러 대로 늘릴 수 있습니다.
 
+**Taskhouse와 계정을 같이 쓸 수 있나요?**
+네. Pagehouse와 [Taskhouse](https://github.com/spro1/taskhouse)(이슈 관리)는 별도 제품이지만, 같은 PostgreSQL 데이터베이스를 쓰면 사용자·로그인·그룹·SSO 설정을 함께 쓰고 서로 링크로 오갈 수 있습니다. 역할과 권한은 제품마다 따로입니다. [Taskhouse와 함께 쓰기](docs/install.ko.md#taskhouse와-함께-쓰기)를 참고하세요.
+
 **회사 계정(SSO)으로 로그인할 수 있나요?**
 네. OpenID Connect를 지원하는 SSO라면 됩니다. **관리 → SSO**에서 Issuer URL과 Client ID·Secret을 넣고 켜면 됩니다(`.env`의 `OIDC_*`로도 설정 가능). 연동 테스트는 Keycloak으로 했고, 설정 방법은 [SSO 연결 가이드](docs/sso.ko.md)에 있습니다. 계정은 첫 로그인 때 확인된 이메일로 제공자의 사용자와 연결되고, 그 뒤에는 이메일이 바뀌어도 같은 계정으로 들어옵니다.
 

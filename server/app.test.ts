@@ -2,7 +2,8 @@ import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, readdirSync, utimesSync } from 'node:fs'
 import { createServer } from 'node:http'
-import { createHmac } from 'node:crypto'
+import { createHmac, scryptSync } from 'node:crypto'
+import pg from 'pg'
 import { startPersonalHooks } from './webhooks.ts'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -18,7 +19,7 @@ const url = process.env.TEST_DATABASE_URL ?? 'postgres://pagehouse:pagehouse@loc
 // The test wipes the database, so refuse anything not named *_test.
 assert.match(new URL(url).pathname, /_test$/)
 const reset = await openDb(url)
-await reset.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public')
+await reset.query('DROP SCHEMA IF EXISTS public, pagehouse, accounts CASCADE; CREATE SCHEMA public')
 await reset.end()
 const db = await openDb(url)
 after(() => db.end())
@@ -577,7 +578,7 @@ test('OIDC single sign-on creates, links and signs in accounts by the provider i
     assert.equal(saved.hasSecret, true)
     assert.ok(!JSON.stringify(saved).includes('s3cret-value'), 'the secret never comes back')
     // Stored encrypted with SECRET_KEY, so a database dump or backup doesn't reveal it.
-    const raw = (await db.query(`SELECT value->>'clientSecret' AS s FROM settings WHERE key = 'sso'`)).rows[0].s
+    const raw = (await db.query(`SELECT value->>'clientSecret' AS s FROM accounts.settings WHERE key = 'sso'`)).rows[0].s
     assert.match(raw, /^enc:v1:/)
     assert.ok(!raw.includes('s3cret-value'))
     // Saving again without a secret keeps the stored one.
@@ -1482,4 +1483,56 @@ test('sessions last a day unless SESSION_HOURS says otherwise', async () => {
   const sid = res.headers.get('set-cookie')!.split(';')[0].slice(4)
   const { hours } = (await db.query(`SELECT round(extract(epoch FROM expires_at - now()) / 3600) AS hours FROM sessions WHERE token_hash = encode(sha256($1::bytea), 'hex')`, [sid])).rows[0]
   assert.equal(Number(hours), 24)
+})
+
+// The account tables as Taskhouse (009) leaves them. Change it when Taskhouse changes them: the two must stay compatible.
+const TASKHOUSE_ACCOUNTS = `CREATE SCHEMA accounts;
+  CREATE TABLE accounts.users (id BIGSERIAL PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT NOT NULL, password_hash TEXT NOT NULL DEFAULT '', oidc_sub TEXT UNIQUE,
+    is_admin BOOLEAN NOT NULL DEFAULT false, last_login_at TIMESTAMPTZ, disabled_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), email_notify BOOLEAN NOT NULL DEFAULT true,
+    must_change_password BOOLEAN NOT NULL DEFAULT false, locale TEXT CHECK (locale IN ('ko', 'en')), last_sso_at TIMESTAMPTZ);
+  CREATE TABLE accounts.groups (id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL UNIQUE, source TEXT NOT NULL DEFAULT 'local');
+  CREATE TABLE accounts.group_members (group_id BIGINT NOT NULL REFERENCES accounts.groups(id) ON DELETE CASCADE, user_id BIGINT NOT NULL REFERENCES accounts.users(id) ON DELETE CASCADE, source TEXT, PRIMARY KEY (group_id, user_id));
+  CREATE TABLE accounts.sessions (token_hash TEXT PRIMARY KEY, user_id BIGINT NOT NULL REFERENCES accounts.users(id) ON DELETE CASCADE, expires_at TIMESTAMPTZ NOT NULL);
+  CREATE TABLE accounts.settings (key TEXT PRIMARY KEY, value JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`
+
+test('shared accounts: Pagehouse installed into a database where Taskhouse already keeps the accounts', async () => {
+  await db.query('DROP DATABASE IF EXISTS pagehouse_join_test WITH (FORCE)')
+  await db.query('CREATE DATABASE pagehouse_join_test')
+  const joinUrl = url.replace(/\/[^/?]+(\?|$)/, '/pagehouse_join_test$1')
+  const th = new pg.Client(joinUrl)
+  await th.connect()
+  await th.query(TASKHOUSE_ACCOUNTS)
+  // the same salt:scrypt form both products write
+  const hash = `ab:${scryptSync('taskhouse-pw-1', 'ab', 64).toString('hex')}`
+  await th.query(`INSERT INTO accounts.users (email, name, password_hash, is_admin) VALUES ('boss@x.test', 'Boss', $1, true), ('dev@x.test', 'Dev', $1, false)`, [hash])
+  await th.query(`INSERT INTO accounts.groups (name, source) VALUES ('eng', 'oidc')`)
+  await th.query(`INSERT INTO accounts.group_members VALUES (1, 2, 'oidc')`)
+  await th.query(`INSERT INTO accounts.settings (key, value) VALUES ('url:taskhouse', '"https://tasks.x.test"')`)
+  await th.end()
+  const joined = await openDb(joinUrl)
+  try {
+    const where = (await joined.query(`SELECT tablename, schemaname FROM pg_tables WHERE tablename IN ('users', 'sessions', 'groups', 'group_members', 'pages') ORDER BY 1`)).rows
+    assert.deepEqual(where.map((r) => `${r.schemaname}.${r.tablename}`), ['accounts.group_members', 'accounts.groups', 'pagehouse.pages', 'accounts.sessions', 'accounts.users'])
+    await assert.rejects(joined.query(`INSERT INTO api_tokens (user_id, name, token_hash) VALUES (999, 't', 'h')`), /foreign key/)
+    assert.deepEqual((await joined.query('SELECT my_groups(2) AS g')).rows, [{ g: 1 }], 'Pagehouse access functions read the shared memberships')
+    const joinedApp = createApp(joined, mkdtempSync(join(tmpdir(), 'pagehouse-join-')))
+    const call = async (method: string, path: string, body?: unknown, cookie = '') => {
+      const res = await joinedApp.request(path, { method, headers: { cookie, ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined })
+      return { status: res.status, body: await res.json().catch(() => null), sid: res.headers.get('set-cookie')?.split(';')[0] ?? '' }
+    }
+    assert.equal((await call('GET', '/api/auth/status')).body.needsSetup, false) // the accounts are already there
+    assert.equal(await setupToken(joined), null)
+    // A Taskhouse account signs in with its password. Nobody is a Pagehouse admin yet, so the Taskhouse admin becomes one; a member does not.
+    const dev = await call('POST', '/api/auth/login', { email: 'dev@x.test', password: 'taskhouse-pw-1' })
+    assert.equal((await call('GET', '/api/me', undefined, dev.sid)).body.role, 'member')
+    const boss = await call('POST', '/api/auth/login', { email: 'boss@x.test', password: 'taskhouse-pw-1' })
+    const me = (await call('GET', '/api/me', undefined, boss.sid)).body
+    assert.equal(me.role, 'admin')
+    assert.equal(me.taskhouseUrl, 'https://tasks.x.test')
+    assert.equal((await call('GET', '/api/admin/sso', undefined, boss.sid)).status, 200)
+    assert.ok((await joined.query(`SELECT last_login_at FROM users WHERE email = 'boss@x.test'`)).rows[0].last_login_at, 'Taskhouse reads this for its tokens')
+  } finally {
+    await joined.end()
+    await db.query('DROP DATABASE pagehouse_join_test WITH (FORCE)')
+  }
 })

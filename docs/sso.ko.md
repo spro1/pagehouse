@@ -85,4 +85,4 @@ Client secret은 `.env`의 `SECRET_KEY`로 암호화해서 서버에만 저장�
 | SSO 화면을 지나자마자 "SSO 로그인에 실패했습니다" | 위키 서버가 SSO 서버의 토큰 주소에 접속하지 못하거나 시크릿이 틀렸습니다. 위키 서버에서 `curl <issuer>/.well-known/openid-configuration`으로 확인하세요. |
 | 연결 확인은 되는데 로그인이 실패함 (위키는 컨테이너, SSO 서버는 같은 PC) | 컨테이너 안의 `localhost`는 컨테이너 자신입니다. 컨테이너와 브라우저 모두 접속할 수 있는 주소를 쓰세요. 로컬 Keycloak이라면 `--hostname=<브라우저용 주소> --hostname-backchannel-dynamic=true`로 띄우고, Issuer에는 `http://host.containers.internal:8080/realms/<realm>`(Podman) 또는 `host.docker.internal`(Docker)을 넣습니다. |
 | 로그아웃해도 SSO 서버 로그인이 남음 | SSO 서버에 위키 주소가 로그아웃 후 리디렉션 주소로 등록돼 있지 않거나, 이 기능이 생기기 전에 로그인한 세션입니다(한 번 다시 로그인하면 됨). |
-| 비밀번호 로그인을 끈 뒤 못 들어감 | 관리자는 항상 비밀번호로 로그인할 수 있습니다. 그래도 안 되면 설정을 지웁니다: `podman compose exec db psql -U pagehouse -c "DELETE FROM settings WHERE key='sso'"` |
+| 비밀번호 로그인을 끈 뒤 못 들어감 | 관리자는 항상 비밀번호로 로그인할 수 있습니다. 그래도 안 되면 설정을 지웁니다: `podman compose exec db psql -U pagehouse -c "DELETE FROM accounts.settings WHERE key='sso'"` |

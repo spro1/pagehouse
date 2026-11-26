@@ -62,9 +62,9 @@ export function openSecret(stored: string): string {
 /** The SSO config in force: environment first, else what an admin saved. Cached briefly; saving clears it here. */
 export function ssoSource(db: Db) {
   let cache: { at: number; cfg: OidcConfig | null } | null = null
-  const raw = async (): Promise<SsoSettings | null> => (await db.query('SELECT value FROM settings WHERE key = $1', [KEY])).rows[0]?.value ?? null
+  const raw = async (): Promise<SsoSettings | null> => (await db.query('SELECT value FROM accounts.settings WHERE key = $1', [KEY])).rows[0]?.value ?? null
   const write = (s: SsoSettings) => db.query(
-    `INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+    `INSERT INTO accounts.settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
     [KEY, JSON.stringify({ ...s, clientSecret: sealSecret(s.clientSecret) })],
   )
   const fromDb = async (): Promise<SsoSettings | null> => {

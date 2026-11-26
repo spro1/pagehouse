@@ -58,6 +58,8 @@ spec:
                       name: {{ .Values.externalDatabase.existingSecret | default (include "pagehouse.secret" .) }}
                       key: url
                 - { name: KEEP, value: {{ .Values.backup.keep | quote }} }
+                # the backup policy is read from Pagehouse's own schema (public on installs from before 0.5.0)
+                - { name: PGOPTIONS, value: "-c search_path=pagehouse,public" }
               command: ["/bin/sh", "-c"]
               args:
                 - |

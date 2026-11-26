@@ -195,6 +195,9 @@ No. Installing (from the offline bundle), using and upgrading all work without i
 **How many users can it handle?**
 There is no seat limit. A single-server setup is aimed at a few hundred people; on Kubernetes the app can scale out.
 
+**Can it share accounts with Taskhouse?**
+Yes. Pagehouse and [Taskhouse](https://github.com/spro1/taskhouse) (issue tracking) stay separate products, but when both use the same PostgreSQL database they share people, sign-ins, groups and SSO settings, and each links to the other. Roles and permissions stay per product. See [Using Pagehouse together with Taskhouse](docs/install.md#using-pagehouse-together-with-taskhouse).
+
 **Can people sign in with company accounts (SSO)?**
 Yes, with any OpenID Connect provider. Turn it on in **Admin → SSO** with the issuer URL, client ID and secret (or set `OIDC_*` in `.env`). Tested with Keycloak; setup steps in the [SSO guide](docs/sso.md). An account is linked to the person at the provider on the first sign-in, by a verified email; after that a changed email still reaches the same account.
 
