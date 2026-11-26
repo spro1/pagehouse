@@ -210,7 +210,7 @@ scripts/upgrade.sh 0.2.0      # 특정 버전
 
 ## 외부 PostgreSQL 사용 (compose)
 
-`pg_trgm` 확장을 쓸 수 있는 PostgreSQL 14 이상이 필요합니다. 앱이 첫 실행 때 `CREATE EXTENSION pg_trgm`을 실행하므로 그 계정에 확장 생성 권한을 주거나 슈퍼유저로 미리 한 번 실행해 두세요. `docker-compose.yml`에서 앱의 `DATABASE_URL`을 바꾸고 `db` 서비스와 `depends_on` 부분을 지웁니다. 자동 백업 서비스와 스크립트는 함께 뜨는 DB만 다룹니다. 외부 DB는 `pg_dump`로, `files` 볼륨은 따로 백업하세요.
+`pg_trgm` 확장을 쓸 수 있는 PostgreSQL 14 이상이 필요합니다. 앱이 첫 실행 때 `CREATE EXTENSION pg_trgm`을 실행하므로 그 계정에 확장 생성 권한을 주거나 슈퍼유저로 미리 한 번 실행해 두세요. `docker-compose.yml`에서 앱의 `DATABASE_URL`을 바꾸고 `db` 서비스와 `depends_on` 부분을 지웁니다. 자동 백업 서비스와 스크립트는 함께 뜨는 DB만 다룹니다. 외부 DB는 `pg_dump`로, `files` 볼륨은 따로 백업하고 복원할 때는 둘을 함께 되돌리세요. 바뀐 프로필 사진과 로고 파일은 앱이 지우므로, DB만 예전 것으로 되돌리면 사진이나 로고가 안 보일 수 있습니다(첨부파일은 지우지 않습니다).
 
 ## 데이터 위치
 

@@ -1,6 +1,6 @@
 // Admin monitoring: storage, backups, content and activity. Plus the storage limit that uploads respect.
 import type { Hono, Context } from 'hono'
-import { existsSync, readdirSync, statSync, statfsSync } from 'node:fs'
+import { existsSync, readdirSync, rmSync, statSync, statfsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Db } from './db.ts'
 import { processStats, recentStats, prometheus, counter } from './metrics.ts'
@@ -26,6 +26,62 @@ export async function storageLimit(db: Db): Promise<number | null> {
   const r = (await db.query(`SELECT value FROM settings WHERE key = 'storage_limit_bytes'`)).rows[0]
   return r ? Number(r.value) : null
 }
+
+/** Name and logo set in Admin → Branding. The name falls back to Pagehouse everywhere (tab, mail, link previews). */
+type Branding = { name: string | null; logo: string | null; accent: string | null }
+// Read on every page load, so kept for a short while. Other app instances see a change within BRAND_TTL.
+const BRAND_TTL = 30_000
+let brandCache: { at: number; value: Branding } | null = null
+export async function branding(db: Db): Promise<Branding> {
+  if (brandCache && Date.now() - brandCache.at < BRAND_TTL) return brandCache.value
+  const v = (await db.query(`SELECT value FROM settings WHERE key = 'branding'`)).rows[0]?.value ?? {}
+  brandCache = { at: Date.now(), value: { name: v.name || null, logo: v.logo || null, accent: v.accent || null } }
+  return brandCache.value
+}
+export async function saveBranding(db: Db, patch: Partial<Branding>) {
+  await db.query(
+    `INSERT INTO settings (key, value) VALUES ('branding', $1) ON CONFLICT (key) DO UPDATE SET value = settings.value || EXCLUDED.value, updated_at = now()`,
+    [JSON.stringify(patch)],
+  )
+  brandCache = null
+}
+
+// Stored files are named by their content hash and written by three things: attachments, profile photos and the
+// logo. Attachments are never deleted, but a replaced photo or logo leaves its file behind.
+const FRESH_MS = 10 * 60_000
+/** Remove files nothing points to. A file touched in the last few minutes is kept: an upload writes (or, for
+ *  bytes already stored, touches) its file just before it saves the row that points to it. */
+export async function pruneFiles(db: Db, filesDir: string, only?: (string | null | undefined)[]) {
+  const names = (only ?? (existsSync(filesDir) ? readdirSync(filesDir) : [])).map((n) => n?.split(':')[0]).filter((n): n is string => !!n && /^[0-9a-f]{64}$/.test(n))
+  if (!names.length) return 0
+  const used = new Set((await db.query(
+    `SELECT sha256 AS h FROM attachments WHERE sha256 = ANY($1)
+     UNION SELECT split_part(avatar, ':', 1) FROM users WHERE split_part(avatar, ':', 1) = ANY($1)
+     UNION SELECT split_part(value->>'logo', ':', 1) FROM settings WHERE key = 'branding' AND value->>'logo' IS NOT NULL`,
+    [names],
+  )).rows.map((r) => r.h))
+  let removed = 0
+  for (const h of names) {
+    if (used.has(h)) continue
+    const path = join(filesDir, h)
+    try {
+      if (Date.now() - statSync(path).mtimeMs < FRESH_MS) continue
+      rmSync(path, { force: true })
+      removed++
+    } catch {} // already gone
+  }
+  return removed
+}
+
+/** Hourly, so files left by earlier versions (or skipped as too fresh) go too. */
+export function startFileSweep(db: Db, filesDir: string) {
+  const run = () => pruneFiles(db, filesDir).then((n) => n && console.log(`removed ${n} unused files`), (e) => console.error('file sweep:', e.message))
+  const first = setTimeout(run, 60_000)
+  const timer = setInterval(run, 3_600_000)
+  first.unref()
+  timer.unref()
+}
+export const brandName = async (db: Db) => (await branding(db)).name ?? 'Pagehouse'
 
 function disk(path: string) {
   try {

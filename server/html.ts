@@ -5,6 +5,40 @@ import type { UrlMap } from './markdown.ts'
 type Node = { type: string; attrs?: Record<string, any>; content?: Node[]; text?: string; marks?: { type: string; attrs?: Record<string, any> }[] }
 
 export const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
+
+/** The app's HTML shell with the name and logo from Admin → Branding, so the tab, favicon and link previews show
+ *  them before any script runs. Used by the server and by the Vite dev server. */
+export const isColor = (s: unknown): s is string => typeof s === 'string' && /^#[0-9a-f]{6}$/i.test(s)
+
+/** The accent color from Admin → Branding as CSS for both themes. `html:root` outranks the stylesheet's `:root`
+ *  whatever the load order; dark mode gets a lighter tint, as the default accent does. */
+export function brandCss(c: string) {
+  if (!isColor(c)) return ''
+  const mix = (p: number, w: string) => `color-mix(in srgb, ${c} ${p}%, ${w})`
+  const light = `--accent:${c};--accent-hover:${mix(85, '#000')};--accent-soft:${mix(10, '#fff')};--accent-ring:${mix(22, 'transparent')};--accent-2:${mix(70, '#000')}`
+  const dark = `--accent:${mix(65, '#fff')};--accent-hover:${mix(50, '#fff')};--accent-soft:${mix(22, '#1a1a19')};--accent-ring:${mix(30, 'transparent')}`
+  return `html:root{${light}}@media (prefers-color-scheme: dark){html:root:not([data-theme='light']){${dark}}}html:root[data-theme='dark']{${dark}}`
+}
+
+/** WCAG contrast of white text on this color (buttons are white on the accent). */
+export function contrastOnWhite(c: string) {
+  const [r, g, b] = [1, 3, 5].map((i) => {
+    const v = parseInt(c.slice(i, i + 2), 16) / 255
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+  })
+  return 1.05 / (0.2126 * r + 0.7152 * g + 0.0722 * b + 0.05)
+}
+
+export function brandHtml(html: string, b: { name: string | null; logo: string | null; accent?: string | null }) {
+  if (b.name) {
+    const name = escapeHtml(b.name)
+    html = html.replace(/<title>[^<]*<\/title>/, () => `<title>${name}</title><meta property="og:title" content="${name}" />`)
+  }
+  // The default icon stays in data-default, for when an admin removes the logo without a reload.
+  if (b.logo) html = html.replace(/<link rel="icon" href="([^"]*)"/, (_, d) => `<link rel="icon" data-default="${d}" href="/api/auth/branding/logo?v=${b.logo!.split(':')[0]}"`)
+  if (b.accent) html = html.replace('</head>', () => `<style id="brand-css">${brandCss(b.accent!)}</style></head>`)
+  return html
+}
 // Only web, mail and relative links survive; javascript: and friends never reach the exported page.
 // Colors come from the editor (or pasted HTML), so only plain color values reach a style attribute.
 const safeColor = (c: unknown) =>

@@ -92,8 +92,42 @@ test('admin screens open, including server health and backups', async ({ page })
   await signIn(page)
   await page.goto('/#/admin')
   await expect(page.getByRole('heading', { name: 'Server health' })).toBeVisible()
-  for (const tab of ['People', 'Groups', 'SSO', 'Webhooks', 'Audit log']) {
+  for (const tab of ['People', 'Groups', 'SSO', 'Webhooks', 'Audit log', 'Branding']) {
     await page.getByRole('tab', { name: tab }).or(page.getByRole('button', { name: tab, exact: true })).first().click()
     await expect(page.locator('main, .admin').first()).toBeVisible()
+  }
+})
+
+test('branding: a logo becomes the favicon, and removing it brings the default back', async ({ page }) => {
+  await signIn(page)
+  const before = await page.evaluate(() => fetch('/api/auth/branding').then((r) => r.json()))
+  // The test removes the logo at the end, and can't put back one it never had.
+  test.skip(!!before.logo, 'this instance already has a logo')
+  try {
+    await page.goto('/#/admin/branding')
+    await page.getByLabel('Name (browser tab title)').fill('E2E Wiki')
+    await page.locator('form').filter({ hasText: 'Name (browser tab title)' }).getByRole('button', { name: 'Save' }).click()
+    await expect(page).toHaveTitle('E2E Wiki')
+    // 1×1 PNG
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64')
+    await page.locator('input[type=file]').setInputFiles({ name: 'logo.png', mimeType: 'image/png', buffer: png })
+    await expect(page.locator('link[rel=icon]')).toHaveAttribute('href', /\/api\/auth\/branding\/logo\?v=/)
+    // The server puts both into the page itself, so they show before any script runs.
+    await page.reload()
+    await expect(page).toHaveTitle('E2E Wiki')
+    await page.locator('.field').getByRole('button', { name: 'Use default' }).click()
+    await expect(page.locator('link[rel=icon]')).toHaveAttribute('href', /^data:image\/svg/)
+    // Accent color: applied at once, and served in the page after a reload.
+    await page.locator('input[type=color]').fill('#0a7d4f')
+    await page.locator('form').filter({ has: page.locator('input[type=color]') }).getByRole('button', { name: 'Save' }).click()
+    await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent'))).toBe('#0a7d4f')
+    await page.reload()
+    await expect(page.locator('style#brand-css')).toHaveCount(1)
+  } finally {
+    // Leave the instance as it was.
+    await page.evaluate(async (b) => {
+      await fetch('/api/admin/branding', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: b.name, accent: b.accent ?? null }) })
+      await fetch('/api/admin/branding/logo', { method: 'DELETE' })
+    }, before)
   }
 })

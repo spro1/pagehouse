@@ -240,7 +240,7 @@ Keep in mind:
 
 ## For administrators
 
-**Admin** in the sidebar has six tabs (Overview, People, Groups, SSO, Webhooks, Audit log).
+**Admin** in the sidebar has seven tabs (Overview, People, Groups, SSO, Webhooks, Audit log, Branding).
 
 **Overview:**
 - **server health**: database response, memory, server delay, recent requests and server errors, live editing, waiting notifications, with warnings at the top ([monitoring](monitoring.md))
@@ -272,6 +272,12 @@ This is also where you choose whether first sign-ins create accounts and whether
 3. **Send test** posts a `ping` event. The list shows the last delivery and its result.
 
 Restricted pages are never sent. Edits are sent at most every 10 minutes per page. Failed deliveries are retried twice (after 5 and 30 seconds).
+
+**Branding:** your organization's name, logo and color instead of Pagehouse's.
+- The **name** is the browser tab title and appears on the sign-in screen, at the top of the sidebar, and in email subjects (`[Name] …`) and the sender name (unless `SMTP_FROM` is set). Leave it empty for the default.
+- The **logo** (PNG, JPG, WebP or GIF, up to 512 KB) is shown on the sign-in screen and the sidebar and is also the favicon. A square image works best. **Use default** brings back the original. On the dark theme the logo sits on a light plate, so dark logos stay visible.
+- The **accent color** is used for buttons, links and highlights; the dark theme uses a lighter shade of it. Buttons have white text, so the screen warns when the color is too light to read it (contrast under 4.5:1).
+- Changes show at once for you; others see them the next time they open the wiki (allow up to 30 seconds). Each change is in the audit log.
 
 **Groups:** group people, then grant space roles and page restrictions to the group. A group still used in permissions can't be deleted.
 

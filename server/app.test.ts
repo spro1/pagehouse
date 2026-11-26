@@ -1,12 +1,14 @@
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, utimesSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { createHmac } from 'node:crypto'
 import { startPersonalHooks } from './webhooks.ts'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createApp } from './app.ts'
+import { pruneFiles } from './admin.ts'
+import { brandCss, brandHtml, contrastOnWhite } from './html.ts'
 import { openDb } from './db.ts'
 
 // The tests stand behind one pretend proxy, so X-Forwarded-For names the caller.
@@ -20,7 +22,8 @@ await reset.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public')
 await reset.end()
 const db = await openDb(url)
 after(() => db.end())
-const app = createApp(db, mkdtempSync(join(tmpdir(), 'pagehouse-')))
+const dataDir = mkdtempSync(join(tmpdir(), 'pagehouse-'))
+const app = createApp(db, dataDir)
 
 // A tiny client that keeps its own session cookie.
 function client() {
@@ -1191,4 +1194,71 @@ test('monitoring: /metrics needs METRICS_TOKEN, admin health, and server errors 
   const { recordError, recentStats } = await import('./metrics.ts')
   recordError('GET', '/api/boom', 500, 'kaboom')
   assert.equal(recentStats().errors[0].message, 'kaboom')
+})
+
+test('branding: admins set name and logo; everyone, signed in or not, reads them', async () => {
+  const admin = client()
+  await admin.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  const { token } = await admin.json('POST', '/api/admin/invites', { role: 'member' })
+  const bob = client()
+  await bob.json('POST', '/api/auth/register', { email: 'brand@b.co', name: 'Bob', password: 'password1', invite: token })
+  const anon = client()
+  assert.deepEqual(await anon.json('GET', '/api/auth/branding'), { name: null, logo: null, accent: null })
+  assert.equal((await bob.call('PUT', '/api/admin/branding', { name: 'Acme' })).status, 403)
+  // Accent: #rrggbb only (it goes into a <style>), saved without touching the name, null for the default.
+  for (const bad of ['red', '#fff', '#12345g', '#123456;}body{x:y', 3]) assert.equal((await admin.call('PUT', '/api/admin/branding', { accent: bad })).status, 400, String(bad))
+  assert.equal((await admin.call('PUT', '/api/admin/branding', {})).status, 400)
+  assert.deepEqual(await admin.json('PUT', '/api/admin/branding', { accent: '#AA3300' }), { accent: '#aa3300' })
+  assert.equal((await anon.json('GET', '/api/auth/branding')).accent, '#aa3300')
+  assert.match(brandHtml('<head></head>', { name: null, logo: null, accent: '#aa3300' }), /<style id="brand-css">html:root\{--accent:#aa3300;.*\[data-theme='dark'\]/)
+  assert.equal(brandCss('#fff;}x{'), '')
+  assert.ok(contrastOnWhite('#2f6feb') >= 4.5) // the default accent passes
+  assert.ok(contrastOnWhite('#ffd400') < 2)
+  await admin.call('PUT', '/api/admin/branding', { accent: null })
+  assert.equal((await admin.call('PUT', '/api/admin/branding', { name: 1 })).status, 400)
+  assert.equal((await admin.json('PUT', '/api/admin/branding', { name: '  Acme Wiki  ' })).name, 'Acme Wiki')
+  const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='), (c) => c.charCodeAt(0))
+  const up = (who: { cookie: string }, type: string) => { const f = new FormData(); f.append('file', new File([png], 'a', { type })); return app.request('/api/admin/branding/logo', { method: 'PUT', headers: { cookie: who.cookie }, body: f }) }
+  assert.equal((await up(bob, 'image/png')).status, 403)
+  assert.equal((await up(admin, 'image/svg+xml')).status, 400)
+  assert.equal((await up(admin, 'image/png')).status, 200)
+  const b = await anon.json('GET', '/api/auth/branding')
+  assert.equal(b.name, 'Acme Wiki') // the logo upload kept the name
+  const got = await anon.call('GET', `/api/auth/branding/logo?v=${b.logo}`)
+  assert.equal(got.headers.get('content-type'), 'image/png')
+  assert.equal(got.headers.get('x-content-type-options'), 'nosniff')
+  // A replaced logo's file is removed; one still used elsewhere (here: as a photo) is kept; so is one just written.
+  const unique = (tag: string) => new File([png, new TextEncoder().encode(tag)], 'a', { type: 'image/png' })
+  const put = (path: string, f: File) => { const d = new FormData(); d.append('file', f); return app.request(path, { method: 'PUT', headers: { cookie: admin.cookie }, body: d }) }
+  const file = (h: string) => join(dataDir, 'files', h)
+  const age = (h: string) => utimesSync(file(h), new Date(0), new Date(0))
+  const tag = Date.now()
+  const first = (await (await put('/api/admin/branding/logo', unique(`one${tag}`))).json()).logo
+  const fresh = (await (await put('/api/admin/branding/logo', unique(`fresh${tag}`))).json()).logo
+  assert.equal(existsSync(file(first)), true) // replaced at once, but too new to remove: an upload may be about to use it
+  age(first)
+  await put('/api/me/avatar', unique(`two${tag}`))
+  const second = (await (await put('/api/admin/branding/logo', unique(`two${tag}`))).json()).logo
+  age(fresh)
+  age(second)
+  const third = (await (await put('/api/admin/branding/logo', unique(`three${tag}`))).json()).logo
+  assert.equal(existsSync(file(second)), true) // replaced, but still the admin's photo
+  age(third)
+  await admin.call('DELETE', '/api/admin/branding/logo')
+  assert.equal(existsSync(file(third)), false) // old enough and used by nothing: removed at once
+  assert.equal(existsSync(file(second)), true) // still the admin's photo
+  await admin.call('DELETE', '/api/me/avatar')
+  assert.equal(existsSync(file(second)), false)
+  // The sweep catches what was skipped, and never an attachment.
+  assert.equal(existsSync(file(fresh)), true)
+  for (const h of readdirSync(join(dataDir, 'files'))) age(h)
+  assert.equal(await pruneFiles(db, join(dataDir, 'files')) >= 1, true)
+  assert.equal(existsSync(file(fresh)), false)
+  assert.equal(existsSync(file(first)), false)
+  const kept = (await db.query('SELECT DISTINCT sha256 FROM attachments')).rows
+  assert.ok(kept.length > 0)
+  for (const { sha256 } of kept) assert.equal(existsSync(file(sha256)), true, `attachment ${sha256}`)
+  await admin.call('PUT', '/api/admin/branding', { name: '' })
+  assert.deepEqual(await anon.json('GET', '/api/auth/branding'), { name: null, logo: null, accent: null })
+  assert.equal((await anon.call('GET', '/api/auth/branding/logo')).status, 404)
 })

@@ -2,14 +2,15 @@ import { Hono, type Context } from 'hono'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 import { bodyLimit } from 'hono/body-limit'
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
-import { createReadStream, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createReadStream, existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
 import { Readable } from 'node:stream'
 import { compress } from 'hono/compress'
 import { secureHeaders } from 'hono/secure-headers'
 import { join } from 'node:path'
 import { tx, type Db } from './db.ts'
-import { metricsText, registerAdmin, uploadAllowed } from './admin.ts'
+import { branding as readBranding, brandName, metricsText, pruneFiles, registerAdmin, saveBranding, uploadAllowed } from './admin.ts'
 import { registerExport } from './export.ts'
+import { isColor } from './html.ts'
 import { registerSso, registerSsoAdmin, ssoLogoutUrl, ssoSource } from './sso.ts'
 import { createCollab } from './collab.ts'
 import { relayDownSince } from './cluster.ts'
@@ -352,9 +353,11 @@ export function createApp(db: Db, dataDir: string) {
       await db.query(`INSERT INTO invites (token_hash, purpose, user_id, created_by, expires_at) VALUES ($1, 'reset', $2, $2, now() + interval '1 hour')`, [sha256(token), u.id])
       const base = process.env.PUBLIC_URL?.replace(/\/$/, '') || new URL(c.req.url).origin
       const ko = u.locale === 'ko'
-      await sendMail(email, ko ? '[Pagehouse] 비밀번호 재설정' : '[Pagehouse] Reset your password',
+      const brand = await brandName(db)
+      await sendMail(email, ko ? `[${brand}] 비밀번호 재설정` : `[${brand}] Reset your password`,
         (ko ? '아래 링크에서 새 비밀번호를 정하세요. 링크는 1시간 동안 한 번만 쓸 수 있습니다.\n\n' : 'Choose a new password at the link below. It works once, for one hour.\n\n') +
         `${base}/#/reset/${token}\n\n` + (ko ? '요청하지 않았다면 이 메일은 무시하세요.' : 'If you didn’t ask for this, ignore this email.'),
+        brand,
       ).catch((e) => console.error('forgot-password mail failed:', e.message))
     }
     return c.json({ ok: true })
@@ -396,20 +399,33 @@ export function createApp(db: Db, dataDir: string) {
   app.get('/api/me', async (c) =>
     c.json({ ...c.get('user'), mail: mailEnabled(), ...(await one('SELECT email_notify AS "emailNotify", webhook_url AS "webhookUrl" FROM users WHERE id = $1', [c.get('user').id])) }))
 
+  // Content-addressed: the same bytes are stored once. Touching an existing file marks it in use for pruneFiles.
+  const storeFile = (buf: Buffer) => {
+    const hash = sha256(buf)
+    const path = join(filesDir, hash)
+    if (existsSync(path)) utimesSync(path, new Date(), new Date())
+    else writeFileSync(path, buf)
+    return hash
+  }
+  const dropIfUnused = (ref: string | null | undefined) => pruneFiles(db, filesDir, [ref])
+  const avatarOf = async (userId: number) => (await one('SELECT avatar FROM users WHERE id = $1', [userId]))?.avatar as string | null
+
   // Profile photo: the browser sends a small square image (it resizes before uploading).
   app.put('/api/me/avatar', async (c) => {
     const file = (await c.req.parseBody()).file
     if (!(file instanceof File) || !['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) return fail(c, 400, 'bad_request')
     if (file.size > 1024 * 1024) return fail(c, 413, 'file_too_large')
     const buf = Buffer.from(await file.arrayBuffer())
-    const hash = sha256(buf)
-    const path = join(filesDir, hash)
-    if (!existsSync(path)) writeFileSync(path, buf)
+    const hash = storeFile(buf)
+    const old = await avatarOf(c.get('user').id)
     await db.query('UPDATE users SET avatar = $1 WHERE id = $2', [`${hash}:${file.type}`, c.get('user').id])
+    await dropIfUnused(old)
     return c.json({ avatar: true })
   })
   app.delete('/api/me/avatar', async (c) => {
+    const old = await avatarOf(c.get('user').id)
     await db.query('UPDATE users SET avatar = NULL WHERE id = $1', [c.get('user').id])
+    await dropIfUnused(old)
     return c.json({ avatar: false })
   })
   app.get('/api/users/:id/avatar', async (c) => {
@@ -422,6 +438,59 @@ export function createApp(db: Db, dataDir: string) {
     const etag = `"${hash}"`
     if (c.req.header('if-none-match') === etag) return c.body(null, 304)
     return c.body(readFileSync(path), 200, { 'Content-Type': mime, ETag: etag, 'Cache-Control': 'private, max-age=300' })
+  })
+
+  // Branding: the name (browser tab title) and logo (also the favicon) an admin sets after installing.
+  // Read under /api/auth/ so the sign-in screen shows it too.
+  const branding = () => readBranding(db)
+  const setBranding = (patch: object) => saveBranding(db, patch)
+  app.get('/api/auth/branding', async (c) => {
+    const b = await branding()
+    return c.json({ name: b.name, logo: b.logo?.split(':')[0] ?? null, accent: b.accent })
+  })
+  app.get('/api/auth/branding/logo', async (c) => {
+    const logo = (await branding()).logo
+    if (!logo) return c.body(null, 404)
+    const [hash, mime] = logo.split(':')
+    const path = join(filesDir, hash)
+    if (!existsSync(path)) return c.body(null, 404)
+    // The client asks with ?v=<hash>, so a new logo is a new URL.
+    return c.body(readFileSync(path), 200, { 'Content-Type': mime, 'Cache-Control': 'public, max-age=31536000, immutable' })
+  })
+  app.put('/api/admin/branding', async (c) => {
+    const b = await c.req.json().catch(() => ({}))
+    // Each field is optional; null brings back the default.
+    const patch: { name?: string | null; accent?: string | null } = {}
+    if ('name' in b) {
+      if (b.name !== null && typeof b.name !== 'string') return fail(c, 400, 'bad_request')
+      patch.name = b.name?.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 60) || null
+    }
+    if ('accent' in b) {
+      // Goes into a <style> on every page: nothing but #rrggbb.
+      if (b.accent !== null && !isColor(b.accent)) return fail(c, 400, 'bad_request')
+      patch.accent = b.accent?.toLowerCase() ?? null
+    }
+    if (!Object.keys(patch).length) return fail(c, 400, 'bad_request')
+    await setBranding(patch)
+    return c.json(patch)
+  })
+  app.put('/api/admin/branding/logo', async (c) => {
+    const file = (await c.req.parseBody()).file
+    // No SVG: served from this origin it could run script.
+    if (!(file instanceof File) || !['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) return fail(c, 400, 'bad_request')
+    if (file.size > 512 * 1024) return fail(c, 413, 'file_too_large')
+    const buf = Buffer.from(await file.arrayBuffer())
+    const hash = storeFile(buf)
+    const old = (await branding()).logo
+    await setBranding({ logo: `${hash}:${file.type}` })
+    await dropIfUnused(old)
+    return c.json({ logo: hash })
+  })
+  app.delete('/api/admin/branding/logo', async (c) => {
+    const old = (await branding()).logo
+    await setBranding({ logo: null })
+    await dropIfUnused(old)
+    return c.json({ logo: null })
   })
 
   app.patch('/api/me', async (c) => {
@@ -1094,9 +1163,7 @@ export function createApp(db: Db, dataDir: string) {
     if (!(file instanceof File)) return fail(c, 400, 'file_required')
     if (!(await uploadAllowed(db, file.size))) return fail(c, 413, 'storage_full')
     const buf = Buffer.from(await file.arrayBuffer())
-    const hash = sha256(buf)
-    const path = join(filesDir, hash)
-    if (!existsSync(path)) writeFileSync(path, buf)
+    const hash = storeFile(buf)
     const name = file.name.slice(0, 255) || 'file'
     const mime = file.type || 'application/octet-stream'
     const row = await one(

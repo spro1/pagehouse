@@ -6,7 +6,7 @@
 
 | Installed with | Upgrade |
 |---|---|
-| One-line install (Docker, Podman) | In the install folder: `scripts/upgrade.sh <version>`, e.g. `scripts/upgrade.sh 0.3.1` |
+| One-line install (Docker, Podman) | In the install folder: `scripts/upgrade.sh <version>`, e.g. `scripts/upgrade.sh 0.4.0` |
 | Offline bundle | Extract the new bundle and run `sh pagehouse-<version>/install.sh --dir <install folder>` |
 | Kubernetes (Helm) | `helm upgrade <name> pagehouse-<version>.tgz -n <namespace> --reuse-values` |
 
@@ -29,6 +29,12 @@
 **Skipping versions:** you can upgrade across several versions at once; every missing migration applies in order. Read the notes for **every version you skip** below.
 
 ## Notes per version
+
+### 0.3.1 → 0.4.0
+
+No database or settings changes.
+- **Branding.** Admin → **Branding** sets your organization's name, logo and accent color. The name becomes the browser tab title and shows on the sign-in screen, the sidebar and in email subjects; the logo is also the favicon. See the [user guide](user-guide.md#for-administrators).
+- **Unused files are cleaned up.** Replaced or removed profile photos and logos are deleted from the `files` volume (checked hourly; attachments are never deleted). If you run an external database, restore it together with the `files` volume.
 
 ### 0.3.0 → 0.3.1
 

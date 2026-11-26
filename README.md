@@ -53,7 +53,7 @@ An open-source, self-hosted alternative to Confluence. **[pagehouse website](htt
 | 👤 **Accounts** | Change your name and profile photo, reset a forgotten password by email (with SMTP), or get a temporary password from an admin that must be changed at first sign-in |
 | 🤖 **AI agents** | Built-in MCP server: agents search, read and write pages with a personal API token and exactly your permissions |
 | 📦 **Migrate** | Import Confluence CSV and HTML exports (page tree and order, folders, attachments, labels; code, panels, Jira, drawio and other macros), Notion, Markdown and HTML; export Markdown or HTML ZIPs and pages as PDF |
-| 📊 **Admin** | Storage use against a limit, disk space, backup status and retention policy, activity, largest files; SSO set up on a screen; webhooks that send signed page and comment events |
+| 📊 **Admin** | Storage use against a limit, disk space, backup status and retention policy, activity, largest files; SSO set up on a screen; webhooks that send signed page and comment events; your own name, logo, favicon and accent color |
 | 🌐 **Interface** | English and Korean, light and dark themes, set per account |
 
 <table>
@@ -92,7 +92,7 @@ curl -fsSL https://github.com/spro1/pagehouse/releases/latest/download/install.s
 To install a specific version:
 
 ```sh
-curl -fsSL https://github.com/spro1/pagehouse/releases/download/v0.3.1/install.sh | sh -s -- --dir /opt/pagehouse --version 0.3.1
+curl -fsSL https://github.com/spro1/pagehouse/releases/download/v0.4.0/install.sh | sh -s -- --dir /opt/pagehouse --version 0.4.0
 ```
 
 The installer:

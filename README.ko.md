@@ -53,7 +53,7 @@
 | 👤 **계정** | 이름·프로필 사진 변경, 메일로 비밀번호 재설정(SMTP 설정 시), 관리자가 발급하는 임시 비밀번호(첫 로그인 때 변경) |
 | 🤖 **AI 에이전트** | 내장 MCP 서버. 개인 API 토큰으로 에이전트가 내 권한 그대로 페이지를 검색·읽기·작성 |
 | 📦 **이관** | Confluence CSV·HTML 내보내기(페이지 트리와 순서, 폴더, 첨부, 라벨, 코드·패널·Jira·drawio 등 매크로), Notion, Markdown, HTML 가져오기. Markdown·HTML ZIP과 페이지 PDF 내보내기 |
-| 📊 **관리** | 저장 공간 사용량과 한도, 디스크 여유, 백업 상태와 보관 정책, 활동, 큰 파일. 화면에서 하는 SSO 설정, 페이지·댓글 이벤트를 서명해 보내는 웹훅 |
+| 📊 **관리** | 저장 공간 사용량과 한도, 디스크 여유, 백업 상태와 보관 정책, 활동, 큰 파일. 화면에서 하는 SSO 설정, 페이지·댓글 이벤트를 서명해 보내는 웹훅, 우리 조직 이름·로고·파비콘·강조색 |
 | 🌐 **화면** | 한국어·영어, 라이트·다크 테마(계정별 설정) |
 
 <table>
@@ -92,7 +92,7 @@ curl -fsSL https://github.com/spro1/pagehouse/releases/latest/download/install.s
 특정 버전을 설치하려면 버전을 지정합니다.
 
 ```sh
-curl -fsSL https://github.com/spro1/pagehouse/releases/download/v0.3.1/install.sh | sh -s -- --dir /opt/pagehouse --version 0.3.1
+curl -fsSL https://github.com/spro1/pagehouse/releases/download/v0.4.0/install.sh | sh -s -- --dir /opt/pagehouse --version 0.4.0
 ```
 
 설치 스크립트는 무작위 DB 비밀번호가 든 `.env`를 권한 600으로 만들고 이미지를 받아 서비스를 띄운 뒤 정상 상태가 될 때까지 기다립니다.
