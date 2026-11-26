@@ -121,7 +121,7 @@ docker compose up -d --build
 | `SETUP_TOKEN` | 자동 생성 | 첫(관리자) 계정을 만들 때 필요한 토큰. 비워 두면 만들어서 로그에 출력합니다 |
 | `SESSION_HOURS` | `24` (1일) | 로그인 유지 시간. 0.5.0 전처럼 30일 동안 유지하려면 `720` |
 | `TRUST_PROXY` | `0` | 앞단 리버스 프록시 수. 프록시 뒤라면 `1`로 두어야 로그인 시도 제한과 감사 로그가 실제 접속 주소를 씁니다. 직접 접속이면 `0`(Helm은 인그레스를 켜면 자동으로 `1`) |
-| `OIDC_TRUST_EMAIL` | `0` | SSO 계정은 이메일로 연결되므로 제공자가 확인(verified)한 이메일만 받습니다. `email_verified`를 보내지 않는 제공자(일부 Entra ID)에서 `1`. 사용자가 제공자 쪽 이메일을 직접 바꿀 수 없을 때만 쓰세요 |
+| `OIDC_TRUST_EMAIL` | `0` | 첫 SSO 로그인 때 이메일로 계정을 연결하거나 만들기 때문에, 그때는 제공자가 확인(verified)한 이메일만 받습니다. `email_verified`를 보내지 않는 제공자(일부 Entra ID)에서 `1`. 사용자가 제공자 쪽 이메일을 직접 바꿀 수 없을 때만 쓰세요 |
 | `SMTP_URL`, `SMTP_FROM` | 비어 있음 | 읽지 않은 알림 메일과 "비밀번호를 잊으셨나요?" 재설정 메일. 예: `smtp://user:pass@mail.example.com:587`. 메일 속 링크는 `PUBLIC_URL`이 있어야 함 |
 | `METRICS_TOKEN` | 비어 있음 | 넣으면 `/metrics`(Prometheus)가 켜지고, 이 값을 bearer 토큰으로 보내야 볼 수 있습니다. [모니터링](monitoring.ko.md) 참고 |
 | `WEBHOOK_ALLOW` | 비어 있음 | 개인 알림 웹훅이 보낼 수 있는 내부망 호스트. 예: `chat.corp.local,.corp.local`. 목록에 없으면 사설·루프백 주소는 막힙니다. 관리자 웹훅은 어디로든 보낼 수 있습니다 |

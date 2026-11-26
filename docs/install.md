@@ -121,7 +121,7 @@ Restart after changing it: `docker compose up -d`.
 | `SETUP_TOKEN` | generated | Token the first (administrator) account needs. Without it one is generated and printed in the log |
 | `SESSION_HOURS` | `24` (one day) | How long a sign-in lasts. `720` keeps people signed in for 30 days, as before 0.5.0 |
 | `TRUST_PROXY` | `0` | Number of reverse proxies in front. Set `1` behind a proxy so sign-in throttling and the audit log see real client addresses; `0` for direct connections (the Helm chart sets `1` when ingress is on) |
-| `OIDC_TRUST_EMAIL` | `0` | SSO accounts are matched by email, so only emails the provider marks verified are accepted. `1` for providers that never send `email_verified` (some Entra ID setups) — only if users can't change their email there |
+| `OIDC_TRUST_EMAIL` | `0` | An account is linked or created at the first SSO sign-in by email, so only emails the provider marks verified are accepted for that. `1` for providers that never send `email_verified` (some Entra ID setups) — only if users can't change their email there |
 | `SMTP_URL`, `SMTP_FROM` | empty | Notification emails and "Forgot your password?" reset links. For example `smtp://user:pass@mail.example.com:587`. Links in mail need `PUBLIC_URL` |
 | `METRICS_TOKEN` | empty | Turns on `/metrics` (Prometheus) for scrapers that send it as a bearer token. See [Monitoring](monitoring.md) |
 | `WEBHOOK_ALLOW` | empty | Internal hosts that personal notification webhooks may post to, e.g. `chat.corp.local,.corp.local`. Private and loopback addresses are refused otherwise. Admin webhooks may reach any host |
