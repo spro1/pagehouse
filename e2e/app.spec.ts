@@ -106,7 +106,7 @@ test('branding: a logo becomes the favicon, and removing it brings the default b
   try {
     await page.goto('/#/admin/branding')
     await page.getByLabel('Name (browser tab title)').fill('E2E Wiki')
-    await page.getByRole('button', { name: 'Save' }).click()
+    await page.locator('form').filter({ hasText: 'Name (browser tab title)' }).getByRole('button', { name: 'Save' }).click()
     await expect(page).toHaveTitle('E2E Wiki')
     // 1×1 PNG
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64')
@@ -115,12 +115,18 @@ test('branding: a logo becomes the favicon, and removing it brings the default b
     // The server puts both into the page itself, so they show before any script runs.
     await page.reload()
     await expect(page).toHaveTitle('E2E Wiki')
-    await page.getByRole('button', { name: 'Use default' }).click()
+    await page.locator('.field').getByRole('button', { name: 'Use default' }).click()
     await expect(page.locator('link[rel=icon]')).toHaveAttribute('href', /^data:image\/svg/)
+    // Accent color: applied at once, and served in the page after a reload.
+    await page.locator('input[type=color]').fill('#0a7d4f')
+    await page.locator('form').filter({ has: page.locator('input[type=color]') }).getByRole('button', { name: 'Save' }).click()
+    await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent'))).toBe('#0a7d4f')
+    await page.reload()
+    await expect(page.locator('style#brand-css')).toHaveCount(1)
   } finally {
     // Leave the instance as it was.
     await page.evaluate(async (b) => {
-      await fetch('/api/admin/branding', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: b.name }) })
+      await fetch('/api/admin/branding', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: b.name, accent: b.accent ?? null }) })
       await fetch('/api/admin/branding/logo', { method: 'DELETE' })
     }, before)
   }

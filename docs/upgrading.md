@@ -33,7 +33,7 @@
 ### 0.3.1 → 0.4.0
 
 No database or settings changes.
-- **Branding.** Admin → **Branding** sets your organization's name and logo. The name becomes the browser tab title and shows on the sign-in screen, the sidebar and in email subjects; the logo is also the favicon. See the [user guide](user-guide.md#for-administrators).
+- **Branding.** Admin → **Branding** sets your organization's name, logo and accent color. The name becomes the browser tab title and shows on the sign-in screen, the sidebar and in email subjects; the logo is also the favicon. See the [user guide](user-guide.md#for-administrators).
 - **Unused files are cleaned up.** Replaced or removed profile photos and logos are deleted from the `files` volume (checked hourly; attachments are never deleted). If you run an external database, restore it together with the `files` volume.
 
 ### 0.3.0 → 0.3.1

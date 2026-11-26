@@ -53,7 +53,7 @@ An open-source, self-hosted alternative to Confluence. **[pagehouse website](htt
 | 👤 **Accounts** | Change your name and profile photo, reset a forgotten password by email (with SMTP), or get a temporary password from an admin that must be changed at first sign-in |
 | 🤖 **AI agents** | Built-in MCP server: agents search, read and write pages with a personal API token and exactly your permissions |
 | 📦 **Migrate** | Import Confluence CSV and HTML exports (page tree and order, folders, attachments, labels; code, panels, Jira, drawio and other macros), Notion, Markdown and HTML; export Markdown or HTML ZIPs and pages as PDF |
-| 📊 **Admin** | Storage use against a limit, disk space, backup status and retention policy, activity, largest files; SSO set up on a screen; webhooks that send signed page and comment events; your own name, logo and favicon |
+| 📊 **Admin** | Storage use against a limit, disk space, backup status and retention policy, activity, largest files; SSO set up on a screen; webhooks that send signed page and comment events; your own name, logo, favicon and accent color |
 | 🌐 **Interface** | English and Korean, light and dark themes, set per account |
 
 <table>
