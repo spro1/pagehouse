@@ -39,7 +39,7 @@ Database changes apply automatically. Read the sign-in length change below (set 
 - **Webhook retries survive restarts** and wait 1, 4, 16 and 64 minutes. Requests also carry `X-Event` and `X-Signature` (same values as `X-Pagehouse-Event` and `X-Pagehouse-Signature`, which stay).
 - **Two-syllable Korean searches** ("배포", "장애") use an index. The upgrade builds it once, which can take a moment on a large wiki.
 - **New installs** ask for a setup token when creating the first account (printed in the log, or `SETUP_TOKEN`).
-- **SSO finds accounts by the provider's user id (`sub`).** Each existing account is linked by its verified email at its next SSO sign-in, as before; after that, a changed email at the provider still signs in to the same account (the wiki email is not changed). An account with the same email that is already linked to another provider user is refused.
+- **SSO finds accounts by the provider's user id (`sub`).** Each existing account is linked by its verified email at its next SSO sign-in, as before; after that, a changed email at the provider still signs in to the same account (the wiki email is not changed). An account with the same email that is already linked to another provider user is refused. Linking and creating accounts still need a verified email.
 - **Sign-ins last one day by default** instead of 30 days, so people sign in again daily. To keep the old behavior, set `SESSION_HOURS=720` in `.env`. Sessions started before the upgrade keep their original expiry.
 
 ### 0.3.1 → 0.4.0

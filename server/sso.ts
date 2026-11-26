@@ -173,7 +173,7 @@ export function registerSso(app: Hono<any>, db: Db, source: SsoSource, startSess
       const info = { ...claims, ...(userinfo?.sub === claims.sub ? userinfo : {}) }
       const sub = String(claims.sub)
       const email = typeof info?.email === 'string' ? info.email.toLowerCase() : ''
-      // Only for linking an existing account by email: otherwise anyone able to set an email at the provider could
+      // For linking an existing account by email and for creating one: otherwise anyone able to set an email at the provider could
       // sign in as that person here. Providers that never send the claim (some Entra ID setups) can be trusted
       // explicitly; trusting covers only a claim that's missing, any other value than true ("false" too) is a refusal.
       const v = info?.email_verified
@@ -186,10 +186,10 @@ export function registerSso(app: Hono<any>, db: Db, source: SsoSource, startSess
           user = (await q.query('UPDATE users SET oidc_sub = $2 WHERE email = $1 AND oidc_sub IS NULL RETURNING id, disabled_at', [email, sub])).rows[0]
         if (!user) {
           if (!cfg.autoCreate) return 'no_account'
-          if (!email) return 'no_email'
+          if (!email || !verified) return 'no_email'
           const name = String(info.name || info.preferred_username || email.split('@')[0]).slice(0, 100)
           // No password: this account signs in through the provider only (an admin can still send a reset link).
-          // An account with this email that isn't linkable (unverified email, or linked to another person) is refused.
+          // An account with this email already linked to another person at the provider is refused.
           user = (await q.query(`INSERT INTO users (email, name, password_hash, oidc_sub) VALUES ($1, $2, '', $3) ON CONFLICT (email) DO NOTHING RETURNING id, disabled_at`,
             [email, name, sub])).rows[0]
           if (!user) return 'email_taken'

@@ -644,16 +644,18 @@ test('OIDC single sign-on creates, links and signs in accounts by the provider i
     assert.equal((await subOf(legacy)).email, 'old@corp.co')
     // Someone else at the provider with that email can't take the linked account.
     assert.deepEqual(await as('sso-3', 'old@corp.co'), { to: '/?sso_error=email_taken', id: null })
-    // An unverified email never links an existing account, and creates a new one only for a free email.
+    // An unverified email neither links an existing account nor creates a new one.
     const legacy2 = (await db.query(`INSERT INTO users (email, name, password_hash) VALUES ('old2@corp.co', 'Old 2', 'x') RETURNING id`)).rows[0].id
-    assert.equal((await as('sso-4', 'old2@corp.co', false)).to, '/?sso_error=email_taken')
-    assert.equal((await as('sso-4', 'old2@corp.co', null)).to, '/?sso_error=email_taken')
-    assert.equal((await as('sso-5', 'fresh@corp.co', false)).to, '/')
+    assert.equal((await as('sso-4', 'old2@corp.co', false)).to, '/?sso_error=no_email')
+    assert.equal((await as('sso-4', 'old2@corp.co', null)).to, '/?sso_error=no_email')
+    assert.equal((await as('sso-5', 'fresh@corp.co', false)).to, '/?sso_error=no_email')
+    assert.equal((await db.query(`SELECT 1 FROM users WHERE email = 'fresh@corp.co' OR oidc_sub IN ('sso-4', 'sso-5')`)).rowCount, 0)
     // "Trust emails…" only covers a provider that sends no email_verified; "false", even as a string, is still a refusal.
     await put({ ...saved, clientSecret: '', trustEmail: true })
-    assert.equal((await as('sso-4', 'old2@corp.co', 'false')).to, '/?sso_error=email_taken')
-    assert.equal((await as('sso-4', 'old2@corp.co', false)).to, '/?sso_error=email_taken')
+    assert.equal((await as('sso-4', 'old2@corp.co', 'false')).to, '/?sso_error=no_email')
+    assert.equal((await as('sso-5', 'fresh@corp.co', false)).to, '/?sso_error=no_email')
     assert.deepEqual(await as('sso-4', 'old2@corp.co', null), { to: '/', id: legacy2 })
+    assert.equal((await as('sso-5', 'fresh@corp.co', null)).to, '/')
     // With account creation off, linked and linkable accounts still get in; nobody else does.
     await put({ ...saved, clientSecret: '', autoCreate: false })
     assert.deepEqual(await as('sso-2', 'renamed@corp.co'), { to: '/', id: legacy })

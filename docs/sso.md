@@ -50,7 +50,7 @@ In **Admin → SSO**:
 3. Choose the options:
    - **Create accounts on first sign-in**: off lets in only people who already have an account with that email.
    - **Allow password sign-in**: off makes everyone but administrators use SSO. Administrators keep their password so they can get in when the provider is down.
-   - **Trust emails the provider doesn't mark verified**: only for providers that never send `email_verified`. It matters only when linking an existing account by email.
+   - **Trust emails the provider doesn't mark verified**: only for providers that never send `email_verified`. It applies when linking an existing account by email and when creating a new one.
 4. Click **Turn on SSO**. It applies at once, without a restart.
 
 Then sign out and try the button on the sign-in page, ideally in a private window.
@@ -79,8 +79,8 @@ Failed sign-ins appear in **Admin → Audit log** as *SSO sign-in* with the reas
 | What you see | Cause and fix |
 |---|---|
 | The provider says the redirect URI is invalid | The redirect URI registered at the provider doesn't match the one on the SSO screen exactly (http vs https, host, port). If the screen shows the wrong address, set `PUBLIC_URL`. |
-| "The sign-on provider did not share a verified email" | The user has no email at the provider. |
-| "An account with this email already exists but could not be linked" | The email isn't marked verified at the provider (verify it there, or only when appropriate turn on *Trust emails…*), or that account is already linked to another person at the provider. |
+| "The sign-on provider did not share a verified email" | The user has no email at the provider, or it isn't marked verified. Verify it there, or (only when appropriate) turn on *Trust emails…*. |
+| "An account with this email already exists but could not be linked" | That account is already linked to another person at the provider (for example after the provider was replaced). An administrator can unlink it by clearing `oidc_sub` for that user in the database. |
 | "There is no account for you yet" | *Create accounts on first sign-in* is off. Invite the person first. |
 | "Single sign-on failed" right after the provider's page | The wiki server can't reach the provider's token endpoint, or the client secret is wrong. Check from the server: `curl <issuer>/.well-known/openid-configuration`. |
 | Test connection works but sign-in fails, with the wiki in a container and the provider on the same machine | Inside a container, `localhost` is the container itself. Use an address both the container and browsers can reach. For a local Keycloak, start it with `--hostname=<browser address> --hostname-backchannel-dynamic=true` and use `http://host.containers.internal:8080/realms/<realm>` (Podman) or `host.docker.internal` (Docker) as the issuer. |
