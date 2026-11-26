@@ -239,7 +239,7 @@ Set these on both:
 | `PUBLIC_URL` | Each product shows a link to the other in its menu |
 | `COOKIE_DOMAIN` | Only when the two run on different subdomains: the parent domain (`example.com` for `wiki.example.com` and `tasks.example.com`), so one sign-in covers both. On the same host name (different ports or paths) leave it empty |
 
-With SSO, register both callback addresses (`<PUBLIC_URL>/api/auth/oidc/callback` of each product) on the one client at your provider. A changed SSO setting reaches the other product within 30 seconds.
+With SSO, register both callback addresses (`<PUBLIC_URL>/api/auth/oidc/callback` of each product) on the one client at your provider. A changed SSO setting reaches the other product within 30 seconds. The administrator group, if you set one, decides who is an administrator in both products at each SSO sign-in.
 
 Good to know:
 - An account created in one product is an ordinary member of the other. Disabling an account closes both.

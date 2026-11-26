@@ -239,7 +239,7 @@ Pagehouse와 [Taskhouse](https://github.com/spro1/taskhouse)는 별도 제품이
 | `PUBLIC_URL` | 각 제품 메뉴에 상대 제품으로 가는 링크가 나옵니다 |
 | `COOKIE_DOMAIN` | 두 제품이 서로 다른 서브도메인일 때만: 상위 도메인(`wiki.example.com`과 `tasks.example.com`이면 `example.com`)을 넣어야 한 번의 로그인이 양쪽에 통합니다. 같은 호스트 이름(포트나 경로만 다름)이면 비워 둡니다 |
 
-SSO를 쓰면 IdP의 클라이언트 하나에 두 제품의 콜백 주소(각 제품의 `<PUBLIC_URL>/api/auth/oidc/callback`)를 모두 등록합니다. SSO 설정을 바꾸면 다른 제품에는 30초 안에 반영됩니다.
+SSO를 쓰면 IdP의 클라이언트 하나에 두 제품의 콜백 주소(각 제품의 `<PUBLIC_URL>/api/auth/oidc/callback`)를 모두 등록합니다. SSO 설정을 바꾸면 다른 제품에는 30초 안에 반영됩니다. 관리자 그룹을 지정했다면 SSO로 로그인할 때마다 두 제품의 관리자 여부가 그 그룹에 따라 정해집니다.
 
 알아 둘 점:
 - 한 제품에서 만든 계정은 다른 제품에서 일반 구성원입니다. 계정을 비활성화하면 양쪽 모두 막힙니다.

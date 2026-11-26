@@ -11,6 +11,7 @@ import { createApp, hangulBigrams, setupToken } from './app.ts'
 import { pruneFiles } from './admin.ts'
 import { brandCss, brandHtml, contrastOnWhite } from './html.ts'
 import { openDb } from './db.ts'
+import { syncGroups } from './sso.ts'
 
 // The tests stand behind one pretend proxy, so X-Forwarded-For names the caller.
 process.env.TRUST_PROXY = '1'
@@ -1531,6 +1532,12 @@ test('shared accounts: Pagehouse installed into a database where Taskhouse alrea
     assert.equal(me.taskhouseUrl, 'https://tasks.x.test')
     assert.equal((await call('GET', '/api/admin/sso', undefined, boss.sid)).status, 200)
     assert.ok((await joined.query(`SELECT last_login_at FROM users WHERE email = 'boss@x.test'`)).rows[0].last_login_at, 'Taskhouse reads this for its tokens')
+    // One SSO sign-in covers both products, so the admin group sets Taskhouse's flag too, and takes it back (dev has a password, so make him SSO-only first).
+    await joined.query(`UPDATE users SET password_hash = '' WHERE id = 2`)
+    await syncGroups(joined, 2, ['ops-admins'], 'ops-admins')
+    assert.deepEqual((await joined.query('SELECT role, is_admin FROM users WHERE id = 2')).rows[0], { role: 'admin', is_admin: true })
+    await syncGroups(joined, 2, [], 'ops-admins')
+    assert.deepEqual((await joined.query('SELECT role, is_admin FROM users WHERE id = 2')).rows[0], { role: 'member', is_admin: false })
   } finally {
     await joined.end()
     await db.query('DROP DATABASE pagehouse_join_test WITH (FORCE)')
