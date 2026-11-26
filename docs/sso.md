@@ -64,6 +64,15 @@ At each sign-in the wiki reads the person's groups from the **groups claim** (`g
 - If the provider doesn't send the claim at all, nothing changes. Keycloak needs a *Group Membership* mapper (turn off *Full group path* or not, both work); Entra ID sends group IDs unless configured to send names.
 - **Administrator group** (optional): its members become administrators, and stop being one when they leave it. Administrators with a wiki password keep their role, so there is always a way in.
 
+### With Taskhouse on the same accounts
+
+When Pagehouse [shares its accounts with Taskhouse](install.md#using-pagehouse-together-with-taskhouse), SSO is set once and applies to both:
+- The settings on this screen are the same ones Taskhouse's **Admin → SSO** shows. A change made in either reaches the other within 30 seconds. Both products need the same `SECRET_KEY` to read the client secret.
+- Use **one client** at the provider and register both redirect URIs (`<address>/api/auth/oidc/callback` of each product) and both addresses as post-logout redirects.
+- One SSO sign-in, in either product, signs the person in to both, as one account with one set of groups. Signing out of either ends both, and the provider session.
+- The **administrator group** decides who is an administrator in both products at each SSO sign-in. Roles given by hand stay per product.
+- Settings in `.env` (`OIDC_*`) are per product and still win there: set them in both, or in neither.
+
 ### Passwords and SSO accounts
 
 The wiki's **reset link** and **temporary password** set a password *in the wiki* only. They don't touch the password at the provider, which people change there. Used on an account created by SSO, they add a wiki password, so with *Allow password sign-in* on, that person can then sign in either way; with it off, the password works for administrators only.
