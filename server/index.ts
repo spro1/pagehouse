@@ -1,8 +1,13 @@
 import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { compress } from 'hono/compress'
+import type { Context } from 'hono'
 import { createApp } from './app.ts'
 import { openDb } from './db.ts'
+import { branding, startFileSweep } from './admin.ts'
+import { join } from 'node:path'
+import { brandHtml } from './html.ts'
+import { existsSync, readFileSync } from 'node:fs'
 import { startMailer } from './mail.ts'
 import { startPersonalHooks } from './webhooks.ts'
 import { startRelay } from './cluster.ts'
@@ -12,7 +17,9 @@ if (!process.env.DATABASE_URL) {
   process.exit(1)
 }
 const db = await openDb(process.env.DATABASE_URL)
-const app = createApp(db, process.env.DATA_DIR ?? './data')
+const dataDir = process.env.DATA_DIR ?? './data'
+const app = createApp(db, dataDir)
+startFileSweep(db, join(dataDir, 'files'))
 startMailer(db)
 startPersonalHooks(db)
 await startRelay(db, process.env.DATABASE_URL, app.collab)
@@ -28,10 +35,17 @@ app.use('*', async (c, next) => {
   await next()
   if (c.res.headers.get('content-type')?.startsWith('text/html')) c.header('Cache-Control', 'no-cache')
 })
+const shellHtml = existsSync('./dist/index.html') ? readFileSync('./dist/index.html', 'utf8') : ''
+const shell = async (c: Context) => {
+  if (!shellHtml) return c.text('Not found', 404)
+  return c.html(brandHtml(shellHtml, await branding(db)))
+}
+app.get('/', shell)
+app.get('/index.html', shell)
 app.use('*', serveStatic({ root: './dist' }))
 // A build file that isn't there (an old tab asking for the previous release's code) must fail as such, not get the HTML page.
 app.get('/assets/*', (c) => c.text('Not found', 404))
-app.get('*', serveStatic({ path: './dist/index.html' }))
+app.get('*', shell)
 
 const port = Number(process.env.PORT ?? 3000)
 const server = serve({ fetch: app.fetch, port }, () => console.log(`pagehouse listening on http://localhost:${port}`))

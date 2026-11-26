@@ -5,6 +5,18 @@ import type { UrlMap } from './markdown.ts'
 type Node = { type: string; attrs?: Record<string, any>; content?: Node[]; text?: string; marks?: { type: string; attrs?: Record<string, any> }[] }
 
 export const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
+
+/** The app's HTML shell with the name and logo from Admin → Branding, so the tab, favicon and link previews show
+ *  them before any script runs. Used by the server and by the Vite dev server. */
+export function brandHtml(html: string, b: { name: string | null; logo: string | null }) {
+  if (b.name) {
+    const name = escapeHtml(b.name)
+    html = html.replace(/<title>[^<]*<\/title>/, () => `<title>${name}</title><meta property="og:title" content="${name}" />`)
+  }
+  // The default icon stays in data-default, for when an admin removes the logo without a reload.
+  if (b.logo) html = html.replace(/<link rel="icon" href="([^"]*)"/, (_, d) => `<link rel="icon" data-default="${d}" href="/api/auth/branding/logo?v=${b.logo!.split(':')[0]}"`)
+  return html
+}
 // Only web, mail and relative links survive; javascript: and friends never reach the exported page.
 // Colors come from the editor (or pasted HTML), so only plain color values reach a style attribute.
 const safeColor = (c: unknown) =>

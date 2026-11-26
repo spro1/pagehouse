@@ -7,7 +7,7 @@ import { api, ago, fullDate, toast, type User } from './api.ts'
 import { LANGS, lang, setLang, t, type Lang } from './i18n.ts'
 import { Icon } from './icons.tsx'
 import { TEMPLATES, type Template } from './templates.ts'
-import { Modal, confirmDialog, copyText, Avatar, bumpAvatar } from './ui.tsx'
+import { Modal, confirmDialog, copyText, Avatar, bumpAvatar, applyBranding, logoUrl, useBranding } from './ui.tsx'
 import { Monitor } from './Monitor.tsx'
 import { mentionsToNames, notificationText } from './Notifications.tsx'
 import { AccessChoice } from './SpaceSettings.tsx'
@@ -283,18 +283,18 @@ export function Admin({ me }: { me: User }) {
     const { token } = await api('/api/admin/invites', { json: { role } })
     setShared({ label: t(role === 'admin' ? 'admin.invite.admin' : 'admin.invite.member'), url: link('invite', token) })
   }
-  const [tab, setTab] = useState<'overview' | 'people' | 'groups' | 'sso' | 'webhooks' | 'audit'>(() => (['people', 'groups', 'sso', 'webhooks', 'audit'] as const).find((k) => location.hash.includes(k)) ?? 'overview')
+  const [tab, setTab] = useState<'overview' | 'people' | 'groups' | 'sso' | 'webhooks' | 'audit' | 'branding'>(() => (['people', 'groups', 'sso', 'webhooks', 'audit', 'branding'] as const).find((k) => location.hash.includes(k)) ?? 'overview')
   return (
     <div className="screen wide">
       <h1>{t('admin.title')}</h1>
       <div className="tabs" role="tablist">
-        {(['overview', 'people', 'groups', 'sso', 'webhooks', 'audit'] as const).map((k) => (
+        {(['overview', 'people', 'groups', 'sso', 'webhooks', 'audit', 'branding'] as const).map((k) => (
           <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => (setTab(k), history.replaceState(null, '', k === 'overview' ? '#/admin' : `#/admin/${k}`))}>
             {t(`admin.tab.${k}`)}
           </button>
         ))}
       </div>
-      {tab === 'overview' ? <Monitor /> : tab === 'groups' ? <Groups /> : tab === 'audit' ? <Audit /> : tab === 'sso' ? <SsoSettings /> : tab === 'webhooks' ? <Webhooks /> : <>
+      {tab === 'overview' ? <Monitor /> : tab === 'groups' ? <Groups /> : tab === 'audit' ? <Audit /> : tab === 'sso' ? <SsoSettings /> : tab === 'webhooks' ? <Webhooks /> : tab === 'branding' ? <BrandingSettings /> : <>
       <section className="box">
         <div className="box-head">
           <div>
@@ -375,6 +375,55 @@ export function Admin({ me }: { me: User }) {
       </section>
       </>}
     </div>
+  )
+}
+
+/** Admin tab: the product name (browser tab title) and logo (also the favicon) everyone sees. */
+function BrandingSettings() {
+  const b = useBranding()
+  const [name, setName] = useState(b.name ?? '')
+  useEffect(() => setName(b.name ?? ''), [b.name])
+  const pick = useRef<HTMLInputElement>(null)
+  const run = async (f: () => Promise<Partial<typeof b>>) => {
+    try {
+      applyBranding({ ...b, ...(await f()) })
+      toast(t('settings.saved'))
+    } catch (err: any) {
+      toast(err.message)
+    }
+  }
+  return (
+    <section className="box">
+      <h3>{t('brand.title')}</h3>
+      <p className="muted small">{t('brand.sub')}</p>
+      <div className="form">
+      <form onSubmit={(e) => (e.preventDefault(), run(() => api('/api/admin/branding', { method: 'PUT', json: { name } })))}>
+        <label>{t('brand.name')}
+          <div className="row">
+            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} placeholder={t('app.name')} />
+            <button className="primary" disabled={name.trim() === (b.name ?? '')}>{t('common.save')}</button>
+          </div>
+        </label>
+      </form>
+      <div className="field">{t('brand.logo')}
+      <div className="row">
+        {b.logo ? <img className="logo img" src={logoUrl(b.logo)} alt="" /> : <span className="logo">P</span>}
+        <button type="button" className="link small" onClick={() => pick.current?.click()}>{t('brand.logo.change')}</button>
+        {b.logo && <button type="button" className="link small danger" onClick={() => run(() => api('/api/admin/branding/logo', { method: 'DELETE' }))}>{t('brand.logo.reset')}</button>}
+      </div>
+      </div>
+      <p className="muted small">{t('brand.logo.hint')}</p>
+      </div>
+      <input ref={pick} type="file" hidden accept="image/png,image/jpeg,image/webp,image/gif" onChange={(e) => {
+        const f = e.target.files?.[0]
+        e.target.value = ''
+        if (!f) return
+        if (f.size > 512 * 1024) return toast(t('brand.logo.tooLarge'))
+        const form = new FormData()
+        form.append('file', f)
+        run(() => api('/api/admin/branding/logo', { method: 'PUT', body: form }))
+      }} />
+    </section>
   )
 }
 

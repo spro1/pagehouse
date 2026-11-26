@@ -3,6 +3,7 @@
 import nodemailer from 'nodemailer'
 import type { Db } from './db.ts'
 import { inc } from './metrics.ts'
+import { brandName } from './admin.ts'
 
 const DELAY_MIN = 3
 export const TEXT = {
@@ -24,17 +25,19 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 export const mailEnabled = () => !!process.env.SMTP_URL
 
 let direct: ReturnType<typeof nodemailer.createTransport> | null = null
+// Without SMTP_FROM, the sender shows the wiki's name from Admin → Branding.
+const sender = (name: string) => process.env.SMTP_FROM || `"${name.replace(/["\\\r\n]/g, '')}" <pagehouse@localhost>`
+
 /** One message right away (password reset); notifications go through the batching mailer below. */
-export async function sendMail(to: string, subject: string, text: string) {
+export async function sendMail(to: string, subject: string, text: string, from = 'Pagehouse') {
   if (!process.env.SMTP_URL) throw new Error('mail is not configured')
   direct ??= nodemailer.createTransport(process.env.SMTP_URL)
-  await direct.sendMail({ from: process.env.SMTP_FROM || 'Pagehouse <pagehouse@localhost>', to, subject, text })
+  await direct.sendMail({ from: sender(from), to, subject, text })
 }
 
 export function startMailer(db: Db) {
   if (!process.env.SMTP_URL) return () => {}
   const transport = nodemailer.createTransport(process.env.SMTP_URL)
-  const from = process.env.SMTP_FROM || 'Pagehouse <pagehouse@localhost>'
   const base = process.env.PUBLIC_URL?.replace(/\/$/, '') ?? ''
   let running = false
   const tick = async () => {
@@ -54,12 +57,13 @@ export function startMailer(db: Db) {
       )).rows
       const byUser = new Map<number, typeof rows>()
       for (const r of rows) if (r.email_notify) byUser.set(r.user_id, [...(byUser.get(r.user_id) ?? []), r])
+      const brand = byUser.size ? await brandName(db) : ''
       for (const items of byUser.values()) {
         const L = TEXT[items[0].locale === 'ko' ? 'ko' : 'en']
         const line = (r: any) => (L[r.kind as 'mention'] ?? r.kind).replace('{actor}', r.actor ?? '?').replace('{page}', `“${r.page}”`)
         const link = (r: any) => (base ? `${base}/#/p/${r.page_id}` : '')
         await transport.sendMail({
-          from, to: items[0].email, subject: `[Pagehouse] ${L.subject(items.length)}`,
+          from: sender(brand), to: items[0].email, subject: `[${brand}] ${L.subject(items.length)}`,
           text: items.map((r) => `- ${line(r)}${link(r) ? `\n  ${link(r)}` : ''}`).join('\n') + `\n\n${L.footer}`,
           html: `<ul>${items.map((r) => `<li>${link(r) ? `<a href="${esc(link(r))}">${esc(line(r))}</a>` : esc(line(r))}</li>`).join('')}</ul><p style="color:#888">${esc(L.footer)}</p>`,
         }).then(() => inc('pagehouse_mail_sent_total', { result: 'ok' }), (e) => (inc('pagehouse_mail_sent_total', { result: 'failed' }), console.error(`mail to user ${items[0].user_id} failed:`, e.message)))
