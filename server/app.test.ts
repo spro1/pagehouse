@@ -8,7 +8,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createApp, hangulBigrams, setupToken } from './app.ts'
 import { pruneFiles } from './admin.ts'
-import { brandCss, brandHtml, contrastOnWhite } from './html.ts'
+import { brandCss, brandHtml, contrastOnWhite, safeHref } from './html.ts'
+import { toMarkdown } from './markdown.ts'
 import { openDb } from './db.ts'
 
 // The tests stand behind one pretend proxy, so X-Forwarded-For names the caller.
@@ -1482,4 +1483,32 @@ test('sessions last a day unless SESSION_HOURS says otherwise', async () => {
   const sid = res.headers.get('set-cookie')!.split(';')[0].slice(4)
   const { hours } = (await db.query(`SELECT round(extract(epoch FROM expires_at - now()) / 3600) AS hours FROM sessions WHERE token_hash = encode(sha256($1::bytea), 'hex')`, [sid])).rows[0]
   assert.equal(Number(hours), 24)
+})
+
+test('links a browser must never follow (javascript: and the like) are taken out of saved pages and exports', async () => {
+  for (const ok of ['https://x.co', 'HTTP://X.CO', 'mailto:a@b.co', 'tel:+8210', '#top', '/p/1', '../a.md', 'page.md'])
+    assert.ok(safeHref(ok), ok)
+  for (const bad of ['javascript:alert(1)', ' JavaScript:alert(1)', 'java\tscript:alert(1)', '\u0001javascript:x', 'data:text/html,<b>', 'vbscript:x'])
+    assert.ok(!safeHref(bad), bad)
+  const a = client()
+  await a.call('POST', '/api/auth/login', { email: 'a@b.co', password: 'password1' })
+  const [space] = await (await a.call('GET', '/api/spaces')).json()
+  const text = (href: string) => ({ type: 'text', text: href.startsWith('https') ? 'ok' : 'bad', marks: [{ type: 'bold' }, { type: 'link', attrs: { href } }] })
+  const doc = { type: 'doc', content: [
+    { type: 'paragraph', content: [text('javascript:alert(1)'), text('https://ok.co')] },
+    { type: 'linkCard', attrs: { href: 'java\nscript:alert(2)', title: 'card' } },
+  ] }
+  // The link mark goes, its text and other marks stay; a card keeps its title but loses the address.
+  const check = async (id: number) => {
+    const d = (await db.query('SELECT doc FROM pages WHERE id = $1', [id])).rows[0].doc
+    assert.deepEqual(d.content[0].content.map((n: any) => n.marks), [[{ type: 'bold' }], [{ type: 'bold' }, { type: 'link', attrs: { href: 'https://ok.co' } }]])
+    assert.deepEqual(d.content[1].attrs, { href: '', title: 'card' })
+  }
+  const page = await (await a.call('POST', '/api/pages', { spaceId: space.id, title: 'Links', doc })).json()
+  await check(page.id)
+  assert.equal((await a.call('PUT', `/api/pages/${page.id}`, { title: 'Links', doc, version: 1 })).status, 200)
+  await check(page.id)
+  // Pages stored before this check still export without the address.
+  const md = toMarkdown('Links', doc)
+  assert.ok(!/script:/.test(md) && md.includes('**bad**') && md.includes('[**ok**](https://ok.co)') && md.includes('[card](#)'), md)
 })

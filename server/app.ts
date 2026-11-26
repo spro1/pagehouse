@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { tx, type Db } from './db.ts'
 import { branding as readBranding, brandName, metricsText, pruneFiles, registerAdmin, saveBranding, uploadAllowed } from './admin.ts'
 import { registerExport } from './export.ts'
-import { isColor } from './html.ts'
+import { cleanLinks, isColor } from './html.ts'
 import { registerSso, registerSsoAdmin, ssoLogoutUrl, ssoSource } from './sso.ts'
 import { createCollab } from './collab.ts'
 import { relayDownSince } from './cluster.ts'
@@ -696,7 +696,7 @@ export function createApp(db: Db, dataDir: string) {
       if (role === 'view') return fail(c, 403, 'no_edit_permission')
     }
     // Templates send a starting doc.
-    const doc = b.doc?.type === 'doc' ? b.doc : EMPTY_DOC
+    const doc = b.doc?.type === 'doc' ? cleanLinks(b.doc) : EMPTY_DOC
     const user = c.get('user')
     const row = await one(
       `INSERT INTO pages (space_id, parent_id, kind, title, doc, text, position, created_by, updated_by)
@@ -1033,6 +1033,7 @@ export function createApp(db: Db, dataDir: string) {
   // Saves a page and its history. `version` is the optimistic lock (null for the live editing room, which
   // merges everyone's edits itself). Returns null when the version no longer matches.
   async function savePage(pageId: number, userId: number, title: string, doc: unknown, o: { version: number | null; checkpoint?: boolean }) {
+    doc = cleanLinks(doc)
     let newlyMentioned: number[] = []
     const r = await tx(db, async (q) => {
       // The version check and bump happen in one UPDATE, so two writers holding the same version can't both succeed.
