@@ -3,7 +3,7 @@ import { api, toast, type PageNode, type Space, type User } from './api.ts'
 import { t } from './i18n.ts'
 import { Icon } from './icons.tsx'
 import { Bell } from './Notifications.tsx'
-import { confirmDialog, copyText, Avatar } from './ui.tsx'
+import { confirmDialog, copyText, Avatar, Brand, useBranding } from './ui.tsx'
 import { applyTheme, theme as currentTheme, type Theme } from './theme.ts'
 
 type Props = {
@@ -23,9 +23,12 @@ export function Sidebar(p: Props) {
     return () => removeEventListener('mousedown', close)
   }, [spaceMenu])
   const isMac = /Mac|iPhone|iPad/.test(navigator.platform)
+  // Only once an admin set a name or logo: the default look keeps the space switcher on top.
+  const brand = useBranding()
 
   return (
     <nav className="sidebar" aria-label={t('nav.label')}>
+      {(brand.name || brand.logo) && <a className="nav-brand" href="#/"><Brand /></a>}
       <div className="sidebar-top">
         <div className="space-switch" ref={menuRef}>
           <button className="space-btn" onClick={() => setSpaceMenu(!spaceMenu)} aria-expanded={spaceMenu} aria-haspopup="menu">

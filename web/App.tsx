@@ -28,7 +28,7 @@ if ('requestIdleCallback' in window) requestIdleCallback(() => void loadPageView
 else setTimeout(() => void loadPageView(), 1500)
 import { Admin, Home, LangSelect, NewSpaceModal, Palette, Settings, Trash } from './screens.tsx'
 import type { Template } from './templates.ts'
-import { Hosts } from './ui.tsx'
+import { Brand, Hosts, productName } from './ui.tsx'
 import { ImportModal } from './ImportModal.tsx'
 import { SpaceSettings } from './SpaceSettings.tsx'
 import { ExportPage } from './ExportPage.tsx'
@@ -137,9 +137,7 @@ function Auth({ route, onDone }: { route: Route; onDone: (u: User) => void }) {
           }
         }}
       >
-        <div className="brand">
-          <span className="logo">P</span> {t('app.name')}
-        </div>
+        <Brand />
         <h1>{t(`auth.${which}.title`)}</h1>
         <p className="muted">{t(`auth.${which}.sub`)}</p>
         {status.sso && mode === 'login' && !status.needsSetup && (
@@ -196,7 +194,7 @@ function MustChangePassword({ me, onDone }: { me: User; onDone: () => void }) {
           setError(err.message)
         }
       }}>
-        <div className="brand"><span className="logo">P</span> {t('app.name')}</div>
+        <Brand />
         <h1>{t('auth.temp.title')}</h1>
         <p className="muted">{t('auth.temp.sub', { name: me.name })}</p>
         <label>{t('auth.temp.current')}<input name="current" type="password" required autoComplete="current-password" autoFocus /></label>
@@ -451,7 +449,7 @@ class Crash extends Component<{ children: ReactNode }, { error: Error | null }> 
       <div className="screen">
         <div className="empty-box">
           <p><b>{t('crash.title')}</b></p>
-          <p className="muted small">{t('crash.body')}</p>
+          <p className="muted small">{t('crash.body', { name: productName() })}</p>
           <button className="primary" onClick={() => location.reload()}>{t('crash.reload')}</button>
         </div>
       </div>

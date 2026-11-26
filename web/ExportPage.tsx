@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, type Space } from './api.ts'
 import { t } from './i18n.ts'
 import { Icon } from './icons.tsx'
-import { toast } from './ui.tsx'
+import { productName, toast } from './ui.tsx'
 
 /** Export a space, or a page with its subpages: pick the format, then wait here while the file is built. */
 export function ExportPage({ params }: { params: URLSearchParams }) {
@@ -39,7 +39,7 @@ export function ExportPage({ params }: { params: URLSearchParams }) {
   const option = (f: 'md' | 'html') => (
     <label className={`export-option ${format === f ? 'on' : ''}`}>
       <input type="radio" name="format" checked={format === f} onChange={() => setFormat(f)} disabled={busy} />
-      <span><b>{t(`export.${f}`)}</b><small className="muted">{t(`export.${f}.sub`)}</small></span>
+      <span><b>{t(`export.${f}`)}</b><small className="muted">{t(`export.${f}.sub`, { name: productName() })}</small></span>
     </label>
   )
   return (
