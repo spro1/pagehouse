@@ -1460,15 +1460,18 @@ test('two-syllable Korean search goes through the Hangul pair index, in pages an
   assert.ok(hits.results.some((r: any) => r.id === page.id), 'found through the comment')
   assert.ok(!(await admin.json('GET', `/api/search?q=${encodeURIComponent('장애')}&scope=title`)).results.some((r: any) => r.id === page.id))
   // With a sequential scan ruled out, the plan uses the pair indexes (small test tables would otherwise be scanned).
+  // Plain index scans too: for the UNION the planner sometimes prefers walking pages_pkey in order and filtering.
   const plan = await db.connect()
   try {
     await plan.query('SET enable_seqscan = off')
+    await plan.query('SET enable_indexscan = off')
     const text = (await plan.query(`EXPLAIN SELECT x.id FROM pages x WHERE x.grams @> '{장애}'::text[] AND x.text ILIKE '%장애%'
       UNION SELECT cm.page_id FROM comments cm WHERE cm.grams @> '{장애}'::text[] AND cm.body ILIKE '%장애%'`)).rows.map((r) => r['QUERY PLAN']).join('\n')
     assert.match(text, /pages_grams/)
     assert.match(text, /comments_grams/)
   } finally {
     await plan.query('RESET enable_seqscan')
+    await plan.query('RESET enable_indexscan')
     plan.release()
   }
 })
