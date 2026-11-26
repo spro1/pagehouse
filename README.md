@@ -37,7 +37,7 @@ An open-source, self-hosted alternative to Confluence. **[pagehouse website](htt
 | **Moving parts** | The app, PostgreSQL and a backup job: three containers, no external services |
 | **Data safety** | Trash that never empties itself, version history, daily automatic backups, a backup before every upgrade and restore |
 | **Leaving** | Export any space as Markdown or as HTML you can open in a browser, with attachments. Your data isn't tied to a format |
-| **Sign-in** | Local accounts with invite links, or OpenID Connect SSO (tested with Keycloak). Forgotten passwords: an email reset link, or a temporary password from an admin |
+| **Sign-in** | Local accounts with invite links, or OpenID Connect SSO (tested with Keycloak; provider groups can become wiki groups and administrators). Forgotten passwords: an email reset link, or a temporary password from an admin |
 
 ## Features
 
@@ -46,14 +46,14 @@ An open-source, self-hosted alternative to Confluence. **[pagehouse website](htt
 | ✍️ **Editor** | A formatting toolbar and `/` block menu, Markdown shortcuts, text colors, tables with merged, split and colored cells, images you resize and caption, code highlighting for 45 languages (with a copy button), Mermaid diagrams, info and warning panels, to-dos, link cards, images and files by paste or drop, `@` mentions, an emoji per page |
 | 🏠 **Home and notifications** | A landing page with recently viewed pages, new pages, and docs and comments that mention you; watch pages for edits; unread notifications by email (SMTP) or to a Slack, Mattermost or Teams webhook |
 | 🗂️ **Organize** | Spaces, nested pages with drag and drop (`⋯` and `+` on every page in the tree), copying with subpages, labels, favorites and recently viewed, built-in templates plus your own, trash with undo |
-| 🔎 **Search** | ⌘K quick search and a full search page: every word must match (Korean particles handled), comments and attachment names included, filters by space, author and date |
+| 🔎 **Search** | ⌘K quick search and a full search page: every word must match (Korean particles handled, two-syllable Korean words indexed), comments and attachment names included, filters by space, author and date |
 | 🔒 **Permissions** | Per-space access (everyone edits, everyone views, private) for people or groups, plus per-page view/edit restrictions. What you can't see never appears in search, files or history |
 | 💬 **Collaborate** | Real-time co-editing with live cursors, inline comments on selected text, comments with replies and resolve, version history with diff and restore |
 | 🛡️ **Audit log** | Sign-ins (failed ones too), account, group and permission changes, deletions and exports, for admins |
 | 👤 **Accounts** | Change your name and profile photo, reset a forgotten password by email (with SMTP), or get a temporary password from an admin that must be changed at first sign-in |
-| 🤖 **AI agents** | Built-in MCP server: agents search, read and write pages with a personal API token and exactly your permissions |
+| 🤖 **AI agents** | Built-in MCP server: agents search, read and write pages with a personal API token (expires after 30, 90 or 365 days) and exactly your permissions |
 | 📦 **Migrate** | Import Confluence CSV and HTML exports (page tree and order, folders, attachments, labels; code, panels, Jira, drawio and other macros), Notion, Markdown and HTML; export Markdown or HTML ZIPs and pages as PDF |
-| 📊 **Admin** | Storage use against a limit, disk space, backup status and retention policy, activity, largest files; SSO set up on a screen; webhooks that send signed page and comment events; your own name, logo, favicon and accent color |
+| 📊 **Admin** | Storage use against a limit, disk space, backup status and retention policy, activity, largest files; SSO set up on a screen; webhooks that send signed page and comment events (failed deliveries are retried, also after a restart); your own name, logo, favicon and accent color |
 | 🌐 **Interface** | English and Korean, light and dark themes, set per account |
 
 <table>
@@ -124,7 +124,7 @@ This deploys PostgreSQL, a daily backup CronJob and a generated database passwor
 
 ## Day-one checklist
 
-1. **Administrator.** Open `http://<server>:3000` and create the first account. It becomes the administrator, and sign-up closes after it.
+1. **Administrator.** Open `http://<server>:3000` and create the first account with the setup token the installer printed (also in `docker compose logs app`). It becomes the administrator, and sign-up closes after it.
 2. **HTTPS.** Put it behind your reverse proxy (nginx, Caddy, …) and set `BIND_ADDRESS=127.0.0.1` and `TRUST_PROXY=1` in `.env`. See the [examples](docs/install.md#https).
    - Plain HTTP on an IP address works too, but use HTTPS for the sake of the sign-in cookie.
 3. **Invite the team.** In **Admin → People**, create invite links and send them over chat. No mail server is needed.

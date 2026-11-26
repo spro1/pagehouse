@@ -5,7 +5,7 @@ import { copyText } from './ui.tsx'
 
 type Sso = {
   source: 'env' | 'admin'; enabled: boolean; issuer: string; clientId: string; hasSecret: boolean; label: string
-  autoCreate: boolean; trustEmail: boolean; passwordLogin: boolean; redirectUri: string; encrypted: boolean
+  autoCreate: boolean; trustEmail: boolean; passwordLogin: boolean; groupsClaim: string; adminGroup: string; redirectUri: string; encrypted: boolean
 }
 
 /** Admin tab: single sign-on with an OpenID Connect provider (Keycloak, Entra ID, Google Workspace, Okta, …). */
@@ -77,6 +77,9 @@ export function SsoSettings() {
       {field(t('sso.secret'), <input type="password" autoComplete="new-password" value={secret} disabled={locked}
         placeholder={s.hasSecret ? t('sso.secret.kept') : ''} onChange={(e) => setSecret(e.target.value)} />, t('sso.secret.hint'))}
       {field(t('sso.label'), <input value={s.label} disabled={locked} placeholder={t('sso.label.ph')} maxLength={60} onChange={(e) => set({ label: e.target.value })} />)}
+
+      {field(t('sso.groupsClaim'), <input value={s.groupsClaim} disabled={locked} maxLength={100} onChange={(e) => set({ groupsClaim: e.target.value })} />, t('sso.groupsClaim.hint'))}
+      {field(t('sso.adminGroup'), <input value={s.adminGroup} disabled={locked} maxLength={100} onChange={(e) => set({ adminGroup: e.target.value })} />, t('sso.adminGroup.hint'))}
 
       {check1('autoCreate', t('sso.autoCreate'), t('sso.autoCreate.hint'))}
       {check1('passwordLogin', t('sso.passwordLogin'), t('sso.passwordLogin.hint'))}

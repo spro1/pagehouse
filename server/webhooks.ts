@@ -13,6 +13,8 @@ import { openSecret, sealSecret } from './sso.ts'
 import { TEXT } from './mail.ts'
 import { inc } from './metrics.ts'
 
+const MAX_ATTEMPTS = 5
+
 export const EVENTS = ['page.created', 'page.updated', 'page.deleted', 'comment.created'] as const
 type Event = (typeof EVENTS)[number]
 
@@ -101,26 +103,42 @@ export function createWebhooks(db: Db) {
   // shared table would make that exact across instances.
   const lastUpdate = new Map<string, number>()
 
+  /** One attempt; records the outcome on the webhook. */
   async function deliver(hook: { id: number; url: string; secret: string }, event: string, body: string) {
-    const sig = createHmac('sha256', openSecret(hook.secret)).update(body).digest('hex')
-    const headers = { 'x-pagehouse-event': event, 'x-pagehouse-signature': `sha256=${sig}` }
     let status = 0
     let error: string | null = null
-    // shortcut: retries live in memory (a restart drops pending ones); an outbox table would survive restarts.
-    for (const wait of [0, 5_000, 30_000]) {
-      if (wait) await new Promise((r) => setTimeout(r, wait))
-      try {
-        status = await postJson(hook.url, body, headers, false)
-        error = status >= 200 && status < 300 ? null : `HTTP ${status}`
-      } catch (e) {
-        status = 0
-        error = (e as Error).message
-      }
-      if (!error) break
+    try {
+      // Inside the try: a secret that can't be decrypted (SECRET_KEY missing or changed) is a failed attempt like any other.
+      const sig = `sha256=${createHmac('sha256', openSecret(hook.secret)).update(body).digest('hex')}`
+      // x-event / x-signature carry the same values under the names Taskhouse uses, so one receiver handles both.
+      const headers = { 'x-pagehouse-event': event, 'x-pagehouse-signature': sig, 'x-event': event, 'x-signature': sig }
+      status = await postJson(hook.url, body, headers, false)
+      error = status >= 200 && status < 300 ? null : `HTTP ${status}`
+    } catch (e) {
+      error = (e as Error).message
     }
-    inc('pagehouse_webhook_deliveries_total', { kind: 'admin', result: error ? 'failed' : 'ok' })
     await db.query('UPDATE webhooks SET last_at = now(), last_status = $1, last_error = $2 WHERE id = $3', [status || null, error, hook.id])
     return { status, error }
+  }
+
+  /** Sends due deliveries from webhook_jobs. Failures wait 1, 4, 16, 64 minutes, then give up. Returns how many ran. */
+  async function runJobs() {
+    const jobs = (await db.query(
+      `UPDATE webhook_jobs j SET run_at = now() + interval '5 minutes', attempts = attempts + 1 FROM webhooks h
+       WHERE j.id IN (SELECT id FROM webhook_jobs WHERE done_at IS NULL AND run_at <= now() ORDER BY run_at LIMIT 20 FOR UPDATE SKIP LOCKED)
+         AND h.id = j.hook_id
+       RETURNING j.id, j.event, j.body, j.attempts, h.id AS hook_id, h.url, h.secret`,
+    )).rows
+    await Promise.all(jobs.map(async (j) => {
+      const { error } = await deliver({ id: j.hook_id, url: j.url, secret: j.secret }, j.event, j.body)
+      const last = !error || j.attempts >= MAX_ATTEMPTS
+      if (last) inc('pagehouse_webhook_deliveries_total', { kind: 'admin', result: error ? 'failed' : 'ok' })
+      await db.query(
+        `UPDATE webhook_jobs SET last_error = $2, done_at = CASE WHEN $3 THEN now() END, run_at = now() + make_interval(mins => $4) WHERE id = $1`,
+        [j.id, error, last, 4 ** (j.attempts - 1)],
+      )
+    }))
+    return jobs.length
   }
 
   /** Sends an event about a page to every matching webhook. Call without awaiting; failures are only recorded. */
@@ -157,9 +175,29 @@ export function createWebhooks(db: Db) {
       actor: actor ? { id: Number(actor.id), name: actor.name } : null,
       ...extra,
     })
-    await Promise.all(hooks.map((h) => deliver(h, event, body)))
+    await db.query('INSERT INTO webhook_jobs (hook_id, event, body) SELECT unnest($1::bigint[]), $2, $3', [hooks.map((h) => h.id), event, body])
+    void tick()
   }
   const fire = (...a: Parameters<typeof emit>) => void emit(...a).catch((e) => console.error('webhook:', e.message))
+
+  let busy = false
+  const tick = async () => {
+    if (busy) return
+    busy = true
+    try {
+      while ((await runJobs()) === 20);
+    } catch (e) {
+      console.error('webhook jobs:', (e as Error).message)
+    } finally {
+      busy = false
+    }
+  }
+  /** Retries due deliveries every few seconds on every instance (jobs are claimed), and forgets old ones daily. */
+  function start() {
+    setInterval(tick, 5_000).unref()
+    const prune = () => db.query(`DELETE FROM webhook_jobs WHERE done_at < now() - interval '30 days'`).catch((e) => console.error('webhook jobs:', e.message))
+    setInterval(prune, 86400_000).unref()
+  }
 
   /** Admin → Webhooks. Registered behind the session check, so only admins reach it. */
   function register(app: Hono<any>, fail: (c: Context, status: 400 | 404, code: string) => Response) {
@@ -228,5 +266,5 @@ export function createWebhooks(db: Db) {
     })
   }
 
-  return { emit: fire, register }
+  return { emit: fire, register, start, runJobs }
 }

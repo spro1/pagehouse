@@ -57,13 +57,20 @@ Then sign out and try the button on the sign-in page, ideally in a private windo
 
 The client secret stays on the server, encrypted with `SECRET_KEY` from `.env` (so database backups don't reveal it): the screen never shows it again, and leaving the field empty keeps the saved one. Changes are recorded in the audit log (without the secret).
 
+### Groups and administrators
+
+At each sign-in the wiki reads the person's groups from the **groups claim** (`groups` unless you change it on the SSO screen) and makes them their wiki groups, creating groups that don't exist yet. A Keycloak path like `/Engineering` becomes `Engineering`.
+- Memberships added this way are replaced at the next sign-in. Memberships an admin added in **Admin → Groups** are never touched.
+- If the provider doesn't send the claim at all, nothing changes. Keycloak needs a *Group Membership* mapper (turn off *Full group path* or not, both work); Entra ID sends group IDs unless configured to send names.
+- **Administrator group** (optional): its members become administrators, and stop being one when they leave it. Administrators with a wiki password keep their role, so there is always a way in.
+
 ### Passwords and SSO accounts
 
 The wiki's **reset link** and **temporary password** set a password *in the wiki* only. They don't touch the password at the provider, which people change there. Used on an account created by SSO, they add a wiki password, so with *Allow password sign-in* on, that person can then sign in either way; with it off, the password works for administrators only.
 
 ### Setting it in `.env` instead
 
-For automated installs, the same settings can come from environment variables (`OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_LABEL`, `OIDC_AUTO_CREATE`, `PASSWORD_LOGIN`, `OIDC_TRUST_EMAIL`; see the [install guide](install.md#configuration-env)). When they're set, they win and the screen is read-only. Restart after changing them.
+For automated installs, the same settings can come from environment variables (`OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_LABEL`, `OIDC_AUTO_CREATE`, `PASSWORD_LOGIN`, `OIDC_TRUST_EMAIL`, `OIDC_GROUPS_CLAIM`, `OIDC_ADMIN_GROUP`; see the [install guide](install.md#configuration-env)). When they're set, they win and the screen is read-only. Restart after changing them.
 
 ## Troubleshooting
 

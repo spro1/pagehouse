@@ -146,7 +146,9 @@ function Auth({ route, onDone }: { route: Route; onDone: (u: User) => void }) {
             {status.passwordLogin && <div className="divider muted small">{t('auth.sso.or')}</div>}
           </>
         )}
-        {mode === 'register' && <label>{t('auth.name')}<input name="name" required autoComplete="name" autoFocus /></label>}
+        {status.needsSetup && <label>{t('auth.setupToken')}<input name="setupToken" required autoComplete="off" autoFocus spellCheck={false} />
+          <small className="muted">{t('auth.setupToken.hint')}</small></label>}
+        {mode === 'register' && <label>{t('auth.name')}<input name="name" required autoComplete="name" autoFocus={!status.needsSetup} /></label>}
         {mode !== 'reset' && <label>{t('auth.email')}<input name="email" type="email" required autoComplete="email" autoFocus={mode === 'login'} /></label>}
         {mode === 'forgot' && sent && <div className="banner ok" role="status">{t('auth.forgot.sent')}</div>}
         {mode !== 'forgot' && <label>

@@ -26,7 +26,10 @@ import { mentionedInDoc, mentionedInText, notify, registerPeople } from './peopl
 type User = { id: number; email: string; name: string; role: string; locale: string | null; theme: string | null }
 const LOCALES = ['en', 'ko']
 type Env = { Variables: { user: User } }
-const SESSION_DAYS = 30
+// How long a sign-in lasts (SESSION_HOURS, the name Taskhouse uses); one day by default.
+const SESSION_HOURS = Number(process.env.SESSION_HOURS) || 24
+// An account that signed in by SSO but hasn't for this long is probably gone at the provider: its API tokens stop.
+const TOKEN_SSO_GRACE_DAYS = Number(process.env.TOKEN_SSO_GRACE_DAYS ?? 30)
 const INLINE_MIME = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
 export const normLabel = (s: unknown) =>
   String(s ?? '').trim().toLowerCase().replace(/^#/, '').replace(/[\s_]+/g, '-').replace(/[^\p{L}\p{N}-]/gu, '').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 50)
@@ -75,12 +78,23 @@ const ERRORS = {
   bad_group: 'A group needs a unique name.',
   preview_unavailable: 'No preview for this link.',
   use_sso: 'Sign in with single sign-on.',
+  bad_setup_token: 'Wrong setup token. It is in the server log (or SETUP_TOKEN in .env).',
 } as const
 type ErrorCode = keyof typeof ERRORS
 const fail = (c: Context, status: 400 | 401 | 403 | 404 | 409 | 413 | 429, code: string) =>
   c.json({ error: ERRORS[code as ErrorCode] ?? code, code }, status)
 
 const sha256 = (v: string | Buffer) => createHash('sha256').update(v).digest('hex')
+
+/** The token that creating the first account needs: SETUP_TOKEN, else one made on first start (kept in settings so every
+ *  instance prints the same). Stored as is: it only lives until the admin exists, and whoever can read the database
+ *  already controls the install. Null once there are users. */
+export async function setupToken(q: Pick<Db, 'query'>): Promise<string | null> {
+  if ((await q.query('SELECT 1 FROM users LIMIT 1')).rowCount) return null
+  if (process.env.SETUP_TOKEN) return process.env.SETUP_TOKEN
+  await q.query(`INSERT INTO settings (key, value) VALUES ('setup_token', $1) ON CONFLICT (key) DO NOTHING`, [JSON.stringify(randomBytes(18).toString('base64url'))])
+  return (await q.query(`SELECT value FROM settings WHERE key = 'setup_token'`)).rows[0].value
+}
 
 function hashPassword(password: string, salt = randomBytes(16).toString('hex')) {
   return `${salt}:${scryptSync(password, salt, 64).toString('hex')}`
@@ -99,6 +113,13 @@ export function koreanStem(term: string) {
   if (!/[가-힣]$/.test(term)) return term
   for (const p of PARTICLES) if (term.endsWith(p) && [...term.slice(0, -p.length)].length >= 2) return term.slice(0, -p.length)
   return term
+}
+
+/** Adjacent Hangul syllable pairs, as the database's hangul_bigrams() makes them (migration 024). */
+export function hangulBigrams(t: string) {
+  const out = new Set<string>()
+  for (let i = 0; i + 1 < t.length; i++) if (/^[가-힣]{2}$/.test(t.slice(i, i + 2))) out.add(t.slice(i, i + 2))
+  return [...out]
 }
 
 // ~120 characters around the first match, starting and ending on word boundaries.
@@ -237,9 +258,9 @@ export function createApp(db: Db, dataDir: string) {
 
   async function startSession(c: Context, userId: number) {
     const token = randomBytes(32).toString('hex')
-    await db.query(`INSERT INTO sessions VALUES ($1, $2, now() + interval '${SESSION_DAYS} days')`, [sha256(token), userId])
+    await db.query(`INSERT INTO sessions VALUES ($1, $2, now() + make_interval(hours => $3))`, [sha256(token), userId, SESSION_HOURS])
     setCookie(c, 'sid', token, {
-      httpOnly: true, sameSite: 'Lax', path: '/', maxAge: SESSION_DAYS * 86400,
+      httpOnly: true, sameSite: 'Lax', path: '/', maxAge: SESSION_HOURS * 3600,
       // Many internal installs run on plain http; a Secure cookie would never come back there.
       secure: new URL(c.req.url).protocol === 'https:' || c.req.header('x-forwarded-proto') === 'https',
     })
@@ -272,6 +293,8 @@ export function createApp(db: Db, dataDir: string) {
     const name = str(b.name, 100)
     if (!email || !/^\S+@\S+\.\S+$/.test(email) || !name || typeof b.password !== 'string' || b.password.length < 8)
       return fail(c, 400, 'invalid_signup')
+    // Guessing the setup token counts like guessing a password.
+    if (!(await one('SELECT 1 FROM users LIMIT 1')) && throttled(c, 'setup')) return tooMany(c)
     const hash = hashPassword(b.password)
     const r = await tx(db, async (q) => {
       // Serialize registrations so two simultaneous first signups can't both become admin.
@@ -283,6 +306,12 @@ export function createApp(db: Db, dataDir: string) {
             [sha256(b.invite)])).rows[0]
         : undefined
       if (b.invite && !invite) return { status: 403 as const, error: 'invite_invalid' }
+      // The first account becomes admin, so it needs the token from the server log: whoever runs the server claims it.
+      if (first) {
+        const want = await setupToken(q)
+        if (!want || typeof b.setupToken !== 'string' || sha256(b.setupToken.trim()) !== sha256(want)) return { status: 403 as const, error: 'bad_setup_token' }
+        await q.query(`DELETE FROM settings WHERE key = 'setup_token'`)
+      }
       if (!first && !invite && process.env.ALLOW_SIGNUP !== '1') return { status: 403 as const, error: 'signup_closed' }
       if ((await q.query('SELECT 1 FROM users WHERE email = $1', [email])).rowCount)
         return { status: 409 as const, error: 'email_taken' }
@@ -293,6 +322,7 @@ export function createApp(db: Db, dataDir: string) {
       if (first) await q.query(`INSERT INTO spaces (key, name) VALUES ('GENERAL', 'General')`)
       return { id }
     })
+    if ('error' in r && r.error === 'bad_setup_token') failed(c, 'setup')
     if ('error' in r) return fail(c, r.status!, r.error!)
     await startSession(c, r.id)
     return c.json(await one('SELECT id, email, name, role, locale FROM users WHERE id = $1', [r.id]))
@@ -385,9 +415,11 @@ export function createApp(db: Db, dataDir: string) {
       : bearer
         ? await one(
             `UPDATE api_tokens t SET last_used_at = now() FROM users u
-             WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND u.id = t.user_id AND u.disabled_at IS NULL
+             WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND (t.expires_at IS NULL OR t.expires_at > now())
+               AND u.id = t.user_id AND u.disabled_at IS NULL
+               AND (u.last_sso_at IS NULL OR u.last_sso_at > now() - make_interval(days => $2))
              RETURNING u.id, u.email, u.name, u.role, u.locale, u.theme, u.avatar IS NOT NULL AS avatar, u.must_change_password AS "mustChangePassword"`,
-            [sha256(bearer)],
+            [sha256(bearer), TOKEN_SSO_GRACE_DAYS],
           )
         : undefined
     if (!user) return fail(c, 401, 'login_required')
@@ -511,17 +543,19 @@ export function createApp(db: Db, dataDir: string) {
   })
 
   app.get('/api/me/tokens', async (c) =>
-    c.json(await all(`SELECT id, name, created_at AS "createdAt", last_used_at AS "lastUsedAt" FROM api_tokens
-      WHERE user_id = $1 AND revoked_at IS NULL ORDER BY id DESC`, [c.get('user').id])))
+    c.json(await all(`SELECT id, name, created_at AS "createdAt", expires_at AS "expiresAt", last_used_at AS "lastUsedAt" FROM api_tokens
+      WHERE user_id = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now()) ORDER BY id DESC`, [c.get('user').id])))
   app.post('/api/me/tokens', async (c) => {
     // A token can't mint more tokens: only a signed-in browser session can.
     if (!getCookie(c, 'sid')) return fail(c, 403, 'login_required')
     const b = await c.req.json().catch(() => ({}))
     const name = str(b.name, 100)
-    if (!name) return fail(c, 400, 'bad_request')
+    const days = Number(b.days ?? 90)
+    if (!name || !Number.isInteger(days) || days < 1 || days > 365) return fail(c, 400, 'bad_request')
     const token = `ph_${randomBytes(24).toString('base64url')}`
-    const row = await one('INSERT INTO api_tokens (user_id, name, token_hash) VALUES ($1, $2, $3) RETURNING id', [c.get('user').id, name, sha256(token)])
-    return c.json({ id: row.id, name, token })
+    const row = await one(`INSERT INTO api_tokens (user_id, name, token_hash, expires_at) VALUES ($1, $2, $3, now() + make_interval(days => $4))
+      RETURNING id, expires_at AS "expiresAt"`, [c.get('user').id, name, sha256(token), days])
+    return c.json({ id: row.id, name, expiresAt: row.expiresAt, token })
   })
   app.delete('/api/me/tokens/:id', async (c) => {
     const r = await db.query('UPDATE api_tokens SET revoked_at = now() WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL', [id(c), c.get('user').id])
@@ -1277,11 +1311,16 @@ export function createApp(db: Db, dataDir: string) {
     const add = (v: unknown) => (params.push(v), `$${params.length}`)
     const where = [`p.deleted_at IS NULL`, `p.kind = 'page'`, visible('p', 1, 2)]
     for (const term of terms) {
-      const like = add(`%${koreanStem(term).replace(/[\\%_]/g, '\\$&')}%`)
+      const stem = koreanStem(term)
+      const like = add(`%${stem.replace(/[\\%_]/g, '\\$&')}%`)
+      // Hangul pairs narrow through their index first: pg_trgm's can't serve a two-syllable word like "배포".
+      const grams = hangulBigrams(stem)
+      const has = (alias: string) => (grams.length ? `${alias}.grams @> ${add(grams)}::text[] AND ` : '')
       // Body searches also look in comments and attachment names.
-      where.push(titleOnly ? `p.title ILIKE ${like}` : `(p.title ILIKE ${like} OR p.text ILIKE ${like}
-        OR EXISTS (SELECT 1 FROM comments cm WHERE cm.page_id = p.id AND cm.deleted_at IS NULL AND cm.body ILIKE ${like})
-        OR EXISTS (SELECT 1 FROM attachments at WHERE at.page_id = p.id AND at.name ILIKE ${like}))`)
+      where.push(titleOnly ? `(${has('p')}p.title ILIKE ${like})` : `p.id IN (
+        SELECT x.id FROM pages x WHERE ${has('x')}(x.title ILIKE ${like} OR x.text ILIKE ${like})
+        UNION SELECT cm.page_id FROM comments cm WHERE ${has('cm')}cm.deleted_at IS NULL AND cm.body ILIKE ${like}
+        UNION SELECT at.page_id FROM attachments at WHERE at.name ILIKE ${like})`)
     }
     if (/^\d+$/.test(qp('space'))) where.push(`p.space_id = ${add(Number(qp('space')))}`)
     if (/^\d+$/.test(qp('author'))) where.push(`p.updated_by = ${add(Number(qp('author')))}`)
@@ -1334,5 +1373,5 @@ export function createApp(db: Db, dataDir: string) {
     visibleFor: (c) => ({ sql: (alias, first) => visible(alias, first, first + 1), params: who(c) }),
   })
 
-  return Object.assign(app, { injectWebSocket: ws.injectWebSocket, collab })
+  return Object.assign(app, { injectWebSocket: ws.injectWebSocket, collab, webhooks: hooks })
 }

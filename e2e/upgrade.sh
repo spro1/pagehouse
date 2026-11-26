@@ -34,7 +34,9 @@ PW=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
 EMAIL=e2e@example.com
 J="$WORK/cookies"
 api() { curl -fsS -b "$J" -c "$J" -H 'content-type: application/json' "$@"; }
-api -d "{\"email\":\"$EMAIL\",\"name\":\"E2E\",\"password\":\"$PW\"}" "$H/api/auth/register" >/dev/null
+# Releases from 0.5.0 print a setup token that the first account needs; older ones ignore the field.
+SETUP=$(cd "$WORK/up" && $COMPOSE logs app 2>/dev/null | sed -n 's/.*setup token: //p' | tail -1 | tr -d '\r')
+api -d "{\"email\":\"$EMAIL\",\"name\":\"E2E\",\"password\":\"$PW\",\"setupToken\":\"$SETUP\"}" "$H/api/auth/register" >/dev/null
 SPACE=$(api "$H/api/spaces" | sed -n 's/^\[{"id":\([0-9]*\).*/\1/p')
 PAGE=$(api -d "{\"spaceId\":$SPACE,\"title\":\"Before upgrade\"}" "$H/api/pages" | sed -n 's/^{"id":\([0-9]*\).*/\1/p')
 api -X PUT -d '{"title":"Before upgrade","version":1,"doc":{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"survives the upgrade"}]}]}}' "$H/api/pages/$PAGE" >/dev/null
