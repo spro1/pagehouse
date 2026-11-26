@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { tx, type Db } from './db.ts'
 import { branding as readBranding, brandName, metricsText, pruneFiles, registerAdmin, saveBranding, uploadAllowed } from './admin.ts'
 import { registerExport } from './export.ts'
+import { isColor } from './html.ts'
 import { registerSso, registerSsoAdmin, ssoLogoutUrl, ssoSource } from './sso.ts'
 import { createCollab } from './collab.ts'
 import { relayDownSince } from './cluster.ts'
@@ -445,7 +446,7 @@ export function createApp(db: Db, dataDir: string) {
   const setBranding = (patch: object) => saveBranding(db, patch)
   app.get('/api/auth/branding', async (c) => {
     const b = await branding()
-    return c.json({ name: b.name, logo: b.logo?.split(':')[0] ?? null })
+    return c.json({ name: b.name, logo: b.logo?.split(':')[0] ?? null, accent: b.accent })
   })
   app.get('/api/auth/branding/logo', async (c) => {
     const logo = (await branding()).logo
@@ -458,10 +459,20 @@ export function createApp(db: Db, dataDir: string) {
   })
   app.put('/api/admin/branding', async (c) => {
     const b = await c.req.json().catch(() => ({}))
-    if (b.name !== null && typeof b.name !== 'string') return fail(c, 400, 'bad_request')
-    const name = b.name?.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 60) || null
-    await setBranding({ name })
-    return c.json({ name })
+    // Each field is optional; null brings back the default.
+    const patch: { name?: string | null; accent?: string | null } = {}
+    if ('name' in b) {
+      if (b.name !== null && typeof b.name !== 'string') return fail(c, 400, 'bad_request')
+      patch.name = b.name?.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 60) || null
+    }
+    if ('accent' in b) {
+      // Goes into a <style> on every page: nothing but #rrggbb.
+      if (b.accent !== null && !isColor(b.accent)) return fail(c, 400, 'bad_request')
+      patch.accent = b.accent?.toLowerCase() ?? null
+    }
+    if (!Object.keys(patch).length) return fail(c, 400, 'bad_request')
+    await setBranding(patch)
+    return c.json(patch)
   })
   app.put('/api/admin/branding/logo', async (c) => {
     const file = (await c.req.parseBody()).file

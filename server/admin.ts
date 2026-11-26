@@ -28,14 +28,14 @@ export async function storageLimit(db: Db): Promise<number | null> {
 }
 
 /** Name and logo set in Admin → Branding. The name falls back to Pagehouse everywhere (tab, mail, link previews). */
-type Branding = { name: string | null; logo: string | null }
+type Branding = { name: string | null; logo: string | null; accent: string | null }
 // Read on every page load, so kept for a short while. Other app instances see a change within BRAND_TTL.
 const BRAND_TTL = 30_000
 let brandCache: { at: number; value: Branding } | null = null
 export async function branding(db: Db): Promise<Branding> {
   if (brandCache && Date.now() - brandCache.at < BRAND_TTL) return brandCache.value
   const v = (await db.query(`SELECT value FROM settings WHERE key = 'branding'`)).rows[0]?.value ?? {}
-  brandCache = { at: Date.now(), value: { name: v.name || null, logo: v.logo || null } }
+  brandCache = { at: Date.now(), value: { name: v.name || null, logo: v.logo || null, accent: v.accent || null } }
   return brandCache.value
 }
 export async function saveBranding(db: Db, patch: Partial<Branding>) {

@@ -8,6 +8,9 @@ import { LANGS, lang, setLang, t, type Lang } from './i18n.ts'
 import { Icon } from './icons.tsx'
 import { TEMPLATES, type Template } from './templates.ts'
 import { Modal, confirmDialog, copyText, Avatar, bumpAvatar, applyBranding, logoUrl, useBranding } from './ui.tsx'
+import { contrastOnWhite } from '../server/html.ts'
+
+const DEFAULT_ACCENT = '#2f6feb'
 import { Monitor } from './Monitor.tsx'
 import { mentionsToNames, notificationText } from './Notifications.tsx'
 import { AccessChoice } from './SpaceSettings.tsx'
@@ -383,6 +386,9 @@ function BrandingSettings() {
   const b = useBranding()
   const [name, setName] = useState(b.name ?? '')
   useEffect(() => setName(b.name ?? ''), [b.name])
+  const [accent, setAccent] = useState(b.accent ?? DEFAULT_ACCENT)
+  useEffect(() => setAccent(b.accent ?? DEFAULT_ACCENT), [b.accent])
+  const ratio = contrastOnWhite(accent)
   const pick = useRef<HTMLInputElement>(null)
   const run = async (f: () => Promise<Partial<typeof b>>) => {
     try {
@@ -396,7 +402,7 @@ function BrandingSettings() {
     <section className="box">
       <h3>{t('brand.title')}</h3>
       <p className="muted small">{t('brand.sub')}</p>
-      <div className="form">
+      <div className="form brand-form">
       <form onSubmit={(e) => (e.preventDefault(), run(() => api('/api/admin/branding', { method: 'PUT', json: { name } })))}>
         <label>{t('brand.name')}
           <div className="row">
@@ -405,6 +411,19 @@ function BrandingSettings() {
           </div>
         </label>
       </form>
+      <form onSubmit={(e) => (e.preventDefault(), run(() => api('/api/admin/branding', { method: 'PUT', json: { accent } })))}>
+        <label>{t('brand.accent')}
+          <div className="row">
+            <input type="color" className="color-pick" value={accent} onChange={(e) => setAccent(e.target.value)} />
+            <code className="small">{accent}</code>
+            <button className="primary" disabled={accent === (b.accent ?? DEFAULT_ACCENT)}>{t('common.save')}</button>
+            {b.accent && <button type="button" className="link small danger" onClick={() => run(() => api('/api/admin/branding', { method: 'PUT', json: { accent: null } }))}>{t('brand.logo.reset')}</button>}
+          </div>
+        </label>
+      </form>
+      {ratio < 4.5
+        ? <p className="error small" role="status">{t('brand.accent.low', { r: ratio.toFixed(1) })}</p>
+        : <p className="muted small">{t('brand.accent.hint')}</p>}
       <div className="field">{t('brand.logo')}
       <div className="row">
         {b.logo ? <img className="logo img" src={logoUrl(b.logo)} alt="" /> : <span className="logo">P</span>}

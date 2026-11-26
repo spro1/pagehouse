@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createApp } from './app.ts'
 import { pruneFiles } from './admin.ts'
+import { brandCss, brandHtml, contrastOnWhite } from './html.ts'
 import { openDb } from './db.ts'
 
 // The tests stand behind one pretend proxy, so X-Forwarded-For names the caller.
@@ -1202,8 +1203,18 @@ test('branding: admins set name and logo; everyone, signed in or not, reads them
   const bob = client()
   await bob.json('POST', '/api/auth/register', { email: 'brand@b.co', name: 'Bob', password: 'password1', invite: token })
   const anon = client()
-  assert.deepEqual(await anon.json('GET', '/api/auth/branding'), { name: null, logo: null })
+  assert.deepEqual(await anon.json('GET', '/api/auth/branding'), { name: null, logo: null, accent: null })
   assert.equal((await bob.call('PUT', '/api/admin/branding', { name: 'Acme' })).status, 403)
+  // Accent: #rrggbb only (it goes into a <style>), saved without touching the name, null for the default.
+  for (const bad of ['red', '#fff', '#12345g', '#123456;}body{x:y', 3]) assert.equal((await admin.call('PUT', '/api/admin/branding', { accent: bad })).status, 400, String(bad))
+  assert.equal((await admin.call('PUT', '/api/admin/branding', {})).status, 400)
+  assert.deepEqual(await admin.json('PUT', '/api/admin/branding', { accent: '#AA3300' }), { accent: '#aa3300' })
+  assert.equal((await anon.json('GET', '/api/auth/branding')).accent, '#aa3300')
+  assert.match(brandHtml('<head></head>', { name: null, logo: null, accent: '#aa3300' }), /<style id="brand-css">html:root\{--accent:#aa3300;.*\[data-theme='dark'\]/)
+  assert.equal(brandCss('#fff;}x{'), '')
+  assert.ok(contrastOnWhite('#2f6feb') >= 4.5) // the default accent passes
+  assert.ok(contrastOnWhite('#ffd400') < 2)
+  await admin.call('PUT', '/api/admin/branding', { accent: null })
   assert.equal((await admin.call('PUT', '/api/admin/branding', { name: 1 })).status, 400)
   assert.equal((await admin.json('PUT', '/api/admin/branding', { name: '  Acme Wiki  ' })).name, 'Acme Wiki')
   const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='), (c) => c.charCodeAt(0))
@@ -1248,6 +1259,6 @@ test('branding: admins set name and logo; everyone, signed in or not, reads them
   assert.ok(kept.length > 0)
   for (const { sha256 } of kept) assert.equal(existsSync(file(sha256)), true, `attachment ${sha256}`)
   await admin.call('PUT', '/api/admin/branding', { name: '' })
-  assert.deepEqual(await anon.json('GET', '/api/auth/branding'), { name: null, logo: null })
+  assert.deepEqual(await anon.json('GET', '/api/auth/branding'), { name: null, logo: null, accent: null })
   assert.equal((await anon.call('GET', '/api/auth/branding/logo')).status, 404)
 })

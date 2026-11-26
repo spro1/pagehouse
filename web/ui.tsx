@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode, type TextareaHTMLAttributes } from 'react'
 import { t } from './i18n.ts'
+import { brandCss } from '../server/html.ts'
 import { Icon } from './icons.tsx'
 
 type ModalProps = {
@@ -170,8 +171,8 @@ export function Avatar({ id, name, size }: { id?: number | null; name: string; s
 }
 
 // Name and logo an admin set (Admin → Branding). The tab title and favicon follow them.
-export type Branding = { name: string | null; logo: string | null }
-let branding: Branding = { name: null, logo: null }
+export type Branding = { name: string | null; logo: string | null; accent: string | null }
+let branding: Branding = { name: null, logo: null, accent: null }
 const iconLink = document.querySelector<HTMLLinkElement>('link[rel=icon]')
 const defaultIcon = iconLink?.dataset.default ?? iconLink?.href ?? ''
 /** The name to show in text: the admin's choice, else the product's. */
@@ -182,6 +183,9 @@ export function applyBranding(b: Branding) {
   document.title = b.name || t('app.name')
   const icon = document.querySelector<HTMLLinkElement>('link[rel=icon]')
   if (icon) icon.href = b.logo ? logoUrl(b.logo) : defaultIcon
+  // The server already put this in the page; keep it in step when an admin changes the color.
+  const css = document.getElementById('brand-css') ?? document.head.appendChild(Object.assign(document.createElement('style'), { id: 'brand-css' }))
+  css.textContent = b.accent ? brandCss(b.accent) : ''
   dispatchEvent(new Event('ph:branding'))
 }
 fetch('/api/auth/branding').then((r) => (r.ok ? r.json() : Promise.reject())).then(applyBranding, () => {})
