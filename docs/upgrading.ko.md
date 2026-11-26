@@ -6,7 +6,7 @@
 
 | 설치 방식 | 업그레이드 방법 |
 |---|---|
-| 한 줄 설치(Docker·Podman) | 설치 폴더에서 `scripts/upgrade.sh <버전>`. 예: `scripts/upgrade.sh 0.3.1` |
+| 한 줄 설치(Docker·Podman) | 설치 폴더에서 `scripts/upgrade.sh <버전>`. 예: `scripts/upgrade.sh 0.4.0` |
 | 오프라인 번들 | 새 번들을 풀고 `sh pagehouse-<버전>/install.sh --dir <설치 폴더>` |
 | 쿠버네티스(Helm) | `helm upgrade <이름> pagehouse-<버전>.tgz -n <네임스페이스> --reuse-values` |
 
