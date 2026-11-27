@@ -25,6 +25,9 @@ export function Sidebar(p: Props) {
   const isMac = /Mac|iPhone|iPad/.test(navigator.platform)
   // Only once an admin set a name or logo: the default look keeps the space switcher on top.
   const brand = useBranding()
+  // Set when Taskhouse shares this install's accounts.
+  const [taskhouse, setTaskhouse] = useState<string | null>(null)
+  useEffect(() => void api<{ taskhouseUrl: string | null }>('/api/me').then((m) => setTaskhouse(m.taskhouseUrl), () => {}), [])
 
   return (
     <nav className="sidebar" aria-label={t('nav.label')}>
@@ -87,6 +90,7 @@ export function Sidebar(p: Props) {
       <a className={`nav-item ${p.route === 'home' ? 'on' : ''}`} href="#/">
         <Icon name="home" /> {t('nav.home')}
       </a>
+      {taskhouse && <a className="nav-item" href={taskhouse}><Icon name="link" /> Taskhouse</a>}
       {p.spaceId && (
         <a className={`nav-item ${p.route === 'trash' ? 'on' : ''}`} href={`#/s/${p.spaceId}/trash`}>
           <Icon name="trash" /> {t('nav.trash')}

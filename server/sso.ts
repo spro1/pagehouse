@@ -62,9 +62,9 @@ export function openSecret(stored: string): string {
 /** The SSO config in force: environment first, else what an admin saved. Cached briefly; saving clears it here. */
 export function ssoSource(db: Db) {
   let cache: { at: number; cfg: OidcConfig | null } | null = null
-  const raw = async (): Promise<SsoSettings | null> => (await db.query('SELECT value FROM settings WHERE key = $1', [KEY])).rows[0]?.value ?? null
+  const raw = async (): Promise<SsoSettings | null> => (await db.query('SELECT value FROM accounts.settings WHERE key = $1', [KEY])).rows[0]?.value ?? null
   const write = (s: SsoSettings) => db.query(
-    `INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+    `INSERT INTO accounts.settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
     [KEY, JSON.stringify({ ...s, clientSecret: sealSecret(s.clientSecret) })],
   )
   const fromDb = async (): Promise<SsoSettings | null> => {
@@ -235,6 +235,9 @@ export async function syncGroups(q: Pick<Db, 'query'>, userId: number, claim: un
   if (adminGroup)
     await q.query(`UPDATE users SET role = CASE WHEN $2 THEN 'admin' WHEN role = 'admin' AND password_hash = '' THEN 'member' ELSE role END WHERE id = $1`,
       [userId, groups.includes(adminGroup.replace(/^\//, ''))])
+  // Accounts shared with Taskhouse: this one SSO sign-in covers both products, so the admin group sets its flag too.
+  if (adminGroup && (await q.query(`SELECT 1 FROM information_schema.columns WHERE table_schema = 'accounts' AND table_name = 'users' AND column_name = 'is_admin'`)).rowCount)
+    await q.query(`UPDATE users SET is_admin = $2 OR (is_admin AND password_hash <> '') WHERE id = $1`, [userId, groups.includes(adminGroup.replace(/^\//, ''))])
 }
 
 /** Where to send the browser after signing out here so the provider's session ends too, or null if not an SSO sign-in. */

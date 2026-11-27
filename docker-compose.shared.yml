@@ -1,0 +1,105 @@
+# Pagehouse added to a Taskhouse install on the same machine. It uses Taskhouse's database (no db service here),
+# so the two share accounts. `install.sh --share-with <taskhouse folder>` writes the .env that selects this file
+# (COMPOSE_FILE) and fills in SHARED_NETWORK. Keep the app and backup services in step with docker-compose.yml.
+services:
+  app:
+    image: ${PAGEHOUSE_IMAGE:-localhost/pagehouse}:${PAGEHOUSE_VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      # POSTGRES_PASSWORD here is Taskhouse's; `db` is its database on its network
+      DATABASE_URL: postgres://taskhouse:${POSTGRES_PASSWORD}@db:5432/taskhouse
+      SECRET_KEY: ${SECRET_KEY:-}
+      ALLOW_SIGNUP: ${ALLOW_SIGNUP:-0}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_LABEL: ${OIDC_LABEL:-}
+      OIDC_AUTO_CREATE: ${OIDC_AUTO_CREATE:-1}
+      OIDC_TRUST_EMAIL: ${OIDC_TRUST_EMAIL:-0}
+      PASSWORD_LOGIN: ${PASSWORD_LOGIN:-1}
+      OIDC_GROUPS_CLAIM: ${OIDC_GROUPS_CLAIM:-}
+      OIDC_ADMIN_GROUP: ${OIDC_ADMIN_GROUP:-}
+      SETUP_TOKEN: ${SETUP_TOKEN:-}
+      SESSION_HOURS: ${SESSION_HOURS:-}
+      TOKEN_SSO_GRACE_DAYS: ${TOKEN_SSO_GRACE_DAYS:-30}
+      SMTP_URL: ${SMTP_URL:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      LINK_PREVIEW: ${LINK_PREVIEW:-1}
+      LINK_PREVIEW_ALLOW: ${LINK_PREVIEW_ALLOW:-}
+      WEBHOOK_ALLOW: ${WEBHOOK_ALLOW:-}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      TRUST_PROXY: ${TRUST_PROXY:-0}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
+      BACKUP_DIR: /backups
+    volumes:
+      - files:/data
+      - ./backups:/backups:ro
+    ports:
+      - "${BIND_ADDRESS:-0.0.0.0}:${PORT:-3000}:3000"
+    networks: [shared]
+    stop_grace_period: 15s
+
+  # Automatic backups of the shared database (both products are in it) and Pagehouse's attachments.
+  # The host folder survives `down -v`; copy it off the server too. Same format as scripts/backup.sh.
+  backup:
+    image: ${PAGEHOUSE_POSTGRES_IMAGE:-localhost/pagehouse-postgres}:17
+    # root only to write into ./backups, which belongs to the host user
+    user: root
+    restart: unless-stopped
+    environment:
+      PGHOST: db
+      PGUSER: taskhouse
+      PGDATABASE: taskhouse
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      # the backup policy is read from Pagehouse's own schema (public on installs from before 0.5.0)
+      PGOPTIONS: -c search_path=pagehouse,public
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+      BACKUP_KEEP: ${BACKUP_KEEP:-14}
+    volumes:
+      - files:/data:ro
+      - ./backups:/backups
+    networks: [shared]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        # The policy is set in Admin → Overview → Backups (stored in the database); BACKUP_* above are the defaults.
+        policy() {
+          set -- $$(psql -Atc "SELECT coalesce((v->>'intervalHours')::int, $$BACKUP_INTERVAL_HOURS), coalesce((v->>'keep')::int, $$BACKUP_KEEP),
+            coalesce((v->>'maxAgeDays')::int, 0), coalesce((v->>'manualMaxAgeDays')::int, 0)
+            FROM (SELECT (SELECT value FROM settings WHERE key = 'backup') AS v) s" -F ' ' 2>/dev/null)
+          interval=$${1:-$$BACKUP_INTERVAL_HOURS}; keep=$${2:-$$BACKUP_KEEP}; age=$${3:-0}; manual_age=$${4:-0}
+        }
+        while true; do
+          policy
+          name="pagehouse-auto-$$(date +%Y%m%d-%H%M%S)"
+          work="/tmp/$$name"; mkdir -p "$$work"
+          # A new install has no files folder until the first upload: then files.tar is an empty archive (10 KiB of
+          # zeros; busybox tar won't create an empty one). Any other tar error still fails the backup.
+          if { if [ -d /data/files ]; then tar -C /data -cf "$$work/files.tar" files; else head -c 10240 /dev/zero > "$$work/files.tar"; fi; } \
+             && pg_dump -Fc -f "$$work/db.dump" \
+             && tar -C "$$work" -czf "/backups/$$name.tar.gz.part" db.dump files.tar; then
+            mv "/backups/$$name.tar.gz.part" "/backups/$$name.tar.gz"
+            echo "backup written: $$name.tar.gz"
+            # Only after a good backup: keep the newest $$keep automatic ones, then drop any older than the age limits.
+            ls -1t /backups/pagehouse-auto-*.tar.gz | tail -n +$$((keep + 1)) | xargs -r rm -f
+            [ "$$age" -gt 0 ] && find /backups -name 'pagehouse-auto-*.tar.gz' -mmin +$$((age * 1440)) -print -delete
+            # Manual and pre-upgrade backups (pagehouse-YYYYmmdd-…) only when an admin set a limit for them.
+            [ "$$manual_age" -gt 0 ] && find /backups -name 'pagehouse-*.tar.gz' ! -name 'pagehouse-auto-*' -mmin +$$((manual_age * 1440)) -print -delete
+          else
+            echo "BACKUP FAILED" >&2
+            rm -f "/backups/$$name.tar.gz.part"
+          fi
+          rm -rf "$$work"
+          # Wake every minute so a changed interval applies without a restart.
+          waited=0
+          while policy; [ $$waited -lt $$((interval * 3600)) ]; do sleep 60; waited=$$((waited + 60)); done
+        done
+
+networks:
+  shared:
+    name: ${SHARED_NETWORK:?set by install.sh --share-with}
+    external: true
+
+volumes:
+  files:

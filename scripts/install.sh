@@ -8,6 +8,8 @@
 #   --dir DIR          where to install            (PAGEHOUSE_DIR, default ./pagehouse)
 #   --version X.Y.Z    version to install          (PAGEHOUSE_VERSION, default latest release)
 #   --port N           web port for a new install  (PAGEHOUSE_PORT, default 3000)
+#   --share-with DIR   new install only: add Pagehouse to the running Taskhouse install in DIR on this machine.
+#                      It uses Taskhouse's database, so both share accounts (PAGEHOUSE_SHARE_WITH; docs/install.md)
 #
 # Running it again on an existing install upgrades it: it backs up first, keeps .env and all data,
 # and only replaces the compose file, scripts and docs.
@@ -17,12 +19,14 @@ REPO=${PAGEHOUSE_REPO:-__REPO__}
 DIR=${PAGEHOUSE_DIR:-}
 VERSION=${PAGEHOUSE_VERSION:-}
 PORT_NEW=${PAGEHOUSE_PORT:-3000}
+SHARE=${PAGEHOUSE_SHARE_WITH:-}
 while [ $# -gt 0 ]; do
   case "$1" in
     --dir) DIR=$2; shift 2 ;;
     --version) VERSION=${2#v}; shift 2 ;;
     --port) PORT_NEW=$2; shift 2 ;;
-    -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
+    --share-with) SHARE=$2; shift 2 ;;
+    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -68,6 +72,19 @@ DIR=$(cd "$DIR" && pwd)
 existing=false
 [ -f "$DIR/.env" ] && existing=true
 
+# Sharing accounts with Taskhouse: find its database before anything is written.
+if [ -n "$SHARE" ]; then
+  $existing && die "$DIR already has an install. Two installs that both have accounts can't be joined."
+  SHARE=$(cd "$SHARE" 2>/dev/null && pwd) || die "--share-with: no such folder"
+  grep -qs taskhouse "$SHARE/docker-compose.yml" && [ -f "$SHARE/.env" ] || die "$SHARE is not a Taskhouse install folder"
+  their() { sed -n "s/^$1=//p" "$SHARE/.env" | tail -1; }
+  shared_db=$(cd "$SHARE" && $COMPOSE ps -q db 2>/dev/null </dev/null | head -1)
+  [ -n "$shared_db" ] || die "Taskhouse in $SHARE is not running, or does not have its own database"
+  SHARED_NETWORK=$($CLI inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{println $k}}{{end}}' "$shared_db" </dev/null | head -1)
+  their_port=$(their PORT)
+  [ "$PORT_NEW" != "${their_port:-3000}" ] || die "port $PORT_NEW is Taskhouse's: choose another one with --port"
+fi
+
 # A new install into a folder whose earlier install left its volumes behind: the old database keeps its old
 # password, which the new .env wouldn't know, and the app would fail to sign in to it. Stop and explain.
 if ! $existing; then
@@ -93,7 +110,7 @@ fi
 
 # 5. Copy bundle files. .env, backups and data volumes are never touched.
 if [ "$bundle" != "$DIR" ]; then
-  for f in docker-compose.yml .env.example VERSION LICENSE README.md README.ko.md install.sh; do
+  for f in docker-compose.yml docker-compose.shared.yml .env.example VERSION LICENSE README.md README.ko.md install.sh; do
     [ -f "$bundle/$f" ] && cp "$bundle/$f" "$DIR/$f"
   done
   mkdir -p "$DIR/scripts" "$DIR/docs"
@@ -110,8 +127,15 @@ if ! $existing; then
       -e "s/^SECRET_KEY=.*/SECRET_KEY=$sk/" \
       -e "s/^PORT=.*/PORT=$PORT_NEW/" \
       -e "s/^PAGEHOUSE_VERSION=.*/PAGEHOUSE_VERSION=$BUNDLE_VERSION/" "$DIR/.env.example" > "$DIR/.env"
+  if [ -n "$SHARE" ]; then
+    # Taskhouse's database password and SECRET_KEY (the SSO client secret is stored once, for both).
+    grep -vE '^(POSTGRES_PASSWORD|SECRET_KEY)=' "$DIR/.env" > "$DIR/.env.tmp" && mv "$DIR/.env.tmp" "$DIR/.env"
+    printf '\n# Added to the Taskhouse install in %s: its database, shared accounts.\nPOSTGRES_PASSWORD=%s\nSECRET_KEY=%s\nCOMPOSE_FILE=docker-compose.shared.yml\nSHARED_NETWORK=%s\n' \
+      "$SHARE" "$(their POSTGRES_PASSWORD)" "$(their SECRET_KEY)" "$SHARED_NETWORK" >> "$DIR/.env"
+  fi
   chmod 600 "$DIR/.env"
-  say "Created $DIR/.env with a random database password"
+  if [ -n "$SHARE" ]; then say "Created $DIR/.env: Pagehouse will use the database of the Taskhouse install in $SHARE"
+  else say "Created $DIR/.env with a random database password"; fi
 else
   # Older installs have no SECRET_KEY (encrypts stored secrets such as the SSO client secret).
   grep -q '^SECRET_KEY=.' "$DIR/.env" || { sed -i.bak '/^SECRET_KEY=/d' "$DIR/.env" && rm -f "$DIR/.env.bak"; echo "SECRET_KEY=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')" >> "$DIR/.env"; say "Added SECRET_KEY to $DIR/.env"; }
@@ -145,8 +169,12 @@ if $existing; then
   echo "    Upgraded. The pre-upgrade backup is in $DIR/backups/before-upgrade/"
 else
   setup=$($COMPOSE logs app 2>/dev/null </dev/null | sed -n 's/.*setup token: //p' | tail -1 | tr -d '\r')
-  echo "    Open it and create the first account; it becomes the administrator."
-  [ -n "$setup" ] && echo "    Setup token for that first account: $setup"
+  if [ -n "$SHARE" ]; then
+    echo "    Sign in with your Taskhouse account. The first Taskhouse administrator who opens Pagehouse becomes its administrator."
+  else
+    echo "    Open it and create the first account; it becomes the administrator."
+    [ -n "$setup" ] && echo "    Setup token for that first account: $setup"
+  fi
 fi
 echo "    Folder: $DIR   Backups: $DIR/backups (automatic, every ${BACKUP_INTERVAL_HOURS:-24}h)"
 echo "    Guides: $DIR/docs/install.md, $DIR/docs/user-guide.md"
