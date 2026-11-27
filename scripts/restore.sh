@@ -11,6 +11,13 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 tar -C "$tmp" -xzf "$backup" db.dump files.tar || { echo "not a Pagehouse backup: $1" >&2; exit 1; }
 
+# Shared with Taskhouse, the database holds both products: a backup without Taskhouse would delete its data.
+if [ -n "$($COMPOSE exec -T backup psql -Atc "SELECT coalesce(to_regclass('taskhouse.issues'), to_regclass('public.issues'))" </dev/null)" ] &&
+   ! $COMPOSE exec -T backup pg_restore -l < "$tmp/db.dump" | grep -Eq ' TABLE (public|taskhouse) issues '; then
+  echo "Taskhouse shares this database and is not in $1: restoring it would delete Taskhouse's data. Nothing was changed." >&2
+  exit 1
+fi
+
 printf 'This replaces ALL current pages, history and accounts with %s.\nThe current state is backed up first. Type "restore" to continue: ' "$1"
 read -r answer
 [ "$answer" = restore ] || { echo "aborted"; exit 1; }
@@ -21,8 +28,8 @@ safety=$(scripts/backup.sh backups/before-restore | tail -1)
 echo "current state saved to $safety"
 
 $COMPOSE stop app
-$COMPOSE exec -T db sh -c 'dropdb -U "$POSTGRES_USER" --force "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
-$COMPOSE exec -T db sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner' < "$tmp/db.dump"
+$COMPOSE exec -T backup sh -c 'dropdb --force "$PGDATABASE" && createdb "$PGDATABASE"' </dev/null
+$COMPOSE exec -T backup sh -c 'pg_restore -d "$PGDATABASE" --no-owner' < "$tmp/db.dump"
 # Attachments are stored by content hash and never change, so extracting over the current ones loses nothing.
 $COMPOSE run --rm -T --no-deps --entrypoint sh app -c 'tar -C /data -xf -' < "$tmp/files.tar"
 $COMPOSE up -d app

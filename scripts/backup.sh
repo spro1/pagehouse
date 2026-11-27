@@ -11,7 +11,8 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 # Database first: attachments are written before their DB row, so every file the dump refers to already exists.
-$COMPOSE exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -Fc "$POSTGRES_DB"' </dev/null > "$tmp/db.dump"
+# Through the backup service: it reaches the database in every layout (also when the database is Taskhouse's).
+$COMPOSE exec -T backup pg_dump -Fc </dev/null > "$tmp/db.dump"
 # A new install has no files folder until the first upload.
 $COMPOSE exec -T app sh -c 'mkdir -p /data/files && tar -C /data -cf - files' </dev/null > "$tmp/files.tar"
 tar -C "$tmp" -czf "$out" db.dump files.tar

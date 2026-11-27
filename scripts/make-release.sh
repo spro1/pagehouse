@@ -31,6 +31,9 @@ echo "$VERSION" > "$stage/VERSION"
 sed -e "s#\${PAGEHOUSE_IMAGE:-localhost/pagehouse}#\${PAGEHOUSE_IMAGE:-$IMAGE}#" \
     -e "s#\${PAGEHOUSE_POSTGRES_IMAGE:-localhost/pagehouse-postgres}#\${PAGEHOUSE_POSTGRES_IMAGE:-$IMAGE-postgres}#g" \
     docker-compose.yml > "$stage/docker-compose.yml"
+sed -e "s#\${PAGEHOUSE_IMAGE:-localhost/pagehouse}#\${PAGEHOUSE_IMAGE:-$IMAGE}#" \
+    -e "s#\${PAGEHOUSE_POSTGRES_IMAGE:-localhost/pagehouse-postgres}#\${PAGEHOUSE_POSTGRES_IMAGE:-$IMAGE-postgres}#g" \
+    docker-compose.shared.yml > "$stage/docker-compose.shared.yml"
 sed "s#__REPO__#$REPO#g" scripts/install.sh > "$stage/install.sh"
 sed -i.bak "s#__REPO__#$REPO#g" "$stage/scripts/upgrade.sh" && rm -f "$stage/scripts/upgrade.sh.bak"
 sed -i.bak "s#^PAGEHOUSE_VERSION=.*#PAGEHOUSE_VERSION=$VERSION#" "$stage/.env.example" && rm -f "$stage/.env.example.bak"

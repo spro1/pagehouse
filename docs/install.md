@@ -229,9 +229,28 @@ Pagehouse and [Taskhouse](https://github.com/spro1/taskhouse) are separate produ
 | Groups and their members | Pages, issues, attachments, webhooks, audit log, every other setting |
 | SSO settings (Admin → SSO in either product) | |
 
-**Adding the second product.** Install it with the `DATABASE_URL` of the database the first one uses, and start it. It finds the accounts, so there is no setup step and no setup token. Nobody is its administrator yet: the first administrator of the other product who opens it becomes one, and can then name others. It does not matter which product was installed first, or whether both start on an empty database at the same time.
+**Installing the two together (one server, compose).** Install either product the usual way. Then add the other with its installer and `--share-with`, naming the folder of the first. It does not matter which one comes first, and for a new server the steps are the same: install one, add the other.
 
-Set these on both:
+```sh
+# Taskhouse is installed in /opt/taskhouse. Add Pagehouse:
+curl -fsSL https://github.com/spro1/pagehouse/releases/latest/download/install.sh | sh -s -- --share-with /opt/taskhouse --port 3001
+
+# Pagehouse is installed in /opt/pagehouse. Add Taskhouse (run in the Taskhouse folder):
+scripts/install.sh --share-with /opt/pagehouse
+```
+
+The added product starts no database of its own. It joins the first product's compose network and uses its database, and the installer copies that install's database password and `SECRET_KEY` into the new `.env`. The first product keeps running and nothing in it is changed: accounts, passwords, groups, people who are signed in and all content stay as they are.
+
+Then:
+1. Set `PUBLIC_URL` in the `.env` of both and apply it with `docker compose up -d` in each folder. This puts the link to the other product in each menu.
+2. Open the added product and sign in with an account you already have. There is no setup step and no setup token. Nobody is its administrator yet: the first administrator of the other product who opens it becomes one, and can then name others.
+
+Running the two:
+- The added product needs the first one running, because its database is there.
+- Each product's backups (automatic and `scripts/backup.sh`) hold the whole shared database, so both products, plus that product's own attachments. Restoring one takes the accounts and both products back to that moment. Before `scripts/restore.sh`, stop the other product (`docker compose stop app` in its folder) and start it again afterwards. A backup from before the second product was added is refused, because restoring it would delete the other product's data.
+- To remove the added product again: `docker compose down -v` in its folder, then drop its tables and its menu link from the shared database. For an added Pagehouse, in the Taskhouse folder: `docker compose exec db psql -U taskhouse -c "DROP SCHEMA pagehouse CASCADE" -c "DELETE FROM accounts.settings WHERE key = 'url:pagehouse'"`. For an added Taskhouse, in the Pagehouse folder: `docker compose exec db psql -U pagehouse -c "DROP SCHEMA taskhouse CASCADE" -c "DELETE FROM accounts.settings WHERE key = 'url:taskhouse'"`. The accounts stay.
+
+The settings involved (the installer takes care of `SECRET_KEY`; on other setups set them yourself):
 
 | Setting | Why |
 |---|---|
@@ -245,7 +264,7 @@ Good to know:
 - An account created in one product is an ordinary member of the other. Disabling an account closes both.
 - Deleting a group in Pagehouse also removes the project roles Taskhouse gave that group.
 - Two installs that **both already have accounts** can't be joined by pointing them at one database: the second one refuses to start and changes nothing. Merging existing accounts is not supported yet.
-- The bundled compose files give each product its own database, so today sharing needs a PostgreSQL both can reach (see [external PostgreSQL](#using-an-external-postgresql-compose)). One database dump then holds both products, and restoring it takes both back to that moment; each product's attachment files are still backed up by that product.
+- On separate servers, on Kubernetes or with your own PostgreSQL there is no installer option: give both products the same `DATABASE_URL` (see [external PostgreSQL](#using-an-external-postgresql-compose)) and the same `SECRET_KEY`, and back that database up yourself. One dump holds both products.
 - To keep the two apart, give each its own database, as a default install does. Nothing is shared then.
 
 ## Where data lives
