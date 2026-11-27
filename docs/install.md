@@ -216,7 +216,7 @@ Offline: run the new offline bundle's `install.sh --dir /opt/pagehouse`.
 
 ## Using an external PostgreSQL (compose)
 
-PostgreSQL 14+ with the `pg_trgm` extension available. The first start runs `CREATE EXTENSION pg_trgm`, so either let the user create extensions or run it once as a superuser. In `docker-compose.yml`, set the app's `DATABASE_URL`, remove the `db` service and the `depends_on` blocks. The automatic backup service and scripts cover the bundled database only; back up an external database with `pg_dump` and the `files` volume separately, and restore them together: the app deletes profile photos and logos that were replaced, so a database restored without its files can show a missing photo or logo (attachments are never deleted).
+PostgreSQL 14+ with the `pg_trgm` extension available. The first start runs `CREATE EXTENSION pg_trgm`, so either let the user create extensions or run it once as a superuser. The user also needs the `CREATE` privilege on the database (its owner has it): the app creates the schemas `pagehouse` and `accounts` there. In `docker-compose.yml`, set the app's `DATABASE_URL`, remove the `db` service and the `depends_on` blocks. The automatic backup service and scripts cover the bundled database only; back up an external database with `pg_dump` and the `files` volume separately, and restore them together: the app deletes profile photos and logos that were replaced, so a database restored without its files can show a missing photo or logo (attachments are never deleted).
 
 ## Using Pagehouse together with Taskhouse
 
@@ -237,7 +237,7 @@ Set these on both:
 |---|---|
 | `SECRET_KEY`, the same value | The SSO client secret is stored once and both must be able to read it |
 | `PUBLIC_URL` | Each product shows a link to the other in its menu |
-| `COOKIE_DOMAIN` | Only when the two run on different subdomains: the parent domain (`example.com` for `wiki.example.com` and `tasks.example.com`), so one sign-in covers both. On the same host name (different ports or paths) leave it empty |
+| `COOKIE_DOMAIN` | Only when the two run on different subdomains: the parent domain (`example.com` for `wiki.example.com` and `tasks.example.com`), so one sign-in covers both. On the same host name (different ports or paths) leave it empty. The sign-in cookie then goes to every site under that domain, so use it only when all of them are yours |
 
 With SSO, register both callback addresses (`<PUBLIC_URL>/api/auth/oidc/callback` of each product) on the one client at your provider. A changed SSO setting reaches the other product within 30 seconds. The administrator group, if you set one, decides who is an administrator in both products at each SSO sign-in.
 

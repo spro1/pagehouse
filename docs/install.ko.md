@@ -216,7 +216,7 @@ scripts/upgrade.sh 0.2.0      # 특정 버전
 
 ## 외부 PostgreSQL 사용 (compose)
 
-`pg_trgm` 확장을 쓸 수 있는 PostgreSQL 14 이상이 필요합니다. 앱이 첫 실행 때 `CREATE EXTENSION pg_trgm`을 실행하므로 그 계정에 확장 생성 권한을 주거나 슈퍼유저로 미리 한 번 실행해 두세요. `docker-compose.yml`에서 앱의 `DATABASE_URL`을 바꾸고 `db` 서비스와 `depends_on` 부분을 지웁니다. 자동 백업 서비스와 스크립트는 함께 뜨는 DB만 다룹니다. 외부 DB는 `pg_dump`로, `files` 볼륨은 따로 백업하고 복원할 때는 둘을 함께 되돌리세요. 바뀐 프로필 사진과 로고 파일은 앱이 지우므로, DB만 예전 것으로 되돌리면 사진이나 로고가 안 보일 수 있습니다(첨부파일은 지우지 않습니다).
+`pg_trgm` 확장을 쓸 수 있는 PostgreSQL 14 이상이 필요합니다. 앱이 첫 실행 때 `CREATE EXTENSION pg_trgm`을 실행하므로 그 계정에 확장 생성 권한을 주거나 슈퍼유저로 미리 한 번 실행해 두세요. 앱이 데이터베이스에 `pagehouse`와 `accounts` 스키마를 만들므로 그 계정에 데이터베이스의 `CREATE` 권한도 있어야 합니다(데이터베이스 소유자에게는 이미 있습니다). `docker-compose.yml`에서 앱의 `DATABASE_URL`을 바꾸고 `db` 서비스와 `depends_on` 부분을 지웁니다. 자동 백업 서비스와 스크립트는 함께 뜨는 DB만 다룹니다. 외부 DB는 `pg_dump`로, `files` 볼륨은 따로 백업하고 복원할 때는 둘을 함께 되돌리세요. 바뀐 프로필 사진과 로고 파일은 앱이 지우므로, DB만 예전 것으로 되돌리면 사진이나 로고가 안 보일 수 있습니다(첨부파일은 지우지 않습니다).
 
 ## Taskhouse와 함께 쓰기
 
@@ -237,7 +237,7 @@ Pagehouse와 [Taskhouse](https://github.com/spro1/taskhouse)는 별도 제품이
 |---|---|
 | `SECRET_KEY`, 같은 값 | SSO 클라이언트 비밀은 한 번만 저장되고 양쪽이 읽을 수 있어야 합니다 |
 | `PUBLIC_URL` | 각 제품 메뉴에 상대 제품으로 가는 링크가 나옵니다 |
-| `COOKIE_DOMAIN` | 두 제품이 서로 다른 서브도메인일 때만: 상위 도메인(`wiki.example.com`과 `tasks.example.com`이면 `example.com`)을 넣어야 한 번의 로그인이 양쪽에 통합니다. 같은 호스트 이름(포트나 경로만 다름)이면 비워 둡니다 |
+| `COOKIE_DOMAIN` | 두 제품이 서로 다른 서브도메인일 때만: 상위 도메인(`wiki.example.com`과 `tasks.example.com`이면 `example.com`)을 넣어야 한 번의 로그인이 양쪽에 통합니다. 같은 호스트 이름(포트나 경로만 다름)이면 비워 둡니다. 이렇게 하면 로그인 쿠키가 그 도메인 아래 모든 사이트로 전송되므로, 그 사이트가 모두 직접 운영하는 것일 때만 쓰세요 |
 
 SSO를 쓰면 IdP의 클라이언트 하나에 두 제품의 콜백 주소(각 제품의 `<PUBLIC_URL>/api/auth/oidc/callback`)를 모두 등록합니다. SSO 설정을 바꾸면 다른 제품에는 30초 안에 반영됩니다. 관리자 그룹을 지정했다면 SSO로 로그인할 때마다 두 제품의 관리자 여부가 그 그룹에 따라 정해집니다.
 

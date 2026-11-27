@@ -1540,6 +1540,6 @@ test('shared accounts: Pagehouse installed into a database where Taskhouse alrea
     assert.deepEqual((await joined.query('SELECT role, is_admin FROM users WHERE id = 2')).rows[0], { role: 'member', is_admin: false })
   } finally {
     await joined.end()
-    await db.query('DROP DATABASE pagehouse_join_test WITH (FORCE)')
+    await db.query('DROP DATABASE pagehouse_join_test') // not WITH (FORCE): it would kill connections the pool is still closing
   }
 })
