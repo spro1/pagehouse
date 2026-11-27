@@ -64,6 +64,15 @@ Client secret은 `.env`의 `SECRET_KEY`로 암호화해서 서버에만 저장�
 - SSO 서비스가 이 클레임을 아예 보내지 않으면 아무것도 바뀌지 않습니다. Keycloak은 *Group Membership* 매퍼가 필요합니다. Entra ID는 따로 설정하지 않으면 그룹 이름 대신 ID를 보냅니다.
 - **관리자 그룹**(선택): 구성원은 관리자가 되고, 그룹에서 빠지면 관리자에서도 빠집니다. 위키 비밀번호가 있는 관리자는 그대로 유지되므로 들어올 길은 항상 남습니다.
 
+### Taskhouse와 계정을 함께 쓸 때
+
+Pagehouse가 [Taskhouse와 계정을 공유](install.ko.md#taskhouse와-함께-쓰기)하면 SSO는 한 번만 설정하고 양쪽에 적용됩니다.
+- 이 화면의 설정은 Taskhouse의 **관리 → SSO**에 보이는 것과 같은 설정입니다. 어느 쪽에서 바꾸든 다른 쪽에 30초 안에 반영됩니다. 클라이언트 비밀을 읽으려면 두 제품의 `SECRET_KEY`가 같아야 합니다.
+- SSO 서버에는 **클라이언트 하나**를 쓰고, 두 제품의 리다이렉트 URI(각 제품의 `<주소>/api/auth/oidc/callback`)와 로그아웃 후 이동 주소를 모두 등록합니다.
+- 어느 제품에서든 SSO로 한 번 로그인하면 양쪽에 로그인됩니다. 계정과 그룹은 하나입니다. 한쪽에서 로그아웃하면 양쪽과 SSO 서버 세션이 함께 끝납니다.
+- **관리자 그룹**은 SSO로 로그인할 때마다 두 제품의 관리자 여부를 함께 정합니다. 직접 지정한 역할은 제품마다 따로입니다.
+- `.env`의 설정(`OIDC_*`)은 제품마다 따로이고, 설정한 제품에서는 여전히 화면 설정보다 우선합니다. 양쪽에 모두 넣거나 모두 비워 두세요.
+
 ### 비밀번호와 SSO 계정
 
 위키의 **비밀번호 재설정 링크**와 **임시 비밀번호**는 위키 안의 비밀번호만 바꿉니다. SSO 서버의 비밀번호는 건드리지 않으니, 그쪽 비밀번호는 SSO 서버에서 바꿔야 합니다. SSO로 만들어진 계정에 쓰면 위키 비밀번호가 하나 생깁니다. *비밀번호 로그인 허용*이 켜져 있으면 그 사람은 두 방법 중 아무거나로 로그인할 수 있고, 꺼져 있으면 관리자만 그 비밀번호를 쓸 수 있습니다.
@@ -85,4 +94,4 @@ Client secret은 `.env`의 `SECRET_KEY`로 암호화해서 서버에만 저장�
 | SSO 화면을 지나자마자 "SSO 로그인에 실패했습니다" | 위키 서버가 SSO 서버의 토큰 주소에 접속하지 못하거나 시크릿이 틀렸습니다. 위키 서버에서 `curl <issuer>/.well-known/openid-configuration`으로 확인하세요. |
 | 연결 확인은 되는데 로그인이 실패함 (위키는 컨테이너, SSO 서버는 같은 PC) | 컨테이너 안의 `localhost`는 컨테이너 자신입니다. 컨테이너와 브라우저 모두 접속할 수 있는 주소를 쓰세요. 로컬 Keycloak이라면 `--hostname=<브라우저용 주소> --hostname-backchannel-dynamic=true`로 띄우고, Issuer에는 `http://host.containers.internal:8080/realms/<realm>`(Podman) 또는 `host.docker.internal`(Docker)을 넣습니다. |
 | 로그아웃해도 SSO 서버 로그인이 남음 | SSO 서버에 위키 주소가 로그아웃 후 리디렉션 주소로 등록돼 있지 않거나, 이 기능이 생기기 전에 로그인한 세션입니다(한 번 다시 로그인하면 됨). |
-| 비밀번호 로그인을 끈 뒤 못 들어감 | 관리자는 항상 비밀번호로 로그인할 수 있습니다. 그래도 안 되면 설정을 지웁니다: `podman compose exec db psql -U pagehouse -c "DELETE FROM settings WHERE key='sso'"` |
+| 비밀번호 로그인을 끈 뒤 못 들어감 | 관리자는 항상 비밀번호로 로그인할 수 있습니다. 그래도 안 되면 설정을 지웁니다: `podman compose exec db psql -U pagehouse -c "DELETE FROM accounts.settings WHERE key='sso'"` |

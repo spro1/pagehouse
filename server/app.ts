@@ -259,8 +259,9 @@ export function createApp(db: Db, dataDir: string) {
   async function startSession(c: Context, userId: number) {
     const token = randomBytes(32).toString('hex')
     await db.query(`INSERT INTO sessions VALUES ($1, $2, now() + make_interval(hours => $3))`, [sha256(token), userId, SESSION_HOURS])
+    await db.query('UPDATE users SET last_login_at = now() WHERE id = $1', [userId]) // Taskhouse reads it for its tokens when accounts are shared
     setCookie(c, 'sid', token, {
-      httpOnly: true, sameSite: 'Lax', path: '/', maxAge: SESSION_HOURS * 3600,
+      httpOnly: true, sameSite: 'Lax', path: '/', maxAge: SESSION_HOURS * 3600, domain: COOKIE_DOMAIN,
       // Many internal installs run on plain http; a Secure cookie would never come back there.
       secure: new URL(c.req.url).protocol === 'https:' || c.req.header('x-forwarded-proto') === 'https',
     })
@@ -396,10 +397,13 @@ export function createApp(db: Db, dataDir: string) {
   app.post('/api/auth/logout', async (c) => {
     const token = getCookie(c, 'sid')
     if (token) await db.query('DELETE FROM sessions WHERE token_hash = $1', [sha256(token)])
-    deleteCookie(c, 'sid', { path: '/' })
+    deleteCookie(c, 'sid', { path: '/', domain: COOKIE_DOMAIN })
     return c.json({ ok: true, redirect: await ssoLogoutUrl(c, sso) })
   })
 
+  let hasAdmin = false
+  // Pagehouse and Taskhouse on two subdomains with shared accounts: the parent domain, so one sign-in covers both.
+  const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || undefined
   // Everything below requires a session.
   app.use('/api/*', async (c, next) => {
     if (c.req.path.startsWith('/api/auth/')) return next()
@@ -423,13 +427,22 @@ export function createApp(db: Db, dataDir: string) {
           )
         : undefined
     if (!user) return fail(c, 401, 'login_required')
+    // Accounts shared with Taskhouse: Pagehouse added later has no admin of its own, so a Taskhouse admin becomes one.
+    if (!hasAdmin) {
+      if (user.role !== 'admin' && (await one(
+        `UPDATE users u SET role = 'admin' WHERE u.id = $1 AND to_jsonb(u)->>'is_admin' = 'true'
+           AND NOT EXISTS (SELECT 1 FROM users WHERE role = 'admin' AND disabled_at IS NULL) RETURNING 1`, [user.id]))) user.role = 'admin'
+      hasAdmin = !!(await one(`SELECT 1 FROM users WHERE role = 'admin' AND disabled_at IS NULL`))
+    }
     c.set('user', user)
     if (c.req.path.startsWith('/api/admin/') && user.role !== 'admin') return fail(c, 403, 'admin_only')
     return next()
   })
 
   app.get('/api/me', async (c) =>
-    c.json({ ...c.get('user'), mail: mailEnabled(), ...(await one('SELECT email_notify AS "emailNotify", webhook_url AS "webhookUrl" FROM users WHERE id = $1', [c.get('user').id])) }))
+    c.json({ ...c.get('user'), mail: mailEnabled(), ...(await one(
+      // taskhouseUrl: set when Taskhouse shares this database's accounts; the sidebar links to it.
+      `SELECT email_notify AS "emailNotify", webhook_url AS "webhookUrl", (SELECT value #>> '{}' FROM accounts.settings WHERE key = 'url:taskhouse') AS "taskhouseUrl" FROM users WHERE id = $1`, [c.get('user').id])) }))
 
   // Content-addressed: the same bytes are stored once. Touching an existing file marks it in use for pruneFiles.
   const storeFile = (buf: Buffer) => {

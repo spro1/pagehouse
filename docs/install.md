@@ -120,6 +120,7 @@ Restart after changing it: `docker compose up -d`.
 | `TOKEN_SSO_GRACE_DAYS` | `30` | API tokens of someone who signs in by SSO stop working after this many days without an SSO sign-in (they were probably removed at the provider) |
 | `SETUP_TOKEN` | generated | Token the first (administrator) account needs. Without it one is generated and printed in the log |
 | `SESSION_HOURS` | `24` (one day) | How long a sign-in lasts. `720` keeps people signed in for 30 days, as before 0.5.0 |
+| `COOKIE_DOMAIN` | empty | Only when sharing accounts with Taskhouse on another subdomain: the parent domain, so one sign-in covers both ([details](#using-pagehouse-together-with-taskhouse)) |
 | `TRUST_PROXY` | `0` | Number of reverse proxies in front. Set `1` behind a proxy so sign-in throttling and the audit log see real client addresses; `0` for direct connections (the Helm chart sets `1` when ingress is on) |
 | `OIDC_TRUST_EMAIL` | `0` | An account is linked or created at the first SSO sign-in by email, so only emails the provider marks verified are accepted for that. `1` for providers that never send `email_verified` (some Entra ID setups) — only if users can't change their email there |
 | `SMTP_URL`, `SMTP_FROM` | empty | Notification emails and "Forgot your password?" reset links. For example `smtp://user:pass@mail.example.com:587`. Links in mail need `PUBLIC_URL` |
@@ -215,7 +216,56 @@ Offline: run the new offline bundle's `install.sh --dir /opt/pagehouse`.
 
 ## Using an external PostgreSQL (compose)
 
-PostgreSQL 14+ with the `pg_trgm` extension available. The first start runs `CREATE EXTENSION pg_trgm`, so either let the user create extensions or run it once as a superuser. In `docker-compose.yml`, set the app's `DATABASE_URL`, remove the `db` service and the `depends_on` blocks. The automatic backup service and scripts cover the bundled database only; back up an external database with `pg_dump` and the `files` volume separately, and restore them together: the app deletes profile photos and logos that were replaced, so a database restored without its files can show a missing photo or logo (attachments are never deleted).
+PostgreSQL 14+ with the `pg_trgm` extension available. The first start runs `CREATE EXTENSION pg_trgm`, so either let the user create extensions or run it once as a superuser. The user also needs the `CREATE` privilege on the database (its owner has it): the app creates the schemas `pagehouse` and `accounts` there. In `docker-compose.yml`, set the app's `DATABASE_URL`, remove the `db` service and the `depends_on` blocks. The automatic backup service and scripts cover the bundled database only; back up an external database with `pg_dump` and the `files` volume separately, and restore them together: the app deletes profile photos and logos that were replaced, so a database restored without its files can show a missing photo or logo (attachments are never deleted).
+
+## Using Pagehouse together with Taskhouse
+
+Pagehouse and [Taskhouse](https://github.com/spro1/taskhouse) are separate products that can share their accounts, the way two products of one suite do. They share them when both use **the same PostgreSQL database** (the same `DATABASE_URL`). Each product keeps its own tables in its own schema (`pagehouse`, `taskhouse`); people, passwords, sign-ins, groups and the SSO settings live once, in the `accounts` schema.
+
+| Shared | Per product |
+|---|---|
+| Accounts (name, email, password, disabled or not) | Who is an administrator, and every other role and permission |
+| Sign-ins: signing in or out of one does the same in the other | API tokens |
+| Groups and their members | Pages, issues, attachments, webhooks, audit log, every other setting |
+| SSO settings (Admin → SSO in either product) | |
+
+**Installing the two together (one server, compose).** Install either product the usual way. Then add the other with its installer and `--share-with`, naming the folder of the first. It does not matter which one comes first, and for a new server the steps are the same: install one, add the other.
+
+```sh
+# Taskhouse is installed in /opt/taskhouse. Add Pagehouse:
+curl -fsSL https://github.com/spro1/pagehouse/releases/latest/download/install.sh | sh -s -- --share-with /opt/taskhouse --port 3001
+
+# Pagehouse is installed in /opt/pagehouse. Add Taskhouse (run in the Taskhouse folder):
+scripts/install.sh --share-with /opt/pagehouse
+```
+
+The added product starts no database of its own. It joins the first product's compose network and uses its database, and the installer copies that install's database password and `SECRET_KEY` into the new `.env`. The first product keeps running and nothing in it is changed: accounts, passwords, groups, people who are signed in and all content stay as they are.
+
+Then:
+1. Set `PUBLIC_URL` in the `.env` of both and apply it with `docker compose up -d` in each folder. This puts the link to the other product in each menu.
+2. Open the added product and sign in with an account you already have. There is no setup step and no setup token. Nobody is its administrator yet: the first administrator of the other product who opens it becomes one, and can then name others.
+
+Running the two:
+- The added product needs the first one running, because its database is there.
+- Each product's backups (automatic and `scripts/backup.sh`) hold the whole shared database, so both products, plus that product's own attachments. Restoring one takes the accounts and both products back to that moment. Before `scripts/restore.sh`, stop the other product (`docker compose stop app` in its folder) and start it again afterwards. A backup from before the second product was added is refused, because restoring it would delete the other product's data.
+- To remove the added product again: `docker compose down -v` in its folder, then drop its tables and its menu link from the shared database. For an added Pagehouse, in the Taskhouse folder: `docker compose exec db psql -U taskhouse -c "DROP SCHEMA pagehouse CASCADE" -c "DELETE FROM accounts.settings WHERE key = 'url:pagehouse'"`. For an added Taskhouse, in the Pagehouse folder: `docker compose exec db psql -U pagehouse -c "DROP SCHEMA taskhouse CASCADE" -c "DELETE FROM accounts.settings WHERE key = 'url:taskhouse'"`. The accounts stay.
+
+The settings involved (the installer takes care of `SECRET_KEY`; on other setups set them yourself):
+
+| Setting | Why |
+|---|---|
+| `SECRET_KEY`, the same value | The SSO client secret is stored once and both must be able to read it |
+| `PUBLIC_URL` | Each product shows a link to the other in its menu |
+| `COOKIE_DOMAIN` | Only when the two run on different subdomains: the parent domain (`example.com` for `wiki.example.com` and `tasks.example.com`), so one sign-in covers both. On the same host name (different ports or paths) leave it empty. The sign-in cookie then goes to every site under that domain, so use it only when all of them are yours |
+
+With SSO, register both callback addresses (`<PUBLIC_URL>/api/auth/oidc/callback` of each product) on the one client at your provider. A changed SSO setting reaches the other product within 30 seconds. The administrator group, if you set one, decides who is an administrator in both products at each SSO sign-in.
+
+Good to know:
+- An account created in one product is an ordinary member of the other. Disabling an account closes both.
+- Deleting a group in Pagehouse also removes the project roles Taskhouse gave that group.
+- Two installs that **both already have accounts** can't be joined by pointing them at one database: the second one refuses to start and changes nothing. Merging existing accounts is not supported yet.
+- On separate servers, on Kubernetes or with your own PostgreSQL there is no installer option: give both products the same `DATABASE_URL` (see [external PostgreSQL](#using-an-external-postgresql-compose)) and the same `SECRET_KEY`, and back that database up yourself. One dump holds both products.
+- To keep the two apart, give each its own database, as a default install does. Nothing is shared then.
 
 ## Where data lives
 

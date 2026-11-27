@@ -22,6 +22,7 @@ You land on **Home** after signing in.
 - **For you**: places that mention you, reply to your comments, or change pages you watch
 - **New pages**: recently created pages in spaces you can see
 - The buttons at the top start a page from a template or open **Import**
+- **Taskhouse** in the sidebar, when your organization runs it on the same accounts: it opens Taskhouse with you already signed in
 
 **The sidebar, from the top:**
 - space switcher

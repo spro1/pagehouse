@@ -64,6 +64,9 @@ needed in the pull request.
   The browser tests also run against `npm run dev` with any admin account.
 - Never lose user data: deletes are soft, history is never rewritten, migrations only add. Migrations live in
   `server/migrations/NNN_name.sql`; never edit one that was released.
+- The account tables (`users`, `sessions`, `groups`, `group_members`, in the `accounts` schema) can be shared with
+  Taskhouse. Change them with `ADD COLUMN IF NOT EXISTS`, give new columns a default, and make the same change in
+  Taskhouse; `TASKHOUSE_ACCOUNTS` in `server/app.test.ts` is the copy of its side that the tests join.
 - Every UI string goes in `web/i18n.ts`, in both `en` and `ko` (a test checks that every key exists in every language).
 - Server errors return a `code` from `ERRORS` in `server/app.ts`, plus an `err.<code>` translation.
 - Keep it small: prefer what the platform, PostgreSQL or an existing dependency already does over new code or packages.

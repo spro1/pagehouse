@@ -49,6 +49,7 @@ services:
       WEBHOOK_ALLOW: ${WEBHOOK_ALLOW:-}
       METRICS_TOKEN: ${METRICS_TOKEN:-}
       TRUST_PROXY: ${TRUST_PROXY:-0}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
       BACKUP_DIR: /backups
     volumes:
       - files:/data
@@ -72,6 +73,8 @@ services:
       PGUSER: pagehouse
       PGDATABASE: pagehouse
       PGPASSWORD: ${POSTGRES_PASSWORD}
+      # the backup policy is read from Pagehouse's own schema (public on installs from before 0.5.0)
+      PGOPTIONS: -c search_path=pagehouse,public
       BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
       BACKUP_KEEP: ${BACKUP_KEEP:-14}
     volumes:
