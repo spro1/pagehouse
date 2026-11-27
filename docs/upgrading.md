@@ -6,7 +6,7 @@
 
 | Installed with | Upgrade |
 |---|---|
-| One-line install (Docker, Podman) | In the install folder: `scripts/upgrade.sh <version>`, e.g. `scripts/upgrade.sh 0.4.0` |
+| One-line install (Docker, Podman) | In the install folder: `scripts/upgrade.sh <version>`, e.g. `scripts/upgrade.sh 0.5.0` |
 | Offline bundle | Extract the new bundle and run `sh pagehouse-<version>/install.sh --dir <install folder>` |
 | Kubernetes (Helm) | `helm upgrade <name> pagehouse-<version>.tgz -n <namespace> --reuse-values` |
 
