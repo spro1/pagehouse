@@ -4,6 +4,7 @@ import Suggestion, { type SuggestionProps } from '@tiptap/suggestion'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import StarterKit from '@tiptap/starter-kit'
+import { safeHref } from '../../server/html.ts'
 import { Image } from '@tiptap/extension-image'
 import { TableCell, TableHeader, TableKit } from '@tiptap/extension-table'
 import { TaskItem, TaskList } from '@tiptap/extension-list'
@@ -391,11 +392,12 @@ export const CommentMark = Mark.create({
 
 // ---------- Link cards: a pasted URL on an empty line shows the page's title, summary and image ----------
 function LinkCardView({ node, updateAttributes, editor, deleteNode }: NodeViewProps) {
-  const { href, title, description, image, site } = node.attrs
+  const { title, description, image, site } = node.attrs
+  const href: string = safeHref(node.attrs.href) ? node.attrs.href : ''
   const [failed, setFailed] = useState(false)
   useEffect(() => {
     // Fetched once by whoever adds the card; the result is stored in the page so readers never refetch.
-    if (title || !editor.isEditable) return
+    if (title || !editor.isEditable || !href) return
     api(`/api/link-preview?url=${encodeURIComponent(href)}`).then(
       (p) => updateAttributes({ title: p.title, description: p.description, image: p.image, site: p.site }),
       () => setFailed(true),
@@ -404,7 +406,7 @@ function LinkCardView({ node, updateAttributes, editor, deleteNode }: NodeViewPr
   const host = (() => { try { return new URL(href).hostname } catch { return href } })()
   return (
     <NodeViewWrapper className="link-card" data-drag-handle>
-      <a href={href} target="_blank" rel="noopener noreferrer" contentEditable={false}
+      <a href={href || undefined} target="_blank" rel="noopener noreferrer" contentEditable={false}
         onClick={(e) => editor.isEditable && !(e.metaKey || e.ctrlKey) && e.preventDefault()}>
         <span className="lc-body">
           <b>{title || (failed ? href : t('linkCard.loading'))}</b>
@@ -432,8 +434,14 @@ export const LinkCard = Node.create({
   atom: true,
   draggable: true,
   addAttributes: () => Object.fromEntries(['href', 'title', 'description', 'image', 'site'].map((k) => [k, { default: k === 'href' ? '' : null }])),
-  parseHTML: () => [{ tag: 'div[data-link-card]', getAttrs: (el) => ({ href: (el as HTMLElement).getAttribute('data-link-card') }) }],
-  renderHTML: ({ HTMLAttributes }) => ['div', { 'data-link-card': HTMLAttributes.href }, ['a', { href: HTMLAttributes.href }, HTMLAttributes.title || HTMLAttributes.href]],
+  parseHTML: () => [{ tag: 'div[data-link-card]', getAttrs: (el) => {
+    const href = (el as HTMLElement).getAttribute('data-link-card')
+    return safeHref(href) ? { href } : false
+  } }],
+  renderHTML: ({ HTMLAttributes }) => {
+    const href = safeHref(HTMLAttributes.href) ? HTMLAttributes.href : ''
+    return ['div', { 'data-link-card': href }, ['a', { href }, HTMLAttributes.title || HTMLAttributes.href]]
+  },
   addNodeView: () => ReactNodeViewRenderer(LinkCardView),
   addProseMirrorPlugins() {
     const type = this.type
