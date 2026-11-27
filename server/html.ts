@@ -44,6 +44,24 @@ export function brandHtml(html: string, b: { name: string | null; logo: string |
 const safeColor = (c: unknown) =>
   typeof c === 'string' && /^(#[0-9a-f]{3,8}|rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*(,\s*(0|1|0?\.\d+)\s*)?\))$/i.test(c.trim()) ? c.trim() : null
 const align = (n: Node) => (['center', 'right', 'justify'].includes(n.attrs?.textAlign) ? ` style="text-align:${n.attrs!.textAlign}"` : '')
+/** Whether a link may be followed: relative, or one of the editor's allowed schemes (no javascript:, data:, vbscript:).
+ *  Browsers ignore whitespace and control characters inside a scheme, so those are dropped before looking. */
+export function safeHref(u: unknown) {
+  const s = String(u ?? '').replace(/[\u0000-\u0020\u007f-\u00a0\u1680\u180e\u2000-\u2029\u205f\u3000\ufeff]/g, '')
+  return !/^[a-z][a-z0-9+.-]*:/i.test(s) || /^(https?|ftps?|mailto|tel|callto|sms|cid|xmpp):/i.test(s)
+}
+/** The doc with links it must never follow taken out (the text stays): pages can come in through the API, MCP or imports. */
+export function cleanLinks<T>(doc: T): T {
+  const walk = (n: any): any => {
+    if (!n || typeof n !== 'object') return n
+    const out = { ...n }
+    if (Array.isArray(n.marks)) out.marks = n.marks.filter((m: any) => m?.type !== 'link' || safeHref(m.attrs?.href))
+    if (n.type === 'linkCard' && !safeHref(n.attrs?.href)) out.attrs = { ...n.attrs, href: '' }
+    if (Array.isArray(n.content)) out.content = n.content.map(walk)
+    return out
+  }
+  return walk(doc)
+}
 const safeUrl = (u: string) => (/^(https?:|mailto:|#|\.{0,2}\/|[^:]*$)/i.test(u) ? u : '#')
 
 function inline(nodes: Node[] = [], url: UrlMap): string {

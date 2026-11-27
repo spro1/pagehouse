@@ -1,5 +1,6 @@
 // ProseMirror JSON (as stored by the editor) → Markdown. Shared by the server (ZIP export) and the browser (single-page export).
 // No DOM, no dependencies. Unknown nodes fall back to their children so no text is ever dropped.
+import { safeHref } from './html.ts'
 
 type Node = { type: string; attrs?: Record<string, any>; content?: Node[]; text?: string; marks?: { type: string; attrs?: Record<string, any> }[] }
 
@@ -26,7 +27,7 @@ function inline(nodes: Node[] = [], url: UrlMap): string {
         else if (m.type === 'italic') t = `*${t}*`
         else if (m.type === 'strike') t = `~~${t}~~`
         else if (m.type === 'highlight') t = `==${t}==`
-        else if (m.type === 'link') t = `[${t}](${url(m.attrs?.href ?? '')})`
+        else if (m.type === 'link' && safeHref(m.attrs?.href)) t = `[${t}](${url(m.attrs?.href ?? '')})`
       }
       return t
     })
@@ -50,7 +51,7 @@ function block(n: Node, url: UrlMap): string {
       return `${fence}${n.attrs?.language ?? ''}\n${body}\n${fence}`
     }
     case 'horizontalRule': return '---'
-    case 'linkCard': return `[${escapeText(n.attrs?.title || n.attrs?.href || '')}](${url(n.attrs?.href ?? '')})`
+    case 'linkCard': return `[${escapeText(n.attrs?.title || n.attrs?.href || '')}](${safeHref(n.attrs?.href) ? url(n.attrs?.href ?? '') : '#'})`
     // A caption becomes the image title: ![alt](src "caption").
     case 'image': return `![${n.attrs?.alt ?? ''}](${url(n.attrs?.src ?? '')}${n.attrs?.caption ? ` "${String(n.attrs.caption).replace(/"/g, '\\"')}"` : ''})`
     case 'bulletList':

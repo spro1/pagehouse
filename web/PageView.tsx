@@ -10,6 +10,7 @@ import { PrincipalLabel } from './SpaceSettings.tsx'
 import { t } from './i18n.ts'
 import { Icon } from './icons.tsx'
 import { toMarkdown } from '../server/markdown.ts'
+import { safeHref } from '../server/html.ts'
 import { CODE_LANGUAGES, extensions, type Live } from './editor/extensions.tsx'
 import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
@@ -129,8 +130,9 @@ function LoadedPage({ page, live, me, onTitle, onDeleted }: { page: Page; live: 
       // Links can't be followed by a plain click while editing (that places the cursor):
       // ⌘/Ctrl-click opens them, and a plain click does when the page is read-only.
       handleClick: (view, _pos, e) => {
-        const a = (e.target as HTMLElement).closest('a[href]') as HTMLAnchorElement | null
-        if (!a || !(e.metaKey || e.ctrlKey || !view.editable)) return false
+        // An empty href is a link the editor refused to render (javascript: and the like).
+        const a = (e.target as HTMLElement).closest('a[href]:not([href=""])') as HTMLAnchorElement | null
+        if (!a || !(e.metaKey || e.ctrlKey || !view.editable) || !safeHref(a.getAttribute('href'))) return false
         window.open(a.href, '_blank', 'noopener')
         return true
       },
@@ -551,7 +553,12 @@ function TextMenu({ editor }: { editor: Editor }) {
             <Icon name="link" size={14} />
           </button>
           {st.link && (
-            <button title={t('fmt.openLink')} aria-label={t('fmt.openLink')} onMouseDown={(e) => (e.preventDefault(), window.open(editor.getAttributes('link').href, '_blank', 'noopener'))}>
+            <button title={t('fmt.openLink')} aria-label={t('fmt.openLink')} onMouseDown={(e) => {
+              e.preventDefault()
+              // The stored address, not the rendered one: pages saved before links were checked may still hold javascript: and the like.
+              const href = editor.getAttributes('link').href
+              if (safeHref(href)) window.open(href, '_blank', 'noopener')
+            }}>
               {t('fmt.open')}
             </button>
           )}
