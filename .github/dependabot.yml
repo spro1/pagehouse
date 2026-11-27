@@ -13,6 +13,11 @@ updates:
   - package-ecosystem: docker
     directory: /docker/postgres
     schedule: { interval: weekly }
+    # A new PostgreSQL major cannot open the data of the old one, and Pagehouse and Taskhouse can share one database.
+    # Raise it by hand, in both products together, with a dump and restore step.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
