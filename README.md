@@ -92,7 +92,7 @@ curl -fsSL https://github.com/spro1/pagehouse/releases/latest/download/install.s
 To install a specific version:
 
 ```sh
-curl -fsSL https://github.com/spro1/pagehouse/releases/download/v0.4.0/install.sh | sh -s -- --dir /opt/pagehouse --version 0.4.0
+curl -fsSL https://github.com/spro1/pagehouse/releases/download/v0.5.0/install.sh | sh -s -- --dir /opt/pagehouse --version 0.5.0
 ```
 
 The installer:

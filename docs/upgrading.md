@@ -6,7 +6,7 @@
 
 | Installed with | Upgrade |
 |---|---|
-| One-line install (Docker, Podman) | In the install folder: `scripts/upgrade.sh <version>`, e.g. `scripts/upgrade.sh 0.4.0` |
+| One-line install (Docker, Podman) | In the install folder: `scripts/upgrade.sh <version>`, e.g. `scripts/upgrade.sh 0.5.0` |
 | Offline bundle | Extract the new bundle and run `sh pagehouse-<version>/install.sh --dir <install folder>` |
 | Kubernetes (Helm) | `helm upgrade <name> pagehouse-<version>.tgz -n <namespace> --reuse-values` |
 
@@ -41,6 +41,7 @@ Database changes apply automatically. Read the sign-in length change below (set 
 - **New installs** ask for a setup token when creating the first account (printed in the log, or `SETUP_TOKEN`).
 - **SSO finds accounts by the provider's user id (`sub`).** Each existing account is linked by its verified email at its next SSO sign-in, as before; after that, a changed email at the provider still signs in to the same account (the wiki email is not changed). An account with the same email that is already linked to another provider user is refused. Linking and creating accounts still need a verified email.
 - **Account tables move to their own schema.** `users`, `sessions`, `groups` and `group_members` move from `public` to `accounts` at the first start, with their rows; the SSO setting moves to `accounts.settings`. Nothing changes in use, and this is what lets Pagehouse [share accounts with Taskhouse](install.md#using-pagehouse-together-with-taskhouse). The database user needs the `CREATE` privilege on the database (its owner has it), or the app stops at the first start with `permission denied for database`. With more than one app instance, instances still on the old version fail once the first new one has started: stop them all before the upgrade. SQL you run by hand must name the schema (`accounts.users`). The app sets its `search_path` when it connects, so a connection pooler in front must pass the `options` startup parameter through. An older version can't read the new layout: to go back, restore the backup taken before the upgrade.
+- **Unsafe links are not followed.** A `javascript:`, `data:` or `vbscript:` link in a page (from a Markdown import, the API or MCP) no longer opens from the link toolbar, and is removed when the page is next saved; the text stays.
 - **Sign-ins last one day by default** instead of 30 days, so people sign in again daily. To keep the old behavior, set `SESSION_HOURS=720` in `.env`. Sessions started before the upgrade keep their original expiry.
 
 ### 0.3.1 → 0.4.0
