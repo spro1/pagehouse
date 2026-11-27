@@ -129,7 +129,7 @@ jobs:
           helm package charts/pagehouse --version "${{ needs.meta.outputs.version }}" --app-version "${{ needs.meta.outputs.version }}" -d release
       - name: Checksums
         run: cd release && sha256sum *.tar.gz *.tgz install.sh > SHA256SUMS
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.TAG }}
           generate_release_notes: true
