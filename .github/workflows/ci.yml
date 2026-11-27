@@ -36,7 +36,7 @@ jobs:
       - run: npm run build
       - name: Shell scripts parse
         run: for f in scripts/*.sh; do sh -n "$f"; done
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
       - name: Helm chart
         run: |
           helm lint charts/pagehouse

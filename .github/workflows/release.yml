@@ -121,7 +121,7 @@ jobs:
           pattern: bundles-*
           path: release
           merge-multiple: true
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
       - name: Package the Helm chart
         run: |
           sed -i "s#repository: ghcr.io/[^/]*/pagehouse\$#repository: ${{ needs.meta.outputs.image }}#" charts/pagehouse/values.yaml
