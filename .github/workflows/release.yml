@@ -116,7 +116,7 @@ jobs:
         with:
           ref: ${{ env.TAG }}
       # Only our bundles: other artifacts in the run would collide when merged into one folder.
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: bundles-*
           path: release
